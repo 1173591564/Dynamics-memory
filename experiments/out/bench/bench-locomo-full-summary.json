@@ -1,0 +1,1831 @@
+{
+  "dataset": "locomo",
+  "n_instances": 1,
+  "size": 15,
+  "stride": 15,
+  "cfg": {
+    "theta": 0.35,
+    "tau_dup": 0.85,
+    "tau_sim": 0.78,
+    "cap_m": 8,
+    "k": 5
+  },
+  "acc_mean": 0.2915,
+  "results": [
+    {
+      "instance": "conv-26",
+      "n_units": 419,
+      "n_windows": 27,
+      "n_candidates": 87,
+      "pool_final": {
+        "C": 9,
+        "M": 0,
+        "A": 78
+      },
+      "tensions_pending": 0,
+      "acc": 0.2915,
+      "acc_by_type": {
+        "2": 0.0811,
+        "3": 0.1538,
+        "1": 0.0938,
+        "4": 0.1714,
+        "5": 0.8085
+      },
+      "evidence_recall_mean": 0.1556,
+      "elapsed_s": 931.0,
+      "queries": [
+        {
+          "qid": "conv-26-q0",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know — the memories don't mention Caroline attending an LGBTQ support group. They only mention that last Friday she attended a transgender poetry reading event (跨性别诗歌朗诵会).",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q1",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know. The memories mention that Melanie recently painted a sunset-inspired painting and an abstract painting with blue stripes, but there's no mention of her painting a sunrise.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q2",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memory only mentions that Caroline drew a design symbolizing freedom, staying true to her authentic self, and embracing her female identity — it does not contain any information about her educational pursuits or fields of study.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q3",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q4",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "根据记忆，Caroline 是一位跨性别女性——她忠于真实的自我，拥抱自己的女性身份，并且上周五参加了跨性别诗歌朗诵会，认为那是安全而有力量的自我表达空间。",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q5",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie is preparing to adopt a child, with Caroline advising her on researching adoption agencies or lawyers, preparing documents, and getting emotionally ready for a long wait. There is no information about Melanie running a charity race.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q6",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "I don't know. The memories mention that Melanie loves camping with her family, but they don't specify when she is planning to go camping.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q7",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q8",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q9",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q10",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q11",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q12",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q13",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know. The memories mention Caroline's adoption journey and her interest in abstract painting as a form of self-expression, but they don't indicate any career path she has decided to pursue.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q14",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The provided memories only mention Caroline advising Melanie about adoption preparations and drawing a pattern symbolizing freedom and embracing her feminine identity — there is no information about Caroline's career aspirations, counseling as a career, or the support she received growing up.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q15",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "Based on the memories, Melanie's activities include:\n\n- **Camping with her family** – she loves nature, storytelling at the campsite, gathering around campfires, and waking up to birdsong; she finds it calming and energizing.\n- **Road trips** – she recently finished one, followed by taking family photos with her kids as a way to relax.\n- **Pottery** – she used it for self-expression and relaxation, though she had to pause it last month due to an injury.\n- **Reading** – currently reading books recommended by Caroline to stay emotionally balanced.\n- **Painting and drawing** – she uses art as an emotional outlet, recently creating a sunset-inspired painting and an abstract piece with blue stripes.\n- **Preparing for adoption** – she's gathering materials and researching agencies/lawyers with Caroline's guidance.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q16",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know. The memories only mention that Melanie injured herself last month and had to pause her pottery practice — they do not specify when she signed up for the pottery class.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q17",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "The memories don't mention any upcoming transgender conference. They only mention that Caroline attended a transgender poetry reading last Friday. So I don't know when she is going to a conference.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q18",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know. The memories mention that Melanie loves camping with her family and enjoys campfire storytelling and waking up to birdsong, but they do not specify any locations where she has camped.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q19",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "Based on the memories, the only explicit information is that Melanie's kids liked the family photo they took together the day after the road trip — taking family photos was something they enjoyed. The memories don't mention anything else specific about what her kids like.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q20",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know. The memories don't mention Melanie visiting a museum.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q21",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q22",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The provided memory only mentions that Caroline drew a design symbolizing freedom and embracing her authentic female identity, but contains no information about her bookshelf or reading preferences, including whether she owns Dr. Seuss books.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q23",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know the specific titles. The memories only mention that Melanie is reading books (recommended by Caroline) while recovering from her injury, but no book titles are provided.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q24",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "根据记忆，Melanie的减压方式包括：\n\n- **露营与亲近大自然**：她热爱与家人一起露营，认为大自然能让她平静、放松并恢复精力，喜欢围篝火、讲故事、听鸟鸣醒来。\n- **陶艺**：这是她自我表达与放松的方式，但因上个月受伤不得不暂停。\n- **阅读和画画**：受伤后，她靠阅读Caroline推荐的书和画画来转移注意力、保持情绪平稳；她认为艺术是释放情绪的出口。\n- **与孩子相处、拍家庭合照**：公路旅行结束后与孩子们拍照是她放松的方式。",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q25",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "Last Friday (上周五)， Caroline attended the event — specifically, it was a transgender poetry reading with a supportive atmosphere.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q26",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories only mention that Melanie is reading books Caroline previously recommended (while recovering from her injury last month), but they do not specify a book titled \"nothing is impossible\" or when she read it.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q27",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know. The memories don't mention anything about Caroline pursuing writing as a career. Based on the available information, Caroline's creative pursuits center on visual art—she draws symbolic patterns and is currently exploring abstract painting as a form of self-expression. While she attended a poetry reading that inspired her to create some art, there is no indication that she intends to pursue writing professionally.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q28",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "Last Friday. According to the memories, Caroline passed the interview at the adoption agency last Friday (上周五), taking an important step toward her goal of starting a family.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q29",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know. The memories only mention that Melanie had to pause her pottery last month due to an injury, but they don't specify when she attended pottery workshops.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q30",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": null
+        },
+        {
+          "qid": "conv-26-q31",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "I don't know. The memories mention that Melanie loves camping with her family, but they don't specify when she went camping in June.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q32",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "Based on my memories, Caroline attended a transgender poetry reading (跨性别诗歌朗诵会) last Friday. The event had a supportive atmosphere, and she felt it was a safe and empowering space for self-expression. She was inspired by the event to create some artwork of her own.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q33",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q34",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The provided memories mention Caroline passing an adoption agency interview (a personal step toward building her own family) and drawing a design symbolizing freedom and embracing her female identity, but they do not describe any events she has participated in to help children.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q35",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know. The memories mention that Melanie loves camping with her family and enjoys nature, but they don't specify when she went camping in July.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q36",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q37",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "Recently, Melanie painted a sunset-inspired painting and an abstract painting with blue stripes that expresses tranquility — both using her favorite blue and sunset tones, which calm her. She's been painting to distract herself and stay emotionally balanced since her injury.",
+          "correct": true,
+          "evidence_recall": null
+        },
+        {
+          "qid": "conv-26-q38",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "Melanie和家人的活动包括：\n- **露营**：她热爱与家人一起露营，喜欢在营地讲故事、围篝火、听鸟鸣醒来。\n- **公路旅行**：上周末全家自驾去了大峡谷。\n- **拍家庭合照**：旅行结束后第二天与孩子们一起拍了家庭合照，孩子们很喜欢。",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q39",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "Based on the memories, Caroline participates in the LGBTQ community in the following ways:\n\n1. **Attending community events**: She attended a transgender poetry reading last Friday, which she found to be a safe, supportive, and empowering space for self-expression.\n\n2. **Creative self-expression**: The poetry reading inspired her to create her own artwork — she drew a design symbolizing freedom, being true to herself, and embracing her feminine identity.\n\n(Additionally, she passed an adoption agency interview last Friday as part of her goal to build a family, though this reflects her personal life goals rather than community participation directly.)",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q40",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q41",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q42",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "Melanie会更感兴趣去**国家公园**。\n\n根据记忆，她热爱与家人一起露营，认为大自然能让她平静、放松并恢复精力，喜欢围篝火、听鸟鸣醒来等与自然相关的体验。而且她一家上周末刚自驾去了大峡谷（国家公园）旅行。记忆中没有任何她对主题公园或游乐设施感兴趣的迹象，她的偏好明显倾向于大自然。",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q43",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "Caroline makes two kinds of art based on the memories:\n\n1. **Meaningful symbolic designs** – She drew a pattern symbolizing freedom, staying true to herself, and embracing her female identity.\n2. **Abstract painting** – She's recently been exploring abstract art, enjoying the freedom of not planning too much and painting her emotions directly onto the canvas as a form of relaxed self-expression.\n\nShe was also inspired by a recent transgender poetry reading to create some new art, though it's not specified what form that will take yet.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q44",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q45",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q46",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention Melanie's recent injury, her paused pottery hobby, and her current coping activities (reading and painting), but contain no information about her views or stance regarding the transgender community.",
+          "correct": false,
+          "evidence_recall": null
+        },
+        {
+          "qid": "conv-26-q47",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q48",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "I don't know. The memories only mention that Melanie practices pottery for self-expression and relaxation but had to pause it due to an injury last month. There is no information about the specific types of pottery she or her kids have made.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q49",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q50",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memory only mentions that Caroline drew a design symbolizing freedom, staying true to herself, and embracing her feminine identity — it contains no information about her political views or leaning.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q51",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "Based on the memories, Melanie recently painted:\n\n1. **A sunset-inspired painting** — drawing on her love of sunset tones\n2. **An abstract painting** using blue stripes to express tranquility\n\nShe prefers blue and sunset tones because they calm her, and she views art as an outlet for releasing emotions.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q52",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q53",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories only mention that Caroline passed the adoption agency's interview last Friday, but they don't specify when she applied to adoption agencies.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q54",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know. The memories mention that Caroline drew a pattern symbolizing freedom and embracing her female identity, but they don't specify when she drew it.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q55",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "Both have painted abstract art. Melanie created an abstract painting using blue stripes to express tranquility, while Caroline has been experimenting with abstract painting, painting her emotions directly on the canvas without much planning as a free form of self-expression.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q56",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "对Caroline来说，重要的象征是她自己画的一个图案，它象征着**自由**、**忠于真实的自我**，以及**拥抱自己的女性身份**。",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q57",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q58",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q59",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know. The provided memories mention Caroline's abstract painting and her recent adoption agency interview, but they don't contain any information about her religious beliefs or practices.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q60",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q61",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q62",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "I don't know. The memories don't mention Melanie going to a park.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q63",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q64",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories only mention Melanie's preferences for blue and sunset tones, her painting, and her reading—there is no information about her music tastes, so I can't determine whether she would enjoy Vivaldi's \"The Four Seasons.\"",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q65",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "根据记忆，Caroline在跨性别历程中经历的变化主要包括：\n\n1. **拥抱女性身份与真实自我**：她自己画了一个图案，象征自由与忠于真实自我，体现出她接纳并表达自己女性身份的转变。\n\n2. **积极参与跨性别社群活动**：上周五她参加了跨性别诗歌朗诵会，在安全、充满支持的氛围中找到自我表达的力量，并因此获得创作艺术的灵感。\n\n3. **迈向组建家庭的里程碑**：同一天她通过了领养机构的面试，向组建家庭的目标迈出了重要一步，她对此感到兴奋和感恩。\n\n需要说明的是，记忆中并未提及她历程中更具体的变化（如医疗、姓名变更等），以上仅为记忆中记录的内容。",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q66",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "I don't know. The memories mention that Melanie loves camping with her family — telling stories at the campsite, gathering around the campfire, and waking up to birdsong — but they don't say anything about what she does on hikes.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q67",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q68",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q69",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "Based on the memories, Melanie might describe Caroline as:\n\n1. **Supportive and caring** – Caroline recommended books to help Melanie through her injury and offered practical guidance for her adoption journey.\n2. **Thoughtful and practical** – She gave Melanie concrete, detailed advice (researching agencies or lawyers, gathering references, financial information, medical exams) and wisely prepared her emotionally for the long waiting period.\n3. **Creative** – She designs her own artwork, drawing a pattern with personal symbolism.\n4. **Authentic and true to herself** – Her artwork symbolizes freedom, staying loyal to her true self, and embracing her female identity, suggesting she values self-expression and independence.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q70",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "According to my memories, Caroline attended a **transgender poetry reading** last Friday. The event had a supportive atmosphere, and she felt it was a safe and empowering space for self-expression. She was also inspired to create some artwork as a result of the experience.",
+          "correct": false,
+          "evidence_recall": 0.5
+        },
+        {
+          "qid": "conv-26-q71",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention that Melanie is reading a book that Caroline previously recommended, but the specific title of the book is not provided.",
+          "correct": false,
+          "evidence_recall": 0.5
+        },
+        {
+          "qid": "conv-26-q72",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention that Melanie herself is preparing to adopt a child, but there is no information about a friend of Melanie's adopting a child or when that happened.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q73",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "Melanie上个月受伤了。",
+          "correct": false,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q74",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "Melanie's family went on a roadtrip **last weekend** (上周末) — they drove to the Grand Canyon.",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q75",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know. The memories mention Melanie's \"children\" (孩子们) and a son, indicating she has at least two children, but the exact number is not specified.",
+          "correct": false,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q76",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention that Melanie took a family photo with her kids the day after the road trip, but there is no information about her going on a hike.",
+          "correct": false,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q77",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "I don't know. The memories don't mention any plans for another road trip. While Melanie loves camping and family trips, the recent Grand Canyon road trip involved her son's car accident, and there's no information about whether this affects her desire to take another trip soon.",
+          "correct": false,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q78",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q79",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "Caroline passed the adoption agency interview last Friday (上周五).",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q80",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know. The memories do not mention Melanie buying figurines.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q81",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know. The memories don't contain any information about Caroline's home country or any plans or desires to move back there. The memories only cover her adoption process, her abstract painting hobby, and her self-expression through art.",
+          "correct": false,
+          "evidence_recall": 0.5
+        },
+        {
+          "qid": "conv-26-q82",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q83",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q84",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "Based on the memories, Melanie prioritizes self-care in the following ways:\n\n1. **Nature and camping**: She loves camping with her family, finding that nature calms, relaxes, and recharges her. She enjoys storytelling at campsites, sitting around the campfire, and waking up to birdsong.\n\n2. **Art as an emotional outlet**: She views art as a way to release emotions and relax. She was doing pottery for self-expression and relaxation before an injury forced her to pause it. She has since turned to painting, recently creating a sunset-inspired piece and a tranquil abstract painting using calming blue tones.\n\n3. **Reading**: After her injury, she has been reading books recommended by Caroline and painting to distract herself and maintain emotional stability.\n\n4. **Family time**: She finds relaxation in spending time with her children, such as taking family photos together after their road trip, and draws strength and perspective from her family bonds.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q85",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know. The memories mention that Caroline recently passed an adoption agency interview and has been exploring abstract painting, but there is no information about her plans for the summer.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q86",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q87",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories only mention that Caroline passed the adoption agency's interview and is excited about moving toward her goal of building a family, but they don't explain why she chose that particular agency.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q88",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "Caroline was excited (and grateful) about passing the adoption agency's interview last Friday, which was an important step toward her goal of building a family.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q89",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know. The memories do not mention Melanie's opinion about Caroline's decision to adopt.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q90",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q91",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "According to the memories, Caroline drew a design (图案) herself that symbolizes freedom, staying true to her authentic self, and embracing her female identity. Note: the memory refers to a design/pattern she drew, but does not explicitly mention a necklace.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q92",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q93",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memory only mentions that Caroline drew a pattern herself symbolizing freedom, staying true to herself, and embracing her female identity—there is no information about a gift from grandma.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q94",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q95",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "在露营时，Melanie和她的家人会在营地讲故事、围坐篝火旁，她也很喜欢在鸟鸣声中醒来的时光。对Melanie来说，大自然能让她平静、放松并恢复精力。",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q96",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know. The memories don't mention Caroline being interested in any counseling or mental health services. They only mention that she passed an adoption agency interview and gave Melanie advice about the adoption process.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q97",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "Based on the memories, Caroline attended a transgender poetry reading (跨性别诗歌朗诵会) last Friday. She found it to be a safe and empowering space for self-expression, with a supportive atmosphere, and it inspired her to create some artwork of her own.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q98",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q99",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q100",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know. The memories mention that Caroline attended a transgender poetry reading that was a safe and powerful space for self-expression, and that she was inspired to create artworks—but they don't state that she wants to create a place for people.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q101",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories don't mention a black and white bowl or a photo. They only indicate that Melanie had to pause her pottery due to an injury last month, and her recent creations were a sunset-inspired painting and a blue-striped abstract painting.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q102",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q103",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know. The memories mention that Melanie is currently reading a book recommended by Caroline, but there is no information about her favorite book from childhood.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q104",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know. The memories mention that Melanie is reading a book Caroline previously recommended, but the specific title of the book is not provided.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q105",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories mention that Caroline drew a design symbolizing freedom and being true to herself while embracing her female identity, but they do not mention the book \"Becoming Nicole\" or what she took away from it.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q106",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention Melanie's injury, her pottery pause, her reading and painting, and her adoption preparations, but there is no information about new shoes.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q107",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q108",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know. The memories don't mention anything about running.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q109",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention that Melanie does pottery as a form of self-expression and relaxation (which she had to pause due to an injury last month), but there is no information about a pottery workshop with her kids or what they made.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q110",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q111",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know. The memories mention that Melanie enjoys camping and storytelling with her family and took a family photo with her kids after a road trip, but they don't describe a specific creative project (besides pottery) that she does together with her kids. Pottery is mentioned only as her own activity, currently paused due to injury.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q112",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know. The memories mention Melanie's own recent paintings (a sunset-inspired painting and an abstract painting with blue stripes expressing tranquility), but they don't mention any painting project she did together with her kids, nor do they reference July 2023.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q113",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention that Caroline passed an interview at an adoption agency last Friday, but there is no information about a council meeting for adoption or what she saw there.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q114",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention that Caroline drew a pattern symbolizing freedom and staying true to herself while embracing her feminine identity, but they do not mention sunflowers or what they represent.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q115",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q116",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "Caroline的灵感来源于上周五她参加的跨性别诗歌朗诵会——现场充满支持氛围，让她感受到这是一个安全而有力量的自我表达空间，因此受到启发想要创作艺术作品。她画了一个图案，象征自由、忠于真实的自我，并拥抱自己的女性身份。",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q117",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q118",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "I don't know. The memories mention that Melanie loves camping with her family—she enjoys telling stories at the campsite, gathering around the campfire, and waking up to birdsong—but they don't describe what she and her family specifically saw during a camping trip last year. (Note: the memories do mention a recent road trip to the Grand Canyon last weekend, but that was not a camping trip from last year.)",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q119",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q120",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q121",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q122",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know. The memories mention that Melanie used pottery for self-expression and relaxation, and that she generally prefers blue and sunset tones for their calming effect, but they don't contain any information about why she chose specific colors and patterns in her pottery project.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q123",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q124",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q125",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q126",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q127",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention Caroline drawing a symbol of freedom and staying true to herself, and her recent exploration of abstract painting, but there's no mention of anything made for a local church.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q128",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q129",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q130",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know. The provided memories don't contain information about which classical musicians Melanie enjoys listening to.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q131",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention Melanie's art preferences (blue and sunset colors) and how she copes with her injury through painting and reading, but they do not contain any information about her music preferences.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q132",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q133",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q134",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "Caroline建议开始收养时，首先调研收养机构或律师，准备好推荐信、财务信息和体检等材料，同时为漫长的等待期做好情绪上的准备。",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q135",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "In October 2023, Melanie was injured and had to pause her pottery, which she used for self-expression and relaxation. She has been coping by reading books Caroline recommended and painting to keep her emotions stable.",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q136",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "During her pottery break, Melanie keeps herself busy by reading books that Caroline recommended and painting, which helps her shift her attention away from the injury and maintain emotional stability.",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q137",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "I don't know. The memories mention that Melanie recently created a sunset-inspired painting and an abstract painting with blue stripes expressing tranquility, but they do not specify that she showed any particular painting to Caroline on October 13, 2023.",
+          "correct": false,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q138",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "Based on the memories, Caroline shared an abstract painting with Melanie — a pattern she drew herself, symbolizing freedom, staying true to her authentic self, and embracing her female identity. (Note: the specific date of October 13, 2023 is not mentioned in the memories, but this is the painting Caroline created and shared.)",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q139",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "The poetry reading Caroline attended last Friday was a **transgender poetry reading**. It had a supportive atmosphere, and she found it to be a safe and powerful space for self-expression. It even inspired her to create some art of her own.",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q140",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memory mentions that Caroline attended a transgender poetry reading last Friday in a supportive atmosphere, but it doesn't contain any information about what the posters said.",
+          "correct": false,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q141",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "Caroline的画象征自由，以及忠于真实的自我、拥抱自己的女性身份。",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q142",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "I don't know. The memories don't contain any information about how Melanie and Caroline describe their journey through life together.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q143",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "Melanie's son was in a car accident (car crash) during their road trip to the Grand Canyon last weekend. Fortunately, he was safe and unharmed. The children were frightened afterward but were comforted, and Melanie reflected on how precious life is and how much her family means to her.",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q144",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "According to my memory, Melanie's son was in a car accident during the family's road trip to the Grand Canyon last weekend, but thankfully he was unharmed. The children were frightened at first but were comforted afterward. Melanie was especially moved by her children's resilience, which gave her strength to keep going.",
+          "correct": true,
+          "evidence_recall": 0.5
+        },
+        {
+          "qid": "conv-26-q145",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "根据记忆，车祸发生后，Melanie感慨生命珍贵，认为家人对她意味着一切。同时，孩子们的坚韧也给了她前行的力量。",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q146",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "According to the memories, Melanie's son was involved in the accident during the family road trip to the Grand Canyon, but fortunately he was safe and unharmed. The children were frightened/shaken by the incident, but they were comforted and calmed afterward. Their resilience in dealing with it also gave Melanie strength to move forward.",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q147",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "After her son's car accident (during the family's road trip to the Grand Canyon last weekend), Melanie felt deeply reflective — she realized how precious life is and that her family means everything to her. Although her son was fortunately unharmed and the children were frightened but comforted, their resilience gave her the strength to move forward.",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q148",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 4,
+          "pred": "I don't know. The memories mention the Grand Canyon trip involved a car accident (her son was unharmed), the children being frightened and then comforted, and Melanie reflecting on the preciousness of life and how her family means everything to her—but there is no information about her children enjoying the Grand Canyon or her reaction to that.",
+          "correct": false,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q149",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "Melanie的家人给了她前行的力量——在大峡谷旅行途中儿子遭遇车祸后，孩子们的坚韧让她深受鼓舞。她也感慨家人对她意味着一切，与家人一起露营、讲故事、围篝火的时光能让她平静放松、恢复精力。",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q150",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "I don't know. The memories mention that after her son's car accident, Melanie felt family meant everything to her and that her children's resilience gave her strength to move forward, but they do not describe how she felt about her family supporting her.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q151",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 5,
+          "pred": "According to her memories, the day after the road trip ended, Melanie took a family photo together with her children. The kids really enjoyed it, and this was her way of relaxing after the trip.",
+          "correct": false,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q152",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "Based on the memory, Caroline realized the importance of freedom and being true to her authentic self — embracing her feminine identity. She expressed this by drawing a design of her own that symbolized these values. (The memory does not explicitly mention the charity race itself, but this is what her drawing symbolized.)",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q153",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 5,
+          "pred": "Melanie is preparing to adopt a child. Her plans include researching adoption agencies or lawyers (as Caroline suggested), gathering the necessary materials such as recommendation letters, financial information, and medical examination results, and preparing herself emotionally for what may be a long waiting period.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q154",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q155",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention that Melanie is preparing to adopt a child and received advice from Caroline about researching adoption agencies or lawyers, but they do not explain why Melanie chose a particular adoption agency.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q156",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 5,
+          "pred": "I don't know. The memories indicate that Melanie is preparing to adopt a child (with Caroline advising her on researching agencies/lawyers and gathering documents), but they don't mention anything specific that Melanie is excited about in her adoption process. The excitement about passing an adoption agency interview belongs to Caroline, not Melanie.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q157",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q158",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q159",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q160",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q161",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 3,
+          "pred": "I don't know. The memories mention that Caroline drew a pattern symbolizing freedom and staying true to herself while embracing her female identity, but there is no mention of a hand-painted bowl.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q162",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q163",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 4,
+          "pred": "I don't know.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q164",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 5,
+          "pred": "I don't know.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q165",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 5,
+          "pred": "I don't know. The memories mention Melanie's injury, adoption preparation, family road trip, and art as an emotional outlet, but there is no information about her pursuing counseling or what motivated her to do so.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q166",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 4,
+          "pred": "I don't know. The memories do not contain information about Melanie wanting to create any kind of place for people.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q167",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know. The memories only mention that Caroline drew a pattern symbolizing freedom and has been experimenting with abstract painting, but there is no information about a black and white bowl.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q168",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Caroline drew a pattern symbolizing freedom, staying true to herself, and embracing her female identity — there is no information about new shoes.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q169",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know. The memories only mention Caroline's drawing and abstract painting, with no information about her reasons for getting into running.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q170",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q171",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie is preparing to adopt a child and Caroline's suggestions (researching adoption agencies or lawyers, preparing recommendation letters, financial information, physical exams, and emotionally preparing for a long wait), but there is no information about a council meeting or what she saw there.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q172",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 4,
+          "pred": "The memories don't explicitly mention an art show. However, they do note that Melanie recently created a **sunset-inspired painting**, drawing on her love of blue and sunset tones (which bring her calm), along with an abstract painting using blue stripes to express tranquility.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q173",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 4,
+          "pred": "I don't know. The memories don't mention Caroline creating a sculpture for an art show. However, they do mention that Caroline was inspired to create some art works after attending a transgender poetry reading last Friday, and that she drew a design symbolizing freedom and being true to herself while embracing her feminine identity.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q174",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q175",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention Melanie's love of camping with her family, but there is no information about a person named Caroline or what her family saw during a camping trip last year.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q176",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q177",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 3,
+          "pred": "I don't know. The memories indicate that pottery is Melanie's hobby (which she recently had to pause due to injury), not Caroline's. Caroline's activities mentioned are drawing a pattern symbolizing freedom and authenticity, and trying abstract painting as emotional expression — there is no information about Caroline having a pottery project or choosing colors and patterns for one.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q178",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q179",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q180",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 4,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q181",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 4,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q182",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 5,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q183",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q184",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q185",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q186",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q187",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q188",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 4,
+          "pred": "I don't know. Based on the memories, Caroline's recent news was actually positive — she passed the adoption agency interview last Friday, which was an important step toward her goal of building a family. The only setback mentioned in the memories belongs to Melanie, who was injured last month and had to pause her pottery.",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q189",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 3,
+          "pred": "根据记忆，是 **Melanie**（而不是 Caroline）暂停了陶艺。记忆中提到 Caroline 从事的是**抽象绘画**——她喜欢不做太多计划，直接把情绪画在画布上，将其视为一种自在的自我表达方式。她还画过一个象征自由、忠于真实自我并拥抱女性身份的图案。",
+          "correct": false,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q190",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 4,
+          "pred": "根据记忆，参加诗歌朗诵会的并不是Melanie，而是Caroline。上周五Caroline参加了一场跨性别诗歌朗诵会，现场充满支持氛围，她认为那是安全而有力量的自我表达空间，并因此受到启发想创作一些艺术作品。记忆中没有提到Melanie参加过任何诗歌朗诵会。",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q191",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention a road trip incident involving **Melanie's** son (who was in a car accident on the way to the Grand Canyon but was unharmed), not anyone named Caroline.",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q192",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know. The memory mentions Melanie's son (not Caroline's), who was in a car accident but was fortunately unharmed, though the children were frightened and were comforted afterward.",
+          "correct": true,
+          "evidence_recall": 0.5
+        },
+        {
+          "qid": "conv-26-q193",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention that Melanie was injured last month, but they don't contain any information about how Caroline felt about her family after the accident.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q194",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "根据记忆内容，遭遇车祸的是 **Melanie** 的孩子，而非 Caroline 的孩子。事故发生在 Melanie 一家自驾去大峡谷的途中。她的孩子们受惊后得到了安抚，孩子们的坚韧也给了 Melanie 前行的力量。",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q195",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 3,
+          "pred": "I don't know. The memories indicate that it was Melanie—not Caroline—who was injured last month. There is no information about Caroline experiencing an accident or her feelings afterward.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q196",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know. The memory only mentions Caroline's interest in abstract painting, with no information about her children or the Grand Canyon.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q197",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know. The memories only describe what Melanie did after the road trip (taking family photos with her children); they don't mention any activities Caroline did to relax. Caroline is only mentioned as the person who recommended books to Melanie.",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q198",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know. The memory only mentions Melanie, not Caroline.",
+          "correct": true,
+          "evidence_recall": 1.0
+        }
+      ]
+    }
+  ]
+}

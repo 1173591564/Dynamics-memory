@@ -1,0 +1,39 @@
+{
+  "units": 106,
+  "windows_injected": 35,
+  "candidates_total": 377,
+  "secrets_redacted": 0,
+  "prompt_tokens": 0,
+  "elapsed_s": 0.7,
+  "cfg": {
+    "theta": 0.35,
+    "cap_m": 8,
+    "k": 5,
+    "tau_dup": 0.85,
+    "tau_sim": 0.78,
+    "useful_hit": false
+  },
+  "hit_rate": 0.9717,
+  "mean_selected": 4.651,
+  "top_sim_p10": 0.3893,
+  "top_sim_p50": 0.548,
+  "top_sim_p90": 0.6729,
+  "pool_final": {
+    "C": 207,
+    "M": 8,
+    "A": 162
+  },
+  "tensions_pending": 16,
+  "events": {
+    "n_promote": 57,
+    "n_demote": 0,
+    "n_evict": 49,
+    "n_archive": 162,
+    "n_revive": 0,
+    "n_merge": 0,
+    "n_collision": 0,
+    "n_tension": 16,
+    "n_resolve": 0
+  },
+  "labels_loaded": 0
+}

@@ -1,0 +1,19 @@
+{
+  "dataset_sha256": "f672078c165b59bbf9c7955378ec13da45e5f93f402d0408842e98d230d0cc19",
+  "interaction_units": 106,
+  "window_size": 3,
+  "window_stride": 3,
+  "windows": 35,
+  "covered_units": 105,
+  "dropped_units": 1,
+  "characters": {
+    "mean": 5684.885714285714,
+    "median": 3402,
+    "max": 25139
+  },
+  "assistant_turns": {
+    "mean": 15.514285714285714,
+    "median": 10,
+    "max": 90
+  }
+}

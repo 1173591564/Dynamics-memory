@@ -1,0 +1,6 @@
+scenario,preset,seeds,recall_before_resolution,recall_after_resolution,promotion_rate,median_promotion_t,recall,context_efficiency,active_last100,active_slope_last100,archive_last100,archive_slope_last100,pollution_m_last100
+shadow_starvation,shadow_on,20,0.739,1.0,1.0,22.0,nan,nan,nan,nan,nan,nan,nan
+shadow_starvation,shadow_off,20,0.0,0.0,0.0,nan,nan,nan,nan,nan,nan,nan,nan
+continuous_immigration,ours,5,nan,nan,nan,nan,0.9612422997946611,0.5480755158788233,322.98199999999997,-0.11053945394539438,1801.304,6.044728472847282,0.0
+continuous_immigration,sfams_style,5,nan,nan,nan,nan,0.544917864476386,0.633731343283582,8,5.159519105734075e-18,2624.73,7.409198919891987,0.1
+continuous_immigration,flat,5,nan,nan,nan,nan,0.9612422997946611,0.20804399755569136,2632.73,7.409198919891989,0,0.0,0.7976784969368765

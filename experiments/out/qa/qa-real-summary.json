@@ -1,0 +1,535 @@
+{
+  "summary": {
+    "questions": 36,
+    "acc": 0.6667,
+    "acc_by_type": {
+      "abstention": 1.0,
+      "decision": 0.0,
+      "fact": 0.7273,
+      "method": 0.8,
+      "status": 0.0,
+      "update": 0.5
+    },
+    "evidence_recall_mean": 0.5732,
+    "no_hit": 0,
+    "pool_final": {
+      "C": 123,
+      "M": 8,
+      "A": 87
+    },
+    "elapsed_s": 407.1,
+    "cfg": {
+      "theta": 0.35,
+      "cap_m": 8,
+      "k": 5,
+      "tau_dup": 0.85,
+      "tau_sim": 0.78
+    }
+  },
+  "results": [
+    {
+      "qid": "q34",
+      "ask_at": 30,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "用户的核心验收标准是：**TencentDB-Agent-Memory 的安装试用必须严格按官方文档（INSTALL.md + agents/hermes/README.md）完整走通**，因为最终用户会按文档使用；若无法按文档走通，则视为文档没写好或代码仍有问题。\n\n此外，在真实会话验证方面，用户还需要自己在终端手动跑 hermes 交互 TUI 完成表单流验证（弹 clarify 表单 → 选资产 → 选任务 → 同会话不重复弹表单），并对照 proxy 日志确认真实会话的 x-conversation-id 注入，这也是接入工作闭环的一部分。",
+      "correct": true,
+      "evidence_recall": 1.0,
+      "pools": {
+        "C": 59,
+        "M": 7,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q01",
+      "ask_at": 40,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "工具叫 **clarify**（原生交互式工具，定义于 tools/clarify_tool.py，注册于 tools/registry.py，toolset 名 'clarify'）。\n\n硬限制：\n- **单选最多 4 个 choices**（UI 会自动追加 Other 自由文本行）\n- 单次调用**最多批量 5 个问题**，按序返回 responses[]\n- 支持单选、多选（multi_select）、开放式问题\n- 首选项自动标 (Recommended)，但回传前会被 strip\n- 超时返回固定 sentinel，让 agent 自行决断",
+      "correct": true,
+      "evidence_recall": 1.0,
+      "pools": {
+        "C": 76,
+        "M": 8,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q02",
+      "ask_at": 40,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "官方 proxy 把 hermes 硬编码进了 **_headerOnlyAgents**（仅 header 类 agent，handler.ts:738）。\n\n依据是代码注释断言 hermes“没有交互式 form UI”，所以走 header-only 路径——但这与 hermes 源码的实际事实不符。",
+      "correct": true,
+      "evidence_recall": 0.0,
+      "pools": {
+        "C": 76,
+        "M": 8,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q03",
+      "ask_at": 45,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "这套部署栈强制要求两组 OpenAI 兼容的 LLM 配置，需写入 `deploy/global-images/.env`：\n\n1. **MEMORY_LLM_***：供 memory-core / memory-hub 做内部记忆抽取、embedding、知识总结使用；\n2. **PROXY_UPSTREAM_***：供 proxy 转发上游模型使用。\n\n两组可以共用同一个 key。\n\n最终实际采用：**DeepSeek**（`https://api.deepseek.com/v1` + `deepseek-chat`，OpenAI 兼容），memory 组与 proxy 组共用同一个 DeepSeek key。此前考虑的火山 arkcli / ARK Key 方案已弃用（SSO 登录虽成功激活 ark-****d897，但改用 DeepSeek 后不再需要）。\n\n另外提醒：目前仍待办——等你提供 DeepSeek API Key（sk-...）写入 .env 后运行 start-all.sh 完成部署验证。",
+      "correct": false,
+      "evidence_recall": 1.0,
+      "pools": {
+        "C": 89,
+        "M": 8,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q04",
+      "ask_at": 45,
+      "qtype": "update",
+      "n_mem": 5,
+      "pred": "部署时的 LLM 来源方案经历了从「火山方舟」到「DeepSeek」的变化：\n\n1. **原方案：火山方舟（Ark）**——登录火山 arkcli 获取 ARK Key，SSO 登录已成功并激活了密钥（ark-****d897）。\n2. **现方案：DeepSeek**——决定改用 DeepSeek 官方示例配置（https://api.deepseek.com/v1 + deepseek-chat，OpenAI 兼容），memory 组与 proxy 组共用同一个 key。改用 DeepSeek 后，火山方案不再需要。\n\n该配置需写入 deploy/global-images/.env 的两组变量：MEMORY_LLM_*（供 memory-core/memory-hub 记忆抽取、embedding、知识总结）和 PROXY_UPSTREAM_*（供 proxy 转发上游模型），两组可共用同一个 key。",
+      "correct": true,
+      "evidence_recall": 0.75,
+      "pools": {
+        "C": 89,
+        "M": 8,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q05",
+      "ask_at": 45,
+      "qtype": "method",
+      "n_mem": 5,
+      "pred": "根据记忆，Windows Git Bash 下跑 start-all.sh 踩过的坑及根因如下：\n\n1. **bash 环境选择坑**：默认 bash 会落到损坏的 WSL。根因是 Windows 下默认 bash 指向 WSL；须改用 Git Bash 执行。\n\n2. **docker 挂载路径被改写（挂载静默失效）**：Git Bash 的 MSYS 会自动改写 `docker -v` 的目标路径，导致挂载静默失效。修复：`deploy/global-images/_lib.sh` 在 mingw 下 export `MSYS_NO_PATHCONV=1`。\n\n3. **memory-core 启动探测竞态**：服务刚启动时宿主可达性未就绪、curl 探测不可靠。修复：start-memory-core.sh 改用 `$CURL` 探测，增加宿主可达性等待（15×3s）和 init-admin 重试（5×3s）。\n\n4. **容器内网 IP 被当外部网关**：注入工具说明里嵌入了容器内网 IP，宿主机上 memory-bridge 访问该地址导致 502。根因是脚本暴露的地址不对。修复：start-proxy.sh 显式暴露 externalGatewayUrl。\n\n5. **mingw64 curl 中文 argv 乱码**：Git Bash 的 mingw64 curl 传中文命令行参数会按 GBK 转码成 U+FFFD 落库（Panel 乱码的根因）。修复：中文 body 必须用 `--data-binary @file` 走文件，.trial-setup.sh 已按此重写并做幂等清理，INSTALL.md 加了 Git Bash 通用警告。",
+      "correct": false,
+      "evidence_recall": 0.0,
+      "pools": {
+        "C": 89,
+        "M": 8,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q06",
+      "ask_at": 45,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "根因有两个：\n\n1. **Docker volume 残留旧数据**：volume 里残留了 Aug 21 旧版栈的旧 admin，`init-admin` 被拒（409「requires empty database」），但脚本仍复用了 `.admin-key` 里的旧 key，导致验证 401。\n\n2. **资产写入容器 overlay 层**：挂载配置损坏时期创建的资产写进了容器 overlay 层，容器重建后即丢失。\n\n已用官方 `stop-all.sh --purge` 清空旧 volume 与凭据后全新初始化解决（新 admin key verify 200），业务 user/team/agent 已重建，新凭据落盘于 `deploy/global-images/` 下的 `.admin-key`、`.business-key`、`.trial-ids`。",
+      "correct": true,
+      "evidence_recall": 1.0,
+      "pools": {
+        "C": 89,
+        "M": 8,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q07",
+      "ask_at": 45,
+      "qtype": "method",
+      "n_mem": 5,
+      "pred": "**根因**：Git for Windows 自带的 mingw curl 在 argv 中传中文时，会按 ANSI codepage（GBK）转码，导致中文变成乱码（U+FFFD），乱码数据落库后 Panel 上 agent 中文描述自然显示为乱码。\n\n**修复方式**：不用 argv 直接传中文，改用 `--data-binary @file` 文件方式传中文请求体。TencentDB-Agent-Memory 接入验证用的 trial-setup.sh 已重写为所有中文 body 走文件方式，并已验证中文完好落库。",
+      "correct": true,
+      "evidence_recall": 1.0,
+      "pools": {
+        "C": 89,
+        "M": 8,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q08",
+      "ask_at": 45,
+      "qtype": "method",
+      "n_mem": 5,
+      "pred": "根据记忆，hermes 的 ProviderProfile 插件正确写法要点如下：\n\n**1. 类定义（dataclass）**\n- ProviderProfile 是 dataclass，必须加 `@dataclass` 装饰器；\n- `name` 字段要有默认值。\n\n**2. 放置路径**\n- 用户插件放在 `$HERMES_HOME/plugins/model-providers/<name>/` 目录，`providers/__init__.py:100` 会自动加载；\n- Windows 下注意 `HERMES_HOME` 是 `%LOCALAPPDATA%\\hermes` 而非 `~/.hermes`。\n\n**3. 会话头注入（正解做法）**\n- 由于运行时会把 config providers 段的自定义 provider 重写为 `agent.provider=\"custom\"`，按自定义名字注册的 profile 查不到，所以应让插件注入会话 ID：实现 `ProviderProfile.build_api_kwargs_extras(session_id=...)`，返回 `extra_headers` 即可动态注入会话头（有 OpenRouter `x-grok-conv-id` 的同款先例）。\n\n**4. 与配置的对应关系**\n- 插件 profile 只提供行为钩子；`model.provider` 引用的 provider 名必须在顶层 `providers:` 段有同名定义（承载 base_url/api_key），两处名字必须对应，否则会报 `Unknown provider 'xxx'`。\n\n更完整的实测差异已同步在 `agents/hermes/README.md` 与 `INSTALL.md` 中。",
+      "correct": true,
+      "evidence_recall": 0.0,
+      "pools": {
+        "C": 89,
+        "M": 8,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q09",
+      "ask_at": 45,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "没有。根据记忆，hermes 接入的全部改动都位于 TencentDB-Agent-Memory 仓库（用户 fork 1173591564/TencentDB-Agent-Memory）内，包括 MemoryProxy 的 hermes session 代码、agents/hermes 下的 provider 插件、部署脚本、README/INSTALL 文档及测试；接入是通过插件的 custom profile 覆盖注册和 header 注入机制实现的，记忆中没有任何对 hermes-agent 仓库本体代码的修改记录。",
+      "correct": true,
+      "evidence_recall": 0.0,
+      "pools": {
+        "C": 89,
+        "M": 8,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q10",
+      "ask_at": 50,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "**根因**：hermes 请求头缺失（插件失效）时 proxy 触发了静默 skip（静默 bypass），表单根本没发出去，所以 TUI 里看不到。\n\n**修法**：用 custom 覆盖 + base_url 门控修复，堵住这种无 header 时的静默 skip。\n\n排查时可排除另两个静默 bypass 场景：headless 误判不会发生（TUI 请求自带 clarify 工具，日志 hermesHeadless=false）；表单答案被误判为跳过由解包器处理 choices_offered 回显解决。\n\n另外调试时注意：探针可能加载到 LOCALAPPDATA 里的旧版插件，改完插件必须先同步新版再重跑验证，否则会误判修没修好。",
+      "correct": true,
+      "evidence_recall": 0.3333333333333333,
+      "pools": {
+        "C": 98,
+        "M": 8,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q11",
+      "ask_at": 50,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "因为 agent 只有 1 个时，agent_select 会被跳过：asset_confirm 后 team 唯一时自动预选，直接弹出 task_select，所以整个流程只有 asset_confirm 和 task_select 两个窗口；只有当 agent 有多个时才会弹出 agent_select。若想体验完整三元组（含 agent_select 弹窗和 CC 式分页），可在 Panel 上给 trial-team 添加第二个 agent。",
+      "correct": true,
+      "evidence_recall": 0.0,
+      "pools": {
+        "C": 98,
+        "M": 8,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q12",
+      "ask_at": 50,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "两者指向同一个会话。具体关系如下：\n\n- **同一会话的两种表示**：session_id 是 hermes TUI 显示的 Session 标识（如 `20260830_150940_ce0835`），x-conversation-id 是对应的 HTTP header，二者指向同一会话。\n- **映射机制**：插件钩子对 session_id 加 `\"ses_\"` 前缀后写入 x-conversation-id。\n- **proxy 侧消费方式**：proxy 直接用 x-conversation-id header 的原值作为会话状态键 sessionKey。\n- **切换会话时**：`/new` 指令会生成全新 session_id，并触发插件注入新的 x-conversation-id，proxy 据此识别为新会话。",
+      "correct": true,
+      "evidence_recall": 1.0,
+      "pools": {
+        "C": 98,
+        "M": 8,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q13",
+      "ask_at": 50,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "切换新会话用 `/new` 指令（可带标题，如 `/new My Session`）。切换后会生成全新的 session_id，并触发插件注入新的 x-conversation-id，proxy 据此识别为新会话。",
+      "correct": true,
+      "evidence_recall": 0.5,
+      "pools": {
+        "C": 98,
+        "M": 8,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q14",
+      "ask_at": 50,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "会变化。Hermes 的 auto-compression（compact）会触发 session_id rotation：conversation_compression.py:4353 在两轮之间把 agent.session_id 换新（请求不会半路切换），因此 x-conversation-id 会因 compact 而变化。\n\n变化后的后果：compact 后的新 ID 会让 proxy 视为 uninitialized，hermes clarify 表单会正常重新弹出（这是 uninitialized 状态机的标准入口，只要 header 在就绝不会沉默透传），用户需要重新选一次三元组。\n\n另外注意：目前 proxy 把 x-conversation-id 判定与表单弹出耦合在一起（conversationId=null 就不弹 form），用户的架构约束是这两件事应解耦——这是 TencentDB-Agent-Memory 中的待办项。",
+      "correct": true,
+      "evidence_recall": 1.0,
+      "pools": {
+        "C": 98,
+        "M": 8,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q15",
+      "ask_at": 50,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "根据记忆，.gitignore 新增的本地临时规则涵盖以下内容：\n\n1. **try-reports/** —— 探测报告目录（按用户要求纳入忽略）\n2. **试用脚本**：.trial-setup.sh、.trial-hermes-flow.py、.trial-verify.sh、.trial-debug.sh\n3. **敏感文件**：.business-key、.trial-ids\n\n这些都被忽略后 git status 已不再显示。",
+      "correct": true,
+      "evidence_recall": 1.0,
+      "pools": {
+        "C": 98,
+        "M": 8,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q16",
+      "ask_at": 55,
+      "qtype": "update",
+      "n_mem": 5,
+      "pred": "本地仓库与官方基线的关系经历了两个阶段：\n\n1. **初始完全一致**：TencentDB-Agent-Memory-official 本地仓库与官方上游完全一致，HEAD 同为 5299c00aaf65 开头的提交（官方默认分支 feat/server_team），工作区干净、tracked 文件无修改，仅多一个官方仓库外的未跟踪目录 try-reports/。\n\n2. **误删后就地重建、基线重拉**：主仓库曾被误删（连带 git worktree 对象库与两个 commit），但改动文件完好保留在磁盘工作区，于是在原地把基线从 upstream 重拉为 5299c00（全量 fetch 超时改用浅拉取，因 GitHub 拒收浅仓库 push 又补全了完整历史，该分支深度仅 25），再按原样重新提交。改动内容与丢失前逐文件核对一致、零损失，但提交 hash 变为 e62cb74/874fa0e，测试体系（vitest 42 + selftest 6）未受影响。\n\n即：从“与官方基线同一 HEAD、完全同步”变为“基线仍锚定官方 5299c00，但本地提交以新 hash 独立重建于自建仓库中”。",
+      "correct": false,
+      "evidence_recall": 0.3333333333333333,
+      "pools": {
+        "C": 108,
+        "M": 8,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q17",
+      "ask_at": 55,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "主仓库被误删后，恢复过程如下：\n\n1. **关键前提**：虽然 git 对象库和两个 commit 丢失，但所有改动文件仍完好在磁盘工作区，未受影响。\n2. **就地重建**：在原工作区重建了一个独立仓库。\n3. **重拉基线**：从 upstream 重新拉取基线 5299c00。全量 fetch 超时后改用浅拉取；由于 GitHub 拒收浅仓库的 push，又补全了历史（该分支完整深度仅 25）。\n4. **重新提交**：按原样重新提交，新 hash 为 e62cb74 / 874fa0e，逐文件核对与丢失前 status 一致，内容零损失。\n5. **验证**：测试体系（vitest 42 + selftest 6）未受影响，运行正常。",
+      "correct": true,
+      "evidence_recall": 1.0,
+      "pools": {
+        "C": 108,
+        "M": 8,
+        "A": 0
+      }
+    },
+    {
+      "qid": "q18",
+      "ask_at": 60,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "不是一回事，两者经常一起出现但概念独立：\n\n**没有 session id**：指不存在持续会话（如 oneshot 的 `hermes -z` 单条命令跑完即退、CI/脚本单次调用）。绑定资产无意义，**静默 bypass 是终态而非待修缺口**。网页式 session init 链接方案不适用（hermes -z 实测 conversationId=null，无会话则无绑定可注册），与“暂不考虑没有 session id 的场景”的指示一致。\n\n**headless**：指无交互 UI 的运行形态（如 `dsh --profile headless`，被脚本/CI 驱动），但**可以有 session id**（每次运行一个 uuid）。问题是“有会话但缺地方弹表单”，正是网页式 session init 链接方案的主战场。\n\n各自处理：\n- 有 session id 的 headless：走网页链接方案，注入条件为 `_dshHeadless && conversationId && sessionInit.enabled && 未注册`，hubOrigin 未配置时维持静默 bypass。\n- hermes headless 分支（即无 session id 的情况）：维持现状静默 bypass，不改动。",
+      "correct": true,
+      "evidence_recall": 0.5,
+      "pools": {
+        "C": 116,
+        "M": 8,
+        "A": 3
+      }
+    },
+    {
+      "qid": "q19",
+      "ask_at": 60,
+      "qtype": "decision",
+      "n_mem": 5,
+      "pred": "根据记忆，方案已定稿并从 P0 开工，最终设计要点如下：\n\n**适用范围与边界（三级边界）**\n- 只覆盖有 session id 的 headless 场景，主战场是 `dsh --profile headless`；hermes -z（oneshot）conversationId=null、无绑定可注册，被排除\n- 三级边界：有 tool 就地表单 / 无 tool 有 sid 走链接 / 无 sid 静默 bypass；hermes headless 分支维持现状静默 bypass\n- 注入条件收敛为：`_dshHeadless && conversationId && sessionInit.enabled && 未注册`\n\n**分阶段实施（P0–P4）**\n- P0：token 管理 + GET/POST `/v3/session/init-link/:token` 端点 + 12 个 vitest\n- P1：流式合成 chunk（dsh 场景）与 rebind 非流式合成响应分开实现\n- P2：Hub 页面省略 asset_confirm 确认步，team/agent/task 三组选择一页提交（用户主动打开链接即视为有意愿）\n- P3：首绑 e2e 用 dsh headless 验证；hermes TUI 仅回归确认不弹链接\n- P4：文档写明三级边界与 mixed content 注意事项\n\n**P0 技术方案**\n- proxy HTTP 框架用 Hono，CORS 用官方 hono/cors 按 route 应用（POST 带 JSON 会触发 OPTIONS preflight）；Hub 为 HTTPS 时 proxy 必须同协议避免 mixed content\n- 新建 `src/session/init-link.ts` 与 `src/routes/session-init-link.ts`，注册进 server.ts\n- InitLinkToken 含 token、sessionKey（agentSource:sessionId 复合键）、userKey、spaceId、purpose(init|rebind)、createdAt/expiresAt/consumed；存内存 Map，上限 100（满则先清过期再删最旧），token 一次性消费\n- POST 以 token 内编码的 sessionKey+userKey 为准，页面不可传以防篡改；归属校验后经 buildSessionInfo(data, userKey, spaceId) + store.set(keyId, state) 落库（SessionStore 为 class + 全局 getSessionStore()）；资产列表走 metadataClient.listTeams/listAgents/listTasks（需 userId）",
+      "correct": false,
+      "evidence_recall": 0.3333333333333333,
+      "pools": {
+        "C": 116,
+        "M": 8,
+        "A": 3
+      }
+    },
+    {
+      "qid": "q20",
+      "ask_at": 65,
+      "qtype": "method",
+      "n_mem": 5,
+      "pred": "**三个安全属性**（同一 token 的三个维度，非互斥选项）：\n\n1. **TTL 10 分钟**——唯一可配置项（`sessionInit.initLink.ttlMinutes`，默认 10 分钟）。理由：链接会明文出现在终端输出/日志/录屏里，短 TTL 把暴露窗口压到“看到→打开浏览器→提交”所需的最短时间。\n\n2. **一次性使用**（POST 成功即 consumed）——固定最严形态、不暴露配置。理由：防止链接被转发给他人，或重复提交覆盖已有绑定。\n\n3. **内存态**（只存 proxy 进程内存 Map，重启全失效，不持久化 SQLite）——同样固定不可配。理由：token 只是 10 分钟窗口内的临时凭证（类比 session init 版验证码），重启后 headless 用户重跑命令即可零代价拿到新链接；而正式绑定（sid→三元组）才是需要 L1 内存 + L2 SQLite 持久化的长期资产——两者的存储级别是刻意区分的。",
+      "correct": true,
+      "evidence_recall": 1.0,
+      "pools": {
+        "C": 120,
+        "M": 8,
+        "A": 5
+      }
+    },
+    {
+      "qid": "q21",
+      "ask_at": 70,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "P1 非流式注入的真 bug 在 proxy handler.ts:1956：原代码在注入点重新 parse 出一个 respJson 孤儿对象，导致 append 永远进不了实际返回体——表现为日志打印 “notice appended” 但响应 content 里没有 notice。\n\n修法是把 parse 结果提升作用域后原地追加并序列化，已用真实 upstream 验证 notice 正确进入了 content。",
+      "correct": true,
+      "evidence_recall": 1.0,
+      "pools": {
+        "C": 125,
+        "M": 8,
+        "A": 12
+      }
+    },
+    {
+      "qid": "q22",
+      "ask_at": 70,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "当 docker build 卡死（apt 腾讯镜像源问题）时，Hub 页面采用的秒级替代方案是：\n\n1. **本地构建**：在本地直接跑 vite build（约 7 秒完成）；\n2. **docker cp 推入**：把构建出的 dist 用 `docker cp` 推进现有 Hub 容器的静态目录 `/app/panel/web/dist`；\n3. **无需重建镜像**，直接生效。\n\n注意事项：该方式**只在容器重启前有效**——容器重启后推入的 dist 会丢失。因此 Hub 镜像的正式重建（docker build）留作遗留项，待网络通畅时或由 CI 完成。",
+      "correct": true,
+      "evidence_recall": 1.0,
+      "pools": {
+        "C": 125,
+        "M": 8,
+        "A": 12
+      }
+    },
+    {
+      "qid": "q23",
+      "ask_at": 75,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "绑定成功页（done页）后来补了一个“进入 Memory Hub”按钮，点击跳转到 Hub 首页（#/）。新 dist 已进容器，用新 mint 的 token 链接可验证效果；待用户确认后把该增量提交进 PR #1215（原计划 amend 进 commit 3）。\n\n至于“为什么”，记忆中没有明确记录添加原因，只知道其功能效果是让用户绑定成功后能直接进入 Memory Hub。",
+      "correct": false,
+      "evidence_recall": 0.6666666666666666,
+      "pools": {
+        "C": 129,
+        "M": 8,
+        "A": 16
+      }
+    },
+    {
+      "qid": "q24",
+      "ask_at": 75,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "opencode 的默认模型已由 kimi-k3 改为 **glm-5.3-flash**：\n\n- 在 opencode.jsonc 和简版 opencode.json 两处同步修改，避免合并时反向覆盖；\n- 子代理 general/explore/scout（原为 deepseek-v4-flash）与 build/plan 主代理均已切换为 glm-5.3-flash；\n- small_model 仍保留 deepseek-v4-flash；\n- 配置不热更，需重启 opencode 才生效。",
+      "correct": true,
+      "evidence_recall": 1.0,
+      "pools": {
+        "C": 129,
+        "M": 8,
+        "A": 16
+      }
+    },
+    {
+      "qid": "q25",
+      "ask_at": 80,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "不知道。记忆里没有记录 PR #1215 曾出现 conflict 及其解决过程；仅有相关信息是提 PR 前的潜在冲突风险：本地基线落后官方 main 108 个提交，需要先同步 fork 才能避免冲突（且需核查 FETCH_HEAD 指向以解决 diff 全删除异常），但这是待办事项，并非 #1215 已发生冲突的记录。",
+      "correct": false,
+      "evidence_recall": 0.0,
+      "pools": {
+        "C": 133,
+        "M": 8,
+        "A": 18
+      }
+    },
+    {
+      "qid": "q26",
+      "ask_at": 90,
+      "qtype": "decision",
+      "n_mem": 5,
+      "pred": "**拆分原则**：按主题边界把混合 commit 9f0d1c0 拆成两半——deploy 相关归 PR1，SSE 注入器 / session-init 相关归 PR2，互相不掺。\n\n**最终结构**：\n\n- **PR1（#1215）**：\n  - MSYS curl deploy 半边：`_lib.sh` / `verify.sh` / `start-memory-core.sh`（commit a6254a8）\n  - zh-CN normalize（commit e4193c2），同时删除误带入的 29 个 `sessionInit.*` 键（PR1 无引用，en-US 本就没有这些键）\n\n- **PR2（#1255，依赖 PR1 的 stacked PR）**：\n  - SSE 注入器半边：`init-link.ts` 及其 24 个测试\n  - SessionInitPage、路由、i18n 全部归入 PR2\n\n**注意点（跨 fork stacked PR 限制）**：PR2 的 base 分支必须在 base repo，head 分支需物理包含 PR1 的 commits。因此 merge 前三方 diff 会显示全部文件（#1255 显示 48 文件，含 #1215 内容）；PR1 merge 后自动收缩为增量（18 文件）。review 顺序：先看 #1215，再看 #1255 末尾新增的 commits。",
+      "correct": false,
+      "evidence_recall": 0.3333333333333333,
+      "pools": {
+        "C": 146,
+        "M": 8,
+        "A": 31
+      }
+    },
+    {
+      "qid": "q27",
+      "ask_at": 90,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "**关系**：#1256 与我们的 #1215/#1255 在 hermes 的 session-init 路线上是重叠/竞争关系——这条路线必须二选一。除非导师确认两者互补（openclaw 归 #1256、hermes UX 归我们），否则需要取舍。\n\n**实际冲突面**：\n- `start-memory-core.sh`（双方都改，另有 `_lib.sh`）\n- `handler.ts` / `config.ts` / `types.ts` 的 sessionInit 配置段\n- Possibly whitelist\n\n**可借鉴的**：记忆中没有记录 #1256 具体有哪些可借鉴的内容，不知道。\n\n**当前待办**：需问导师两个 PR 是互补还是取舍；是否在 #1256 下留言与作者对齐由用户决定，尚未定。",
+      "correct": false,
+      "evidence_recall": 0.5,
+      "pools": {
+        "C": 146,
+        "M": 8,
+        "A": 31
+      }
+    },
+    {
+      "qid": "q28",
+      "ask_at": 95,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "根据记忆，Devin review 确认的阻断项是 **4 个闭环阻断项**（而非 5 个），全部属实、暂不可合并：\n\n1. **App.tsx:58-62**：登录门在 RouterProvider 之上，未登录访问 /session-init 会被 LoginGate 拦截（此前浏览器实测通过只因浏览器已登录）；\n2. **handler.ts:887**：首绑 mint 条件只查 `_dshHeadless` 漏 `_hermesHeadless`，hermes headless 首次根本不弹链接，而 rebind 路径反而支持 hermes（此前“hermes api-server 会弹链接”的答复是错的）；\n3. **injectedSkipped 无条件包含 headless**：网页绑定成功后，headless 请求仍被禁用整个记忆注入管道、tdaiClient 置空无 L0、skill 提取跳过；\n4. **web 路由 completeRegistration 前未调 store.bind**：无 identity 时只写 L1 进程内内存，重启/跨副本绑定即丢，L2b binding repo 永不落盘。\n\n如果多出来的一项是指 Devin 报告中的其他问题（如 taskMissingPolicy 有文档无 parser、frontend 不提交 team_id），记忆中已澄清这些是**误报**，不构成阻断项；CORS 也已配置、非 blocker。记忆中没有“第 5 个”真实阻断项的记录。",
+      "correct": false,
+      "evidence_recall": 1.0,
+      "pools": {
+        "C": 141,
+        "M": 8,
+        "A": 44
+      }
+    },
+    {
+      "qid": "q29",
+      "ask_at": 105,
+      "qtype": "status",
+      "n_mem": 5,
+      "pred": "根据记忆，session-init 修复后明确的非阻塞遗留事项（不阻塞合并）有：\n\n1. **PROXY_FULL_STACK=0（无 storage）时的问题**：hasDurableInitializedBinding 会导致 web-init 永久 502，建议增加错误码以区分“未配置持久化”的情况。\n2. **replaceDataPayload 局限**：只重写首条 data: 行，若上游非标准拆行会损坏数据（极罕见，可接受）。\n3. **测试断言待更新**：provider selftest 与 15 项 e2e 脚本断言需按新注入形态更新后重跑。\n4. **tsc 残留错误**：剩余 20 个错误全部位于未触碰的遗留文件（codex/anthropic/workbuddy handler 等），与本次改动无关。",
+      "correct": false,
+      "evidence_recall": 0.0,
+      "pools": {
+        "C": 128,
+        "M": 8,
+        "A": 82
+      }
+    },
+    {
+      "qid": "q30",
+      "ask_at": 105,
+      "qtype": "status",
+      "n_mem": 5,
+      "pred": "根据记忆，两个 PR 的任务划分如下：\n\n**PR1（必须闭环）**\n- handler.ts 保留 capability 判定 + 旧 bypass 行为（direct passthrough 日志原样）；\n- session-reset.ts 保留内联 reset 实现（不支持文案维持 upstream 原状）；\n- 目标是 merge 后 hermes 交互式接入即完整可用产品状态，不留等 PR2 来修的尾巴。\n\n**PR2（必须纯增量）**\n- 把 handler.ts 的 bypass 分支升级为 web-link 分支；\n- session-reset.ts 因 import init-link.js 的依赖方向整体归入此 PR；\n- 只新增无交互的 web-link 出路，不配 hubOrigin 时零行为变化，且可独立 rebase 到他人持续变动的基座（如 #1256）上。\n\n简言之：PR1 交付交互式接入的完整可用版本，PR2 在其上纯增量地打通无交互 web-link 出路。",
+      "correct": false,
+      "evidence_recall": 0.0,
+      "pools": {
+        "C": 128,
+        "M": 8,
+        "A": 82
+      }
+    },
+    {
+      "qid": "q31",
+      "ask_at": 105,
+      "qtype": "abstention",
+      "n_mem": 4,
+      "pred": "不知道。记忆中没有关于用户编辑器主题和字体的偏好信息。",
+      "correct": true,
+      "evidence_recall": null,
+      "pools": {
+        "C": 128,
+        "M": 8,
+        "A": 82
+      }
+    },
+    {
+      "qid": "q32",
+      "ask_at": 105,
+      "qtype": "abstention",
+      "n_mem": 3,
+      "pred": "不知道。记忆中没有关于导师姓名和联系方式的信息。",
+      "correct": true,
+      "evidence_recall": null,
+      "pools": {
+        "C": 128,
+        "M": 8,
+        "A": 82
+      }
+    },
+    {
+      "qid": "q33",
+      "ask_at": 105,
+      "qtype": "abstention",
+      "n_mem": 5,
+      "pred": "不知道。记忆中没有关于项目 Redis 连接配置的条目。",
+      "correct": true,
+      "evidence_recall": null,
+      "pools": {
+        "C": 128,
+        "M": 8,
+        "A": 82
+      }
+    },
+    {
+      "qid": "q35",
+      "ask_at": 105,
+      "qtype": "fact",
+      "n_mem": 5,
+      "pred": "不知道。记忆中没有关于入库代码通用性审计结论的条目。",
+      "correct": false,
+      "evidence_recall": 0.0,
+      "pools": {
+        "C": 128,
+        "M": 8,
+        "A": 82
+      }
+    },
+    {
+      "qid": "q36",
+      "ask_at": 105,
+      "qtype": "method",
+      "n_mem": 5,
+      "pred": "## 坑\n\n1. **内联 bash -c 会被 PS 解析搅局**：引号、`||`、`$(...)` 等符号在 PowerShell 5.1 里会被错误解析。\n2. **多行 commit message 被 here-string 搅乱**：用 here-string 传多行提交信息不可靠。\n3. **PowerShell 内联 python 同样会被解析搅乱**，不能直接内联执行。\n4. **中文内容有编码/转义风险**，不能直接内联传递。\n\n## 正确做法（SOP）\n\n1. **一律走文件**：把 bash 逻辑写成脚本文件、把 commit message / PR 描述写成 message 文件，再用 `& 'C:\\Program Files\\Git\\bin\\bash.exe'` 执行脚本。\n2. **git 提交**：用 `git commit -F <文件>` 传多行 commit message，避免 here-string。\n3. **gh 的 PR 描述/评论**：一律用 `--body-file` 传文件，不要内联；python subprocess 模板可复用 `%TEMP%\\opencode\\pr-comment*.py`。\n4. **中文内容**：只通过 Edit/Write 工具写入文件后再使用，不内联。\n5. **push 前检查**：确认 git 身份配置 + 跑 tsc 对照基线（54 个既有错误，零新增才可推）。\n6. **操作习惯**：git/PR 操作尽量一步到位、别反复折腾；PR 描述写得清楚完整（双语，含背景/改动清单/边界/测试/依赖说明/commit 对照表）。",
+      "correct": true,
+      "evidence_recall": 0.6666666666666666,
+      "pools": {
+        "C": 128,
+        "M": 8,
+        "A": 82
+      }
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "dataset_sha256": "f672078c165b59bbf9c7955378ec13da45e5f93f402d0408842e98d230d0cc19",
+  "model": "embedding-3",
+  "dimensions": 2048,
+  "batch_size": 64,
+  "max_chars": 2000,
+  "prompt_tokens_requested": 0,
+  "windows": 3,
+  "recall_at_1": 1.0,
+  "recall_at_5": 1.0,
+  "recall_at_10": 1.0,
+  "mrr": 1.0,
+  "positive_beats_hard_negative": 1.0,
+  "positive_similarity": {
+    "p10": 0.4517674446105957,
+    "p50": 0.5089834332466125,
+    "p90": 0.6505751609802246
+  },
+  "hard_negative_similarity": {
+    "p10": 0.4231726825237274,
+    "p50": 0.4236721694469452,
+    "p90": 0.4462810158729553
+  },
+  "positive_margin": {
+    "p10": 0.02294256165623665,
+    "p50": 0.0570501983165741,
+    "p90": 0.22125078737735748
+  }
+}

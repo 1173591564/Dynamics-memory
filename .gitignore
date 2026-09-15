@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+data/l0-*.jsonl
+data/bench/*.json
+experiments/out/cache/
+experiments/out/candgen/
+experiments/out/runs/*-memories.jsonl
+experiments/out/qa/tensions_review.jsonl
+experiments/out/qa/tension_labels.jsonl
+experiments/out/tmp/
+__pycache__/
+*.pyc

@@ -1,0 +1,1831 @@
+{
+  "dataset": "locomo",
+  "n_instances": 1,
+  "size": 15,
+  "stride": 15,
+  "cfg": {
+    "theta": 0.35,
+    "tau_dup": 0.85,
+    "tau_sim": 0.78,
+    "cap_m": 8,
+    "k": 5
+  },
+  "acc_mean": 0.1709,
+  "results": [
+    {
+      "instance": "conv-26",
+      "n_units": 15,
+      "n_windows": 1,
+      "n_candidates": 3,
+      "pool_final": {
+        "C": 3,
+        "M": 0,
+        "A": 0
+      },
+      "tensions_pending": 0,
+      "acc": 0.1709,
+      "acc_by_type": {
+        "2": 0.0,
+        "3": 0.2308,
+        "1": 0.0312,
+        "4": 0.0286,
+        "5": 0.5957
+      },
+      "evidence_recall_mean": 0.0191,
+      "elapsed_s": 726.1,
+      "queries": [
+        {
+          "qid": "conv-26-q0",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "According to the memories, Caroline attended the LGBTQ support group **recently** (近期), though no specific date is mentioned.",
+          "correct": false,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q1",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "Last year (去年).",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q2",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "Based on the memory, Caroline would be likely to pursue fields related to **psychological counseling or mental health**, as she plans to continue her education with the goal of working in these areas to help people with similar experiences to her own.",
+          "correct": true,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q3",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q4",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "Based on the memories, Caroline appears to be a member of the LGBTQ community — likely transgender, as she was deeply inspired by transgender people's stories at her LGBTQ support group and gained the courage to embrace herself there. However, her exact identity is not explicitly stated in the memories.",
+          "correct": false,
+          "evidence_recall": 1.0
+        },
+        {
+          "qid": "conv-26-q5",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q6",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q7",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The provided memories only mention Caroline's education and career plans, as well as her participation in an LGBTQ support group, but do not contain any information about her relationship status.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q8",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention that Caroline joined an LGBTQ support group and plans to pursue a career in counseling or mental health, but there is no information about her giving a speech at a school.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q9",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q10",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The provided memory only mentions that Caroline recently joined an LGBTQ support group, but contains no information about how long she has had her current group of friends.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q11",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q12",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q13",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "Based on the memories, Caroline hasn't made a final decision yet, but she is leaning toward a career in psychological counseling or mental health-related work. She plans to continue her education and explore career directions, with the hope of helping people who have had similar experiences to her own.",
+          "correct": true,
+          "evidence_recall": 0.5
+        },
+        {
+          "qid": "conv-26-q14",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories only indicate that Caroline currently plans to pursue counseling or mental health-related work and that she found support and inspiration through a recent LGBTQ support group. They don't contain information about whether or what kind of support she received growing up, or how that would have affected her career choice.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q15",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "Melanie enjoys **painting** — it is her hobby. Last year, she painted a lake sunrise, which held special meaning for her, and she showed the painting to Caroline.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q16",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q17",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q18",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q19",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that painting is Melanie's own hobby (she painted a lake sunrise last year and showed it to Caroline), but there is no information about her kids.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q20",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q21",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q22",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q23",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q24",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "Melanie 通过绘画来放松（destress）——绘画是她的爱好。例如，她去年画了一幅湖上日出（lake sunrise）的画，这幅画对她有特殊的意义。",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q25",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention that Caroline recently joined an LGBTQ support group (not a conference), but no specific date or time is provided.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q26",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q27",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories only indicate that Caroline leans toward psychological counseling or mental health-related work as her career direction; writing is not mentioned as a career option for her.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q28",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q29",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q30",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention Caroline attending an LGBTQ support group; there is no information about Melanie.",
+          "correct": false,
+          "evidence_recall": null
+        },
+        {
+          "qid": "conv-26-q31",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie painted a lake sunrise last year and showed it to Caroline — there is no information about her going camping in June.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q32",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "According to my memories, Caroline recently attended an **LGBTQ support group**. At this group, she was deeply inspired by the stories of transgender individuals, and the group made her feel accepted and gave her the courage to embrace herself.\n\nThat is the only LGBTQ+ related event mentioned in my memories.",
+          "correct": false,
+          "evidence_recall": 0.25
+        },
+        {
+          "qid": "conv-26-q33",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Caroline recently joined an LGBTQ support group, but there is no information about her attending a pride parade during the summer.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q34",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q35",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q36",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention Caroline recently joining an LGBTQ support group, but there is no information about a mentorship program.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q37",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "According to the memory, Melanie painted a lake sunrise (湖上日出) painting, which she showed to Caroline. The painting held special meaning for her, as painting is her hobby.",
+          "correct": false,
+          "evidence_recall": null
+        },
+        {
+          "qid": "conv-26-q38",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie painted a lake sunrise and showed it to Caroline last year, and that painting is her hobby—there is no information about activities she has done with her family.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q39",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "Based on the memories, Caroline is participating in the LGBTQ community in the following ways:\n\n1. **Attending an LGBTQ support group** – She recently joined a support group where she has been inspired by the stories of transgender members. The group has made her feel accepted and given her the courage to embrace herself.\n\n2. **Planning to give back to the community** – She intends to pursue a career in counseling or mental health-related work, with the goal of helping others with similar experiences.\n\nCurrently, her active participation is through the support group; the counseling career path is a future plan.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q40",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q41",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only indicate that Caroline **recently** (近期) joined an LGBTQ **support group** (not explicitly an activist group), and no specific date or time is mentioned.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q42",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "根据记忆，Melanie 更可能对国家公园感兴趣。她去年画了一幅湖上日出的画，而且这幅画对她有特殊意义，绘画也是她的爱好——这表明她热爱自然风景，而国家公园的自然景色更符合她的兴趣，也更可能成为她绘画的灵感来源。",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q43",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories indicate that it was Melanie who made art (a lake sunrise painting), not Caroline. There is no information about Caroline making art.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q44",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q45",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories mention Caroline attending an LGBTQ support group, but there is no information about her attending a pride parade in August.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q46",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention Caroline, who recently joined an LGBTQ support group where transgender people's stories inspired her and gave her courage to embrace herself. There is no information about Melanie in the provided memories.",
+          "correct": false,
+          "evidence_recall": null
+        },
+        {
+          "qid": "conv-26-q47",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories do not specify who supports Caroline during negative experiences. They only mention that she recently joined an LGBTQ support group where she felt accepted and gained courage to embrace herself.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q48",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q49",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q50",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories do not contain any information about Caroline's political leaning. They only mention her educational/career plans (psychological counseling or mental health work) and her participation in an LGBTQ support group, but not her political views.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q51",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "Melanie painted a lake sunrise (a painting of a sunrise over a lake), which she showed to Caroline last year.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q52",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q53",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q54",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q55",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memory only mentions that Melanie painted a lake sunrise, but it doesn't indicate what Caroline has painted, so I can't confirm they've both painted the same subject.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q56",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q57",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q58",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q59",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention Caroline's educational plans, career interests in psychological counseling, and her participation in an LGBTQ support group, but they contain no information about her religious beliefs or practices.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q60",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q61",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q62",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q63",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q64",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie enjoys painting (she painted a lake sunrise last year with special meaning to her), but there is no information about her musical preferences or whether she would enjoy classical music like Vivaldi's \"The Four Seasons.\"",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q65",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "Based on the memories, specific details about a transition journey are not described. However, the memories do mention some recent changes in Caroline's life:\n\n- **Joining an LGBTQ support group**: She recently became part of a support group where stories from transgender members deeply inspired her. The group helped her feel accepted and gave her the courage to embrace herself.\n- **Planning for her future**: She intends to continue her education and explore career paths, leaning toward counseling or mental health work so she can help others with similar experiences.\n\nFor details about specific changes during a transition journey itself, I don't know — the memories don't contain that information.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q66",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q67",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q68",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie painted a lake sunrise last year and that painting is her hobby, but they don't say how long she has been practicing art.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q69",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories describe Caroline's plans (continuing her education and pursuing counseling/mental health work) but don't include any statements from Melanie about Caroline's personality traits.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q70",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "根据记忆，没有记录显示Caroline参加过跨性别者专属的活动。她参加的是一个LGBTQ支持团体（非跨性别者专属），其中跨性别者的故事令她深受鼓舞。",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q71",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q72",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q73",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q74",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q75",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q76",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q77",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q78",
+          "qtype": "1",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q79",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q80",
+          "qtype": "2",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q81",
+          "qtype": "3",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories don't contain any information about Caroline's home country or plans to relocate. They only mention her plans to continue her studies, explore careers in psychological counseling or mental health, and her recent participation in an LGBTQ support group.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q82",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q83",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie painted a lake sunrise painting last year, showed it to Caroline, and that painting is her hobby — there is no information about a charity race.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q84",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories only mention that painting is Melanie's hobby and that her lake sunrise painting holds special meaning for her, but they don't describe how she prioritizes self-care.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q85",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "Based on the memory, Caroline's plans include continuing her studies and exploring career directions, with a leaning toward psychological counseling or mental health-related work, as she hopes to help people with similar experiences. However, the memory does not specifically state whether these are plans for the summer.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q86",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q87",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The provided memories don't mention anything about Caroline choosing an adoption agency. They only cover her plans to pursue psychological counseling or mental health work and her participation in an LGBTQ support group.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q88",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories only mention Caroline's participation in an LGBTQ support group and her plans to pursue counseling/mental health work, but there is no information about an adoption process.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q89",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories don't contain any information about Caroline's decision to adopt or Melanie's thoughts on it.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q90",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q91",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q92",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q93",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q94",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie painted a lake sunrise last year and showed it to Caroline—there's no information about a hand-painted bowl.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q95",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q96",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "Based on the memories, Caroline is interested in pursuing psychological counseling (心理咨询) or mental health-related work (心理健康相关工作). Her motivation comes from wanting to help people who have had similar experiences to her own.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q97",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "Based on the memories, Caroline recently attended an **LGBTQ support group**, where she was deeply inspired by transgender members' stories, felt accepted, and gained courage to embrace herself.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q98",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "根据记忆，Caroline参加的LGBTQ支持团体中讨论了跨性别者的故事，这些故事令她深受鼓舞。该团体让她感到被接纳，并获得了拥抱自我的勇气。",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q99",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "根据记忆，Caroline 想从事心理咨询的动机是**希望帮助有相似经历的人**——她自己曾经历过类似的困难，因此希望支持那些正在经历同样处境的人。\n\n此外，她近期参加的 LGBTQ 支持团体也可能与此相关：团体中跨性别者的故事令她深受鼓舞，让她感到被接纳并获得拥抱自我的勇气。这种被支持的积极体验很可能强化了她帮助他人的愿望。",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q100",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "Based on the memories, Caroline hopes to help people with similar experiences through psychological counseling or mental health work. Drawing from her own experience in the LGBTQ support group—where she felt accepted and gained courage to embrace herself—she appears to want to create a supportive, accepting space for people with similar experiences. (Note: the memories don't explicitly describe a \"place\" she wants to create, so this is inferred from her career goals and the impact the support group had on her.)",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q101",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie painted a lake sunrise painting last year, which she showed to Caroline. There is no information about a black and white bowl.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q102",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories don't contain any information about the books in Caroline's library.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q103",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q104",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q105",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention that Caroline was inspired by transgender individuals' stories in an LGBTQ support group, but there is no information about the book \"Becoming Nicole\".",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q106",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q107",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q108",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q109",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q110",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q111",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q112",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "根据记忆，Melanie画了一幅湖上日出（lake sunrise）的画。不过记忆中并未提到她的孩子们参与其中，也未确认具体时间是2023年7月。",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q113",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q114",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q115",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q116",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie painted a lake sunrise last year and showed it to Caroline — there is no information about Caroline painting something for an art show.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q117",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q118",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q119",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie painted a lake sunrise last year and showed it to Caroline, and that painting is her hobby. There is no information about her watching a meteor shower or her feelings about it.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q120",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q121",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q122",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie painted a lake sunrise last year (which has special meaning to her and painting is her hobby), but they contain no information about a pottery project.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q123",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q124",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q125",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q126",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q127",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q128",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q129",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memory only mentions that Caroline was inspired by trans people's stories in her LGBTQ support group, which gave her courage to embrace herself—no specific song is mentioned.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q130",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q131",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q132",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie painted a lake sunrise last year and that painting is her hobby, but they don't specify how long she has been creating art.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q133",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie painted a lake sunrise last year and showed it to Caroline; there is no information about a café or a precautionary sign.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q134",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q135",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q136",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories mention that painting is Melanie's hobby (she painted a lake sunrise last year), but there is no information about pottery or what she does during a pottery break.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q137",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "Melanie showed Caroline a painting of a sunrise over a lake (a lake sunrise). This painting held special meaning for her, as painting is her hobby.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q138",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie showed Caroline a painting of a lake sunrise (湖上日出) last year — they don't contain any information about a painting Caroline shared with Melanie on October 13, 2023.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q139",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Caroline attended an LGBTQ support group with inspiring stories from transgender individuals, but there is no information about a poetry reading.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q140",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q141",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 3,
+          "pred": "I don't know. According to the memories, the lake sunrise drawing was painted by Melanie (not Caroline), and it holds special meaning for Melanie. There is no information about what the drawing symbolizes for Caroline specifically.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q142",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention Melanie's lake sunrise painting and Caroline's experience with an LGBTQ support group, but they don't contain any information about how Melanie and Caroline describe their journey through life together.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q143",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q144",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q145",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q146",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q147",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q148",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q149",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q150",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention that Melanie painted a lake sunrise and showed it to Caroline, but there is no information about her family or their support.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q151",
+          "qtype": "4",
+          "abstention": false,
+          "n_mem": 1,
+          "pred": "I don't know. The memories mention that Melanie painted a lake sunrise last year and showed it to Caroline, and that painting is her hobby, but there is no information about a road trip or what she did after one to relax.",
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q152",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q153",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie painted a lake sunrise last year and showed it to Caroline, and that painting is her hobby. There is no information about adoption or her summer plans.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q154",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q155",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q156",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q157",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q158",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q159",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q160",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q161",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q162",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q163",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know. The memories indicate that it is **Caroline** (not Melanie) who is interested in psychological counseling or mental health-related work. The only information about Melanie is that she painted a lake sunrise painting and that painting is her hobby.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q164",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie painted a lake sunrise last year and showed it to Caroline — there is no information about her attending a counseling workshop.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q165",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know. The memories do not mention Melanie pursuing counseling — Melanie's interest is painting (she painted a lake sunrise last year). It was **Caroline** who plans to pursue psychological counseling or mental health-related work, motivated by wanting to help people with similar experiences to her own.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q166",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q167",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q168",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q169",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q170",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q171",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q172",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "Based on the memories, Melanie painted a lake sunrise last year, which has special meaning to her. However, the memories don't specify what exactly inspired the painting or mention an art show, so I don't know the specific inspiration behind it.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q173",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know. The memories do not mention Caroline creating a sculpture for an art show or what inspired it.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q174",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q175",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know. The memories only mention Melanie painting a lake sunrise last year, not any camping trip that Caroline and her family took.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q176",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q177",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q178",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q179",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q180",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know. The memories mention that Melanie painted a lake sunrise last year, that painting is her hobby, and that the painting holds special meaning for her—but they do not mention her dad or any activity she did with him.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q181",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know. The memories only mention that Melanie painted a lake sunrise last year and showed it to Caroline — there is no information about her making anything for a local church.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q182",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q183",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q184",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q185",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q186",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know. The provided memories only mention Caroline's participation in an LGBTQ support group and her experience there, with no information about her music preferences.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q187",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q188",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know. The provided memories don't mention any setback Caroline faced. They only describe positive experiences: her participation in an LGBTQ support group that made her feel accepted and inspired, and her plans to continue her education and pursue a career in psychological counseling or mental health work.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q189",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q190",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q191",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q192",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q193",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q194",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q195",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 2,
+          "pred": "I don't know. The memories mention Caroline's plans to continue her education and her experience with an LGBTQ support group, but they do not contain any information about an accident or how she felt afterward.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q196",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 0,
+          "pred": null,
+          "correct": false,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q197",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know.",
+          "correct": true,
+          "evidence_recall": 0.0
+        },
+        {
+          "qid": "conv-26-q198",
+          "qtype": "5",
+          "abstention": true,
+          "n_mem": 1,
+          "pred": "I don't know",
+          "correct": true,
+          "evidence_recall": 0.0
+        }
+      ]
+    }
+  ]
+}
