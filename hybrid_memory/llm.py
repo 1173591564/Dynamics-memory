@@ -30,7 +30,7 @@ def _cache_lookup(cache_dir: Path, ck: str) -> str | None:
 
 def chat(api_key: str | None = None, model: str = "glm-5.3-flash",
          system: str = "", user: str = "", timeout: float = 60.0,
-         max_retries: int = 2, temperature: float = 0.0,
+         max_retries: int = 4, temperature: float = 0.0,
          cache_dir: Path | None = None) -> str:
     """单轮对话 → content 文本。失败抛 ZhipuChatError。"""
     key = api_key or os.environ.get("ZAI_API_KEY", "")
@@ -62,7 +62,7 @@ def chat(api_key: str | None = None, model: str = "glm-5.3-flash",
                 time.sleep(2 ** attempt)
                 continue
             raise ZhipuChatError(f"HTTP {exc.code}") from exc
-        except (URLError, TimeoutError) as exc:
+        except (URLError, TimeoutError, ConnectionError) as exc:
             if attempt < max_retries:
                 time.sleep(2 ** attempt)
                 continue

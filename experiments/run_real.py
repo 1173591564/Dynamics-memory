@@ -24,7 +24,7 @@ import numpy as np
 
 from experiments import paths as P
 from experiments.real_embedding import load_dotenv_key
-from hybrid_memory.candgen import redact_secrets
+from hybrid_memory.candgen import priority_to_salience, redact_secrets
 from hybrid_memory.config import Cfg
 from hybrid_memory.core.engine import MemoryEngine
 from hybrid_memory.core.types import Event, Pool, Query
@@ -68,13 +68,20 @@ def main() -> None:
         rec = json.loads(line)
         if "error" in rec:
             continue
-        texts = []
+        cands = []
         for t_ in rec["candidates"]:
             raw = t_["text"] if isinstance(t_, dict) else t_
             rt = redact_secrets(raw)
             n_redacted += int(rt != raw)
-            texts.append(rt)
-        candgen[rec["window_id"]] = texts
+            sal = t_.get("salience") if isinstance(t_, dict) else None
+            if isinstance(sal, bool) or not isinstance(sal, (int, float)):
+                sal = priority_to_salience(
+                    t_.get("priority") if isinstance(t_, dict) else None)
+            else:
+                sal = max(0.0, min(1.0, float(sal)))
+            cands.append({"text": rt, "salience": sal,
+                          "scene": str(rec.get("scene_name", ""))})
+        candgen[rec["window_id"]] = cands
 
     api_key = None if args.offline else load_dotenv_key(args.dotenv)
     emb = ZhipuEmbedder(api_key=api_key, cache=SqliteEmbeddingCache(
@@ -95,8 +102,10 @@ def main() -> None:
     t0 = time.time()
     for t in range(len(units)):
         for w in by_avail.get(t, []):
-            events = [Event(semantics.fingerprint(txt), normalize(txt), txt)
-                      for txt in candgen[w.id]]
+            events = [Event(semantics.fingerprint(c["text"]),
+                            normalize(c["text"]), c["text"],
+                            salience=c["salience"], scene=c["scene"])
+                      for c in candgen[w.id]]
             eng.observe(events, t)
             prompt_tokens += emb.last_prompt_tokens
         qv = emb.embed([units[t].user_text])[0]
@@ -134,6 +143,12 @@ def main() -> None:
             f.write(json.dumps({
                 "id": m.id, "pool": m.pool.value, "v": round(m.v, 3),
                 "evid": m.evid, "hits": m.hits, "shadow": m.shadow_hits,
+                "salience": round(m.salience, 3),
+                "novelty": round(m.novelty, 3),
+                "kind": m.kind, "derived_from": list(m.derived_from),
+                "scene": m.scene,
+                "conf_pos": round(m.conf_pos, 3),
+                "conf_neg": round(m.conf_neg, 3),
                 "birth": m.birth, "last_hit": m.last_hit, "text": m.text,
             }, ensure_ascii=False) + "\n")
 
@@ -164,7 +179,7 @@ def main() -> None:
         "events": {k: getattr(eng, k) for k in
                    ("n_promote", "n_demote", "n_evict", "n_archive",
                     "n_revive", "n_merge", "n_collision", "n_tension",
-                    "n_resolve")},
+                    "n_resolve", "n_consolidate")},
         "labels_loaded": len(semantics.labels),
     }
     (P.RUNS / f"{args.out_prefix}-summary.json").write_text(

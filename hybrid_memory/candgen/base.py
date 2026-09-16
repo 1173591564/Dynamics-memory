@@ -13,6 +13,7 @@ class MemoryCandidate:
     type: str = ""                        # work_fact/task/method/artifact/…
     priority: int | None = None           # 仅元数据，不进 V
     source_unit_ids: tuple[int, ...] = ()
+    salience: float = 0.5                 # 缺失代价，不进 V/置信
 
 
 @dataclass(frozen=True)

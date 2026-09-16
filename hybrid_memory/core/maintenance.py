@@ -11,7 +11,18 @@ import math
 
 import numpy as np
 
+from ..core.confidence import discount_to
+from ..core.consolidation import maybe_consolidate
 from ..core.types import Memory, Pool
+
+
+def _retention_scale(m, cfg) -> float:
+    if not cfg.salience_on:
+        return 1.0
+    floor = max(0.0, min(0.999999, cfg.salience_retention_floor))
+    salience = max(0.0, min(1.0, m.salience))
+    excess = max(0.0, (salience - floor) / (1.0 - floor))
+    return 1.0 + cfg.salience_retention_weight * excess
 
 
 def run_maintenance(eng, t: int) -> None:
@@ -29,15 +40,17 @@ def run_maintenance(eng, t: int) -> None:
                 cfg.beta_div * (cfg.tau_div - float(row.max())))
 
     for m in eng.mems.values():
+        discount_to(m, t, cfg)
         gain = cfg.eta * m.d_hit
         if m.id in div:
             gain *= div[m.id]
         if cfg.shadow_credit:
             gain += cfg.eta_shadow * m.d_shadow
+        scale = _retention_scale(m, cfg)
         if cfg.decay_mode == "linear":
-            m.v = max(0.0, m.v + gain - cfg.lam)
+            m.v = max(0.0, m.v + gain - cfg.lam / scale)
         else:
-            m.v = m.v * math.exp(-cfg.lam) + gain
+            m.v = m.v * math.exp(-cfg.lam / scale) + gain
         m.d_hit = m.d_shadow = 0.0
 
     if cfg.two_pool:
@@ -59,11 +72,13 @@ def run_maintenance(eng, t: int) -> None:
 
     for m in eng.mems.values():
         idle_since = m.last_hit if m.last_hit is not None else m.birth
-        if m.pool is Pool.CANDIDATE and t - idle_since > cfg.idle_p:
+        horizon = cfg.idle_p * _retention_scale(m, cfg)
+        if m.pool is Pool.CANDIDATE and t - idle_since > horizon:
             m.pool = Pool.ARCHIVE
             eng.n_archive += 1
 
     _resolve_tensions(eng, t)
+    maybe_consolidate(eng, t)
 
 
 def _resolve_tensions(eng, t: int) -> None:
@@ -82,6 +97,8 @@ def _resolve_tensions(eng, t: int) -> None:
         if a.id == b.id:
             del eng.tensions[key]
             continue
+        discount_to(a, t, cfg)
+        discount_to(b, t, cfg)
         verdict = eng.semantics.judge(a.belief_id, a.value, b.belief_id, b.value)
         if verdict == "pending":    # 真实数据：无标注不消解，留在 backlog
             continue
@@ -94,6 +111,10 @@ def _resolve_tensions(eng, t: int) -> None:
             keep.evid += drop.evid
             keep.hits += drop.hits
             keep.src = keep.src | drop.src
+            keep.conf_pos += drop.conf_pos
+            keep.conf_neg += drop.conf_neg
+            keep.conf_updated_at = t
+            keep.salience = max(a.salience, b.salience)
             drop.superseded_by = keep.id
             drop.pool = Pool.ARCHIVE
             eng.n_merge += 1
@@ -101,6 +122,7 @@ def _resolve_tensions(eng, t: int) -> None:
             keep, drop = (a, b) if a.birth >= b.birth else (b, a)
             keep.evid += 1
             keep.src = keep.src | drop.src
+            keep.salience = max(a.salience, b.salience)
             drop.superseded_by = keep.id
             drop.pool = Pool.ARCHIVE
             eng.n_merge += 1
@@ -108,7 +130,7 @@ def _resolve_tensions(eng, t: int) -> None:
             pa = eng.semantics.scope(a.belief_id)
             pb = eng.semantics.scope(b.belief_id)
             if pa and pb and pa != pb:
-                # 找到作用域 → 条件化合并表述
+                # 找到作用域 → 条件化合并表述（异 scope 可条件同真，不加负证据）
                 text = (f"冲突版本（按作用域条件化）:\n"
                         f"- [{pa} | t={a.birth}] {a.text}\n"
                         f"- [{pb} | t={b.birth}] {b.text}")
@@ -116,6 +138,9 @@ def _resolve_tensions(eng, t: int) -> None:
             else:
                 # 找不到作用域 → 双方降权让衰减自然裁决，
                 # 同时收进聚合 memory 等人工终裁
+                if cfg.confidence_on:
+                    a.conf_neg += cfg.conf_negative_evidence
+                    b.conf_neg += cfg.conf_negative_evidence
                 a.v *= 0.5
                 b.v *= 0.5
                 text = (f"冲突版本（待裁决）:\n"
@@ -139,7 +164,13 @@ def _make_aggregate(eng, a, b, t: int, text: str, pending: bool) -> None:
                  hits=a.hits + b.hits, evid=a.evid + b.evid,
                  birth=t, last_seen=t,
                  agg_members=(a.id, b.id), pending_review=pending,
-                 src=a.src | b.src)
+                 src=a.src | b.src,
+                 conf_pos=min(a.conf_pos, b.conf_pos),
+                 conf_neg=max(a.conf_neg, b.conf_neg),
+                 conf_updated_at=t,
+                 salience=max(a.salience, b.salience),
+                 novelty=max(a.novelty, b.novelty),
+                 scene=a.scene if a.scene == b.scene else "")
     eng.mems[agg.id] = agg
     a.aggregated_into = agg.id
     b.aggregated_into = agg.id

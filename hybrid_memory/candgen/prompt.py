@@ -32,11 +32,12 @@ INSTRUCTION = """\
 每条记忆给出：
 - content：完整自包含陈述句；
 - type：work_fact（事实/决策/状态/约束）| work_task（待办/跟进）| work_method（SOP/禁忌/经验/判断标准）| work_artifact（文档/PR/报告/脚本）| preference（用户偏好/习惯）；
-- priority：80-100 核心，60-79 一般，<60 应直接丢弃；
+- salience：0.0–1.0，该记忆缺失时的预期下游损失/后悔度——不是紧急度，也不是真值置信度。硬性约束、已采纳决策、当前阻塞、截止时间、不可逆操作护栏为高；容易重建的实现细节为低；
+- priority：80-100 核心，60-79 一般，<60 应直接丢弃（兼容字段，可选）；
 - source_unit_ids：来源 unit 的 id 列表。
 
 ## 输出格式（严格 JSON，不要任何其他文字/代码块标记）
-{"scene_name": "...", "memories": [{"content": "...", "type": "...", "priority": 80, "source_unit_ids": [0]}]}
+{"scene_name": "...", "memories": [{"content": "...", "type": "...", "salience": 0.8, "source_unit_ids": [0]}]}
 
 没有值得记的：{"scene_name": "...", "memories": []}"""
 
@@ -62,17 +63,29 @@ def serialize_window(window: InteractionWindow, prev_scene: str = "") -> str:
     return head + "\n\n".join(parts)
 
 
+def priority_to_salience(priority, default: float = 0.5) -> float:
+    if isinstance(priority, bool) or not isinstance(priority, (int, float)):
+        return default
+    return max(0.0, min(1.0, (float(priority) - 60.0) / 40.0))
+
+
 def _candidate_from(item: dict) -> MemoryCandidate | None:
     text = item.get("content", item.get("text"))
     if not isinstance(text, str) or not text.strip():
         return None
     src = item.get("source_unit_ids") or item.get("source_message_ids") or ()
+    salience = item.get("salience")
+    if isinstance(salience, bool) or not isinstance(salience, (int, float)):
+        salience = priority_to_salience(item.get("priority"))
+    else:
+        salience = max(0.0, min(1.0, float(salience)))
     return MemoryCandidate(
         text=redact_secrets(text.strip()),
         type=str(item.get("type", "")),
         priority=item.get("priority") if isinstance(item.get("priority"), int) else None,
         source_unit_ids=tuple(int(x) for x in src
                               if isinstance(x, (int, float))),
+        salience=salience,
     )
 
 

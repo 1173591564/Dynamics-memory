@@ -20,7 +20,8 @@ import numpy as np
 
 from experiments import paths as P
 from experiments.real_embedding import load_dotenv_key
-from hybrid_memory.candgen import OpencodeCliGenerator, redact_secrets
+from hybrid_memory.candgen import (OpencodeCliGenerator,
+                                   priority_to_salience, redact_secrets)
 from hybrid_memory.config import Cfg
 from hybrid_memory.core.engine import MemoryEngine
 from hybrid_memory.core.types import Event, Query
@@ -67,6 +68,8 @@ def _gen_or_load(inst: BenchInstance, size: int, stride: int,
                     rec = {"window_id": w.id, "scene_name": g.scene_name,
                            "candidates": [{"text": redact_secrets(c.text),
                                            "type": c.type,
+                                           "priority": c.priority,
+                                           "salience": c.salience,
                                            "source_unit_ids": list(c.source_unit_ids)}
                                           for c in g.candidates]}
                 except Exception as exc:  # noqa: BLE001
@@ -79,18 +82,20 @@ def _gen_or_load(inst: BenchInstance, size: int, stride: int,
     for w in windows:
         rec = done.get(w.id, {})
         if "error" not in rec:
-            cands[w.id] = rec["candidates"]
+            scene = str(rec.get("scene_name", ""))
+            cands[w.id] = [dict(c, scene=c.get("scene") or scene)
+                           for c in rec["candidates"]]
     return cands, windows
 
 
 def _judge_answer(question: str, gold: str, pred: str, key: str,
-                  model: str) -> bool:
+                  model: str, cache_dir=None) -> bool:
     if pred is None:
         return False
     try:
         out = chat(api_key=key, model=model, system=JUDGE_SYS,
                    user=f"Question: {question}\nGold answer: {gold}\n"
-                        f"Predicted: {pred}\nCorrect?")
+                        f"Predicted: {pred}\nCorrect?", cache_dir=cache_dir)
         return out.strip().upper().startswith("CORRECT")
     except Exception:  # noqa: BLE001
         return False
@@ -110,10 +115,17 @@ def run_instance(inst: BenchInstance, args, emb, key: str,
             continue
         by_avail.setdefault(w.end_unit_id + 1, []).append(rec_c)
 
+    def _cand_salience(c: dict) -> float:
+        sal = c.get("salience")
+        if isinstance(sal, bool) or not isinstance(sal, (int, float)):
+            return priority_to_salience(c.get("priority"))
+        return max(0.0, min(1.0, float(sal)))
+
     def _observe(rec_c, t):
         evs = [Event(eng.semantics.fingerprint(normalize(c["text"])),
                      normalize(c["text"]), c["text"],
-                     tuple(c.get("source_unit_ids") or ()))
+                     tuple(c.get("source_unit_ids") or ()),
+                     salience=_cand_salience(c), scene=c.get("scene", ""))
                for c in rec_c]
         eng.observe(evs, t)
 

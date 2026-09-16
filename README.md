@@ -61,9 +61,26 @@ t 时刻的提问只能用 t 之前流入的记忆回答——无前窥。在真
 | 原始日志出题 QA（36 题） | acc **0.667**，拒答 3/3 全对 |
 | LoCoMo（跨分布对照） | 0.29——暴露了蒸馏丢细节与"单次问答"协议错位 |
 
-已知边界（诚实口径）：n 小的方向性证据而非决定性证据；真实数据的
-semantic judge 目前只有 verbatim 规则，update/evid 回路待 LLM 裁判接入；
-archive 池尚无界。
+已知边界（诚实口径）：n 小的方向性证据而非决定性证据；semantic judge
+默认 verbatim 规则，`--llm-judge` 启用 LLM 裁判链（tension 裁决 +
+recognizer + consolidation 回调，`--feedback` 依赖它）；archive 池尚无界。
+
+## 机制证据分级
+
+`Cfg` 默认全部关闭可选机制（`confidence_on / salience_on / novelty_on /
+consolidation_on` 均 False、`lex_weight=0`），`--feature-set` 逐层开启。
+机制与记忆同一套规则：拿不出评测证据的不进默认路径。
+
+| 机制 | 13 点消融证据 | 处置 |
+|---|---|---|
+| salience 半衰期 | ≥4 率 +15pp，归档 108→69（高价值延寿生效） | 唯一独立正贡献 |
+| confidence 置信门 | 单开 −0.077，配合 salience 后回正；33 条被压服务线 | 保留，默认关 |
+| novelty 初始加成 | 与不开逐题完全相同 | 默认关 |
+| consolidation/reflection | 8 次触发、7 条上桌，分数无效应 | 默认关 |
+| lex 词法召回 | 离线重排：修半题砸一题 | 默认关 |
+
+当前真实瓶颈在抽取/召回而非动力学：参照要点进 top-5 上下文的仅 ~18%
+（池级覆盖亦不足），reader 忠实甚至超产。
 
 ## 复现
 

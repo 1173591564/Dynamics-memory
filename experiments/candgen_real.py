@@ -73,6 +73,7 @@ def main() -> None:
                     scene_name=gen_out.scene_name,
                     candidates=[{"text": c.text, "type": c.type,
                                  "priority": c.priority,
+                                 "salience": c.salience,
                                  "source_unit_ids": list(c.source_unit_ids)}
                                 for c in gen_out.candidates],
                     n_candidates=len(gen_out.candidates),

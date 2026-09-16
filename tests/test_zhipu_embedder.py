@@ -5,6 +5,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+from http.client import RemoteDisconnected
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -240,6 +241,44 @@ def test_real_chat_loader_rejects_invalid_row():
                         encoding="utf-8")
         expect(ValueError, lambda: load_interaction_units(path),
                "invalid row 1")
+
+
+def test_chat_retries_remote_disconnected():
+    from hybrid_memory.llm import ZhipuChatError, chat
+
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {"choices": [{"message": {"content": "ok"}}]}).encode()
+
+    calls = []
+
+    def flaky(request, timeout):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RemoteDisconnected("dropped")
+        return Resp()
+
+    with patch("hybrid_memory.llm.urlopen", side_effect=flaky), \
+            patch("hybrid_memory.llm.time.sleep"):
+        out = chat(api_key="test-key", system="s", user="u", max_retries=2)
+    assert calls == [1, 1]
+    assert out == "ok"
+
+    calls.clear()
+    with patch("hybrid_memory.llm.urlopen", side_effect=flaky), \
+            patch("hybrid_memory.llm.time.sleep"):
+        expect(ZhipuChatError,
+               lambda: chat(api_key="test-key", system="s", user="u",
+                            max_retries=0),
+               "transport: RemoteDisconnected")
+    assert calls == [1]
 
 
 if __name__ == "__main__":

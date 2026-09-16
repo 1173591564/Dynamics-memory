@@ -25,6 +25,7 @@ from pathlib import Path
 import numpy as np
 
 from experiments import paths as P
+from experiments.dynamics_v3 import FEATURE_SETS, configure, diagnostics
 from experiments.qa_real import _load_candgen
 from experiments.real_embedding import load_dotenv_key
 from hybrid_memory.config import Cfg
@@ -37,13 +38,16 @@ from hybrid_memory.embed.cache import SqliteEmbeddingCache
 from hybrid_memory.embed.zhipu import ZhipuEmbedder
 from hybrid_memory.llm import chat
 from hybrid_memory.semantics import RealChatSemantics, normalize
+from hybrid_memory.semantics.llm import LLMSemantics
 
 DATA = P.DATA_REAL
 CANDGEN = P.CANDGEN_DIR / "real-candgen-k3-s3-v2.jsonl"
 CHAT_CACHE = P.CHAT_CACHE
 DOTENV = Path(".env")
 
-READER_SYS = ("你在协助一个进行中的工程项目。根据给出的记忆回答问题，"
+READER_SYS = ("你在协助一个进行中的工程项目。根据给出的记忆回答问题。"
+              "标为[未确认]的条目只能作为线索，不得作为确定结论；"
+              "未决冲突必须同时说明版本与时间，不得擅自裁决。"
               "不知道的事不要编造，可以说不确定。用中文简洁回答。")
 JUDGE_SYS = (
     "你在评测一个 agent 对项目历史/状态的感知能力。给定用户的真实问题、"
@@ -102,17 +106,30 @@ def main() -> None:
     ap.add_argument("--k", type=int, default=5)
     ap.add_argument("--tau-dup", type=float, default=0.85)
     ap.add_argument("--tau-sim", type=float, default=0.78)
+    ap.add_argument("--lex-weight", type=float, default=0.0,
+                    help="词法召回通道权重（LongMemEval key-expansion 等价物）")
     ap.add_argument("--reader-model", default="glm-5.3-flash")
     ap.add_argument("--eval-start", type=int, default=25)
     ap.add_argument("--eval-stride", type=int, default=5)
     ap.add_argument("--groups", default="memory,flat,none")
     ap.add_argument("--flat-chars", type=int, default=400)
+    ap.add_argument("--llm-judge", action="store_true",
+                    help="tension 裁决走 LLM")
+    ap.add_argument("--feedback", action="store_true",
+                    help="延迟记账：recognizer 按回答判 useful-hit")
+    ap.add_argument("--feature-set", choices=tuple(FEATURE_SETS), default="p01")
     ap.add_argument("--allow-remote", action="store_true")
     ap.add_argument("--offline", action="store_true")
     ap.add_argument("--out-prefix", default="qa-continuity")
     args = ap.parse_args()
     if args.allow_remote == args.offline:
         raise SystemExit("choose exactly one of --allow-remote or --offline")
+    if args.feature_set == "r1234_full" and not args.llm_judge:
+        raise SystemExit("r1234_full requires --llm-judge for consolidation")
+    if args.feedback and not args.llm_judge:
+        raise SystemExit(
+            "--feedback requires --llm-judge（否则 recognizer 缺失，"
+            "静默退化为 selected-hit 全记，strict 记账失效）")
 
     units = load_interaction_units(args.data)
     windows = build_interaction_windows(units, size=3, stride=3)
@@ -123,10 +140,16 @@ def main() -> None:
     key = None if args.offline else load_dotenv_key(args.dotenv)
     emb = ZhipuEmbedder(api_key=key, cache=SqliteEmbeddingCache(
         P.EMB_CACHE), offline=args.offline)
-    eng = MemoryEngine(
+    semantics = (LLMSemantics(args.labels, model=args.reader_model,
+                              cache_dir=CHAT_CACHE, api_key=key)
+                 if args.llm_judge else RealChatSemantics(args.labels))
+    cfg = configure(
         Cfg(theta=args.theta, cap_m=args.cap_m, k=args.k,
-            tau_dup=args.tau_dup, tau_sim=args.tau_sim, useful_hit=False),
-        emb, RealChatSemantics(args.labels))
+            tau_dup=args.tau_dup, tau_sim=args.tau_sim,
+            lex_weight=args.lex_weight,
+            useful_hit=args.feedback, defer_credit=args.feedback),
+        args.feature_set)
+    eng = MemoryEngine(cfg, emb, semantics)
 
     by_avail: dict[int, list] = defaultdict(list)
     for w in windows:
@@ -135,7 +158,8 @@ def main() -> None:
 
     def _observe(wid: int, t: int) -> None:
         evs = [Event(eng.semantics.fingerprint(normalize(c["text"])),
-                     normalize(c["text"]), c["text"], c["src"])
+                     normalize(c["text"]), c["text"], c["src"],
+                     salience=c["salience"], scene=c["scene"])
                for c in candgen[wid]]
         eng.observe(evs, t)
 
@@ -157,16 +181,22 @@ def main() -> None:
             _observe(wid, t)
         qv = emb.embed([units[t].user_text])[0]
         ret = eng.retrieve(qv, Query(-1, units[t].user_text), t)
+        pred_mem = None
         if t in eval_pts:
             ref = units[t].assistant_text
             for g in groups:
                 if g == "memory":
-                    lines = [f"- [t={m.birth}] {m.text}"
-                             for m in ret.selected]
+                    prov_ids = {m.id for m in ret.provisional}
+                    lines = [f"- {'[未确认] ' if m.id in prov_ids else ''}"
+                             f"{'[项目状态汇总] ' if m.kind == 'reflection' else ''}"
+                             f"[t={m.birth}] {m.text}" for m in ret.selected]
                     for m, rv in ret.contested:
                         lines.append(f"- ⚠️未决冲突：[t={rv.birth}] {rv.text}"
                                      f"（与 t={m.birth} 条目冲突）")
                     ctx = "\n".join(lines) if lines else None
+                    if args.feedback:
+                        # eval 点就地作答，答案回喂 recognizer 保持因果序
+                        pred_mem = _ask(units[t].user_text, ctx)
                 elif g == "flat":
                     sims = [(cosine(qv, flat_embs[j]), j)
                             for j in range(t)]
@@ -179,18 +209,30 @@ def main() -> None:
                              "question": units[t].user_text[:200],
                              "group": g, "ctx": ctx, "ref": ref,
                              "n_mem": len(ret.selected),
-                             "n_contested": len(ret.contested)})
+                             "n_contested": len(ret.contested),
+                             "n_provisional": len(ret.provisional),
+                             "n_reflection": sum(
+                                 m.kind == "reflection" for m in ret.selected),
+                             "pred_inline": (pred_mem if g == "memory"
+                                             else None)})
+        if args.feedback:
+            # 每个 unit 的真实助理回复 = 隐式回答，喂 recognizer；
+            # eval 点用就地作答的 pred（feedback 只记一次）
+            eng.feedback(ret, units[t].user_text,
+                         pred_mem or units[t].assistant_text, t)
         eng.step(t)
     print(f"replay done, {len(jobs)} reader+judge jobs",
           flush=True)
 
     def _work(job):
-        try:
-            pred = _ask(job["question_full"], job["ctx"])
-        except Exception as exc:  # noqa: BLE001
-            pred, job["note"] = None, f"reader-error: {exc}"
-            job["pred"], job["score"] = pred, None
-            return job
+        pred = job.get("pred_inline")
+        if pred is None:
+            try:
+                pred = _ask(job["question_full"], job["ctx"])
+            except Exception as exc:  # noqa: BLE001
+                pred, job["note"] = None, f"reader-error: {exc}"
+                job["pred"], job["score"] = pred, None
+                return job
         score, note = _judge(job["question_full"], job["ref"], pred,
                              key, args.reader_model)
         job["pred"] = pred
@@ -213,7 +255,9 @@ def main() -> None:
         row = by_t.setdefault(job["t"], {
             "t": job["t"], "unit_id": job["unit_id"],
             "question": job["question"], "n_mem": job["n_mem"],
-            "n_contested": job["n_contested"]})
+            "n_contested": job["n_contested"],
+            "n_provisional": job["n_provisional"],
+            "n_reflection": job["n_reflection"]})
         row[job["group"]] = {"pred": job["pred"], "score": job["score"],
                              "note": job["note"],
                              "ctx": job["ctx"]}
@@ -227,7 +271,10 @@ def main() -> None:
                                / max(len(ss), 1), 3)}
     summary = {"eval_points": len(results), "groups": agg,
                "pool_final": eng.pool_sizes(),
+               "memory_diagnostics": diagnostics(eng),
                "elapsed_s": round(time.time() - t0, 1),
+               "feature_set": args.feature_set,
+               "features": list(FEATURE_SETS[args.feature_set]),
                "cfg": {"theta": args.theta, "cap_m": args.cap_m,
                        "k": args.k}}
     out = P.QA / f"{args.out_prefix}-summary.json"

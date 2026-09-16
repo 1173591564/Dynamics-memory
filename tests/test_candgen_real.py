@@ -10,7 +10,8 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hybrid_memory.candgen.prompt import (parse_candidates, parse_generation,
-                                          redact_secrets, serialize_window)
+                                          priority_to_salience, redact_secrets,
+                                          serialize_window)
 from hybrid_memory.config import Cfg
 from hybrid_memory.core.engine import MemoryEngine
 from hybrid_memory.core.types import Event, Pool
@@ -63,6 +64,47 @@ def test_parse_generation_v2_envelope_and_v1_fallback():
     assert g.candidates[0].source_unit_ids == (3, 4)
     g2 = parse_generation('[{"text":"旧格式"}]')
     assert g2.scene_name == "" and g2.candidates[0].text == "旧格式"
+
+
+def test_priority_to_salience_mapping():
+    assert priority_to_salience(60) == 0.0
+    assert priority_to_salience(80) == 0.5
+    assert priority_to_salience(100) == 1.0
+    assert priority_to_salience(None) == 0.5
+    assert priority_to_salience("high") == 0.5
+    assert priority_to_salience(True) == 0.5
+    assert priority_to_salience(True, default=0.7) == 0.7
+
+
+def test_parse_generation_salience_clamp_and_fallback():
+    g = parse_generation('{"scene_name":"s","memories":['
+                         '{"content":"a","salience":0.9},'
+                         '{"content":"b","salience":1.7},'
+                         '{"content":"c","salience":-2},'
+                         '{"content":"d","priority":100},'
+                         '{"content":"e","salience":true}]}')
+    sals = [c.salience for c in g.candidates]
+    assert sals == [0.9, 1.0, 0.0, 1.0, 0.5]
+    assert g.candidates[3].priority == 100   # priority 保留为 legacy 元数据
+
+
+def test_load_candgen_salience_explicit_and_fallback():
+    from experiments.qa_real import _load_candgen
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "candgen.jsonl"
+        p.write_text(json.dumps({"window_id": 0, "scene_name": "在围绕X做Y",
+                                 "candidates": [
+            {"text": "explicit", "salience": 1.4, "source_unit_ids": [1]},
+            {"text": "prio", "priority": 100},
+            {"text": "bare"},
+        ]}, ensure_ascii=False) + "\n", encoding="utf-8")
+        cands = _load_candgen(p)
+    got = cands[0]
+    assert got[0]["salience"] == 1.0
+    assert got[0]["src"] == (1,)
+    assert got[0]["scene"] == "在围绕X做Y"
+    assert got[1]["salience"] == 1.0
+    assert got[2]["salience"] == 0.5
 
 
 def test_serialize_window_carries_prev_scene():

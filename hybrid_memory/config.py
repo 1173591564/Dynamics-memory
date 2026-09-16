@@ -16,6 +16,7 @@ class Cfg:
     pi_a: float = -0.30          # 归档参与分（负先验，只在没更好候选时浮出）
     fresh_alpha: float = 0.10    # 新鲜度探索项强度
     shortlist_n: int = 30        # ANN shortlist 大小
+    lex_weight: float = 0.0      # >0 → s = cos + w·lex（词法加分，稀有词门控）
 
     # ---- 动力学 ----
     lam: float = 0.02            # 衰减率/步
@@ -41,6 +42,28 @@ class Cfg:
     shadow_credit: bool = True   # False → shadow 不计增益
     ingest_dedup: bool = True    # False → 新候选全部独立成条
     useful_hit: bool = True      # False → 入选即强化（SF-AMS 语义）
+    defer_credit: bool = False   # True → 检索不结清，等 feedback(answer) 后
+                                 # recognizer 判定哪些记忆真被用上才发 d_hit
+    confidence_on: bool = False
+    conf_prior_alpha: float = 1.0
+    conf_prior_beta: float = 1.0
+    conf_write_evidence: float = 1.0
+    conf_confirm_evidence: float = 1.0
+    conf_negative_evidence: float = 1.0
+    conf_half_life: float = 50.0
+    theta_conf: float = 0.62
+    provisional_margin: float = 0.08
+    provisional_k: int = 1
+    salience_on: bool = False
+    salience_default: float = 0.5
+    salience_retention_floor: float = 0.5
+    salience_retention_weight: float = 3.0
+    novelty_on: bool = False
+    novelty_bonus: float = 0.25
+    consolidation_on: bool = False
+    consolidation_salience_budget: float = 6.0
+    consolidation_min_items: int = 5
+    consolidation_max_items: int = 12
     capacity_on: bool = True     # False → M 池无界
     suppression_on: bool = True
     tension_on: bool = True
