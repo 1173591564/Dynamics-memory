@@ -50,19 +50,32 @@ def _runner(tmp_path, exec_impl, **kw):
 
 
 def test_command_shape_and_payload_file(tmp_path):
-    fake = _FakeExec(_stream("hi"))
-    r = _runner(tmp_path, fake)
+    seen = {}
+
+    class Exec:
+        def __call__(self, cmd, env, timeout_s):
+            seen["cmd"] = cmd
+            # 附件在 exec 期间必须存在；run() 返回后即被清理
+            ref = [c for c in cmd if c.startswith("--file=")][0]
+            ref = ref[len("--file="):]
+            p = Path(ref)
+            if not p.is_absolute():
+                p = Path(cmd[cmd.index("--dir") + 1]) / ref
+            seen["payload"] = p.read_text(encoding="utf-8")
+            return 0, _stream("hi"), ""
+
+    r = _runner(tmp_path, Exec())
     out = r.run(system="SYS", user="USR")
     assert out == "hi"
-    cmd = fake.calls[0]["cmd"]
+    cmd = seen["cmd"]
     assert cmd[0] == "opencode-fake" and cmd[1] == "run"
     assert isinstance(cmd[2], str) and cmd[2]      # instruction
     assert "--pure" in cmd and "--format" in cmd
     assert "-m" in cmd and cmd[cmd.index("-m") + 1] == r.model
     assert cmd[cmd.index("--dir") + 1] == str(r.workdir)
-    f = [c for c in cmd if c.startswith("--file=")][0]
-    payload = (r.workdir / f[len("--file="):]).read_text(encoding="utf-8")
-    assert payload == "SYS\n\n---\n\nUSR"
+    assert seen["payload"] == "SYS\n\n---\n\nUSR"
+    # 附件含未脱敏全文：exec 结束即删，不留盘
+    assert not list(r.payload_dir.glob("call_*.txt"))
 
 
 def test_collect_text_ignores_non_text_and_junk():
@@ -120,7 +133,7 @@ def test_llmsemantics_degrades_on_opencode_failure(tmp_path):
     r = _runner(tmp_path, fake)
     sem = LLMSemantics(chat_fn=r.chat)
     assert sem.judge(1, "a", 2, "b") == "pending"       # 降级
-    assert sem.relevant_set(["x"], "q", "a") == [True]  # 退化 selected-hit
+    assert sem.relevant_set(["x"], "q", "a") is None    # 失败→None，worker 计数退化
 
 
 def test_agent_silent_fallback_raises(tmp_path):
@@ -160,16 +173,26 @@ def test_agent_participates_in_cache_key(tmp_path):
 
 
 def test_workdir_payload_split(tmp_path):
-    fake = _FakeExec(_stream("ok"))
+    seen = {}
+
+    class Exec:
+        def __call__(self, cmd, env, timeout_s):
+            seen["cmd"] = cmd
+            ref = [c for c in cmd if c.startswith("--file=")][0]
+            ref = ref[len("--file="):]
+            seen["payload"] = (Path(cmd[cmd.index("--dir") + 1]) / ref) \
+                .read_text(encoding="utf-8")
+            return 0, _stream("ok"), ""
+
     wd = tmp_path / "proj"
     pd = wd / ".opencode" / "tmp"
     r = OpencodeRunner(exe="opencode-fake", workdir=wd, payload_dir=pd,
-                       executor=fake)
+                       executor=Exec())
     r.chat("S", "U")
-    cmd = fake.calls[0]["cmd"]
+    cmd = seen["cmd"]
     assert cmd[cmd.index("--dir") + 1] == str(wd)
-    ref = [c for c in cmd if c.startswith("--file=")][0][len("--file="):]
-    assert (wd / ref).read_text(encoding="utf-8") == "S\n\n---\n\nU"  # 相对 --dir
+    assert seen["payload"] == "S\n\n---\n\nU"   # --file 相对 --dir 解析
+    assert not list(pd.glob("call_*.txt"))      # 附件用完即删
 
 
 class _FailRunner:
@@ -189,7 +212,7 @@ def test_semantics_counts_degradation(tmp_path, monkeypatch):
     monkeypatch.setattr(oc, "OpencodeRunner", lambda **kw: r)
     sem = oc.OpencodeSemantics(cache_dir=None)
     assert sem.judge(1, "a", 2, "b") == "pending"   # 降级但不崩
-    assert sem.relevant_set(["x"], "q", "a") == [True]
+    assert sem.relevant_set(["x"], "q", "a") is None  # 失败→None，不静默全记
     assert sem.n_failed == 2 and r.calls == 2
 
 

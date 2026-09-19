@@ -14,29 +14,58 @@
  */
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
+import { resolve } from "node:path"
 
 const PORT = Number(process.env.MEMORY_BRIDGE_PORT ?? 17872)
 const BASE = `http://127.0.0.1:${PORT}`
+// sidecar 的包根：插件文件在 <repo>/.opencode/plugin/ 下——spawn 的 cwd
+// 固定到这里而不是目标项目目录，防项目内同名 hybrid_memory 模块遮蔽劫持
+const REPO_ROOT = resolve(import.meta.dir, "../..")
 
 export default (async ({ directory }) => {
   const log = (msg: string) => console.error(`[memory-bridge] ${msg}`)
 
+  // 鉴权令牌由 sidecar 启动时写入 <project>/.opencode/memory/.memory-token；
+  // 每次请求现读（重启/重生成不缓存脏值）。401 只告警一次——可能是端口被
+  // 占位进程抢占或 token 轮换，静默重试会持续喂数据给错误对象
+  const tokenFile = `${directory}/.opencode/memory/.memory-token`
+  let warned401 = false
+  const auth = async () => {
+    const f = Bun.file(tokenFile)
+    return (await f.exists()) ? (await f.text()).trim() : ""
+  }
+  const check = (r: Response) => {
+    if (r.status === 401) {
+      if (!warned401) {
+        warned401 = true
+        log(`sidecar 401 鉴权失败（token=${tokenFile}）——端口被占位或 token 不匹配，停止发送数据`)
+      }
+      authDead = true   // 请求体本身就是数据，401 后不再发
+    }
+    return r.ok
+  }
+  let authDead = false
   const get = async (path: string) => {
+    if (authDead) return null
     try {
-      const r = await fetch(BASE + path)
-      return r.ok ? await r.json() : null
+      const r = await fetch(BASE + path, {
+        headers: { Authorization: `Bearer ${await auth()}` },
+      })
+      return check(r) ? await r.json() : null
     } catch {
       return null
     }
   }
   const post = async (path: string, body: unknown) => {
+    if (authDead) return null
     try {
       const r = await fetch(BASE + path, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json",
+                   Authorization: `Bearer ${await auth()}` },
         body: JSON.stringify(body),
       })
-      return r.ok ? await r.json() : null
+      return check(r) ? await r.json() : null
     } catch {
       return null
     }
@@ -50,7 +79,7 @@ export default (async ({ directory }) => {
   if (!ready) {
     proc = Bun.spawn(
       ["python", "-m", "hybrid_memory.server", "--port", String(PORT), "--project", directory],
-      { cwd: directory, env: process.env, stdout: "pipe", stderr: "pipe" },
+      { cwd: REPO_ROOT, env: process.env, stdout: "pipe", stderr: "pipe" },
     )
     const drain = async (stream: ReadableStream<Uint8Array> | undefined, tag: string) => {
       if (!stream) return

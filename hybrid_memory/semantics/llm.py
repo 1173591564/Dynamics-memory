@@ -91,16 +91,17 @@ class LLMSemantics(RealChatSemantics):
             return "pending"
 
     def relevant_set(self, texts: list[str], question: str,
-                     answer: str) -> list[bool]:
+                     answer: str) -> list[bool] | None:
+        """返回 None = 识别失败（传输错误或输出不可解析）。worker 据此
+        计数并退化 selected-hit——失败必须外显，不能静默全记。"""
         mems = "\n".join(f"[{i + 1}] {t}" for i, t in enumerate(texts))
         try:
             out = self._chat(_RECOG_SYS,
                              f"用户问题: {question}\n助手回答: {answer}\n"
                              f"注入记忆:\n{mems}")
         except ZhipuChatError:
-            return [True] * len(texts)   # 识别器挂了 → 退化 selected-hit
-        used = _index_set(out, len(texts))
-        return used if used is not None else [True] * len(texts)
+            return None
+        return _index_set(out, len(texts))
 
     def consolidate(self, memories, t: int) -> Event | None:
         """巩固回调：按时间标注的记忆 → 一条高层状态 Event；失败/NONE → None。"""

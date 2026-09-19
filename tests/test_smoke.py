@@ -414,7 +414,7 @@ def test_llm_semantics_parse_with_fake_chat():
     sem3 = LLMSemantics(None, chat_fn=lambda s, u: "NONE")
     assert sem3.relevant_set(["x", "y"], "q", "a") == [False, False]
     sem4 = LLMSemantics(None, chat_fn=lambda s, u: "??")
-    assert sem4.relevant_set(["x"], "q", "a") == [True]  # 失败→selected-hit
+    assert sem4.relevant_set(["x"], "q", "a") is None  # 失败→None，worker 计数退化
 
 
 def test_confidence_write_and_confirm_evidence():

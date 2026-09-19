@@ -134,6 +134,8 @@ class OpencodeRunner:
             code, stdout, stderr = self._exec(cmd, self._env, self.timeout_s)
         except subprocess.TimeoutExpired as exc:
             raise ZhipuChatError(f"opencode timeout after {self.timeout_s}s") from exc
+        finally:
+            payload.unlink(missing_ok=True)   # 附件含未脱敏全文，不留盘
         if code != 0:
             raise ZhipuChatError(
                 f"opencode exited {code}: {(stderr or '')[-500:]}")

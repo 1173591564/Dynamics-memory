@@ -33,7 +33,8 @@ class OpencodeCliGenerator:
             reply = self._runner.run(
                 system=INSTRUCTION,
                 user=serialize_window(window, prev_scene),
-                instruction=_CLI_INSTRUCTION)
+                instruction=_CLI_INSTRUCTION,
+                agent="candgen")   # 锁定 agent：不可信窗口文本不碰工具
         except ZhipuChatError as exc:
             raise RuntimeError(f"opencode candgen failed: {exc}") from exc
         return parse_generation(reply)

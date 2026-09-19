@@ -15,6 +15,8 @@ agent runtime（opencode 等）可不经过本类：直接 drain_signals + 自�
 """
 from __future__ import annotations
 
+import sys
+
 from .core import maintenance
 from .core.types import ConsolidationSemantics, FeedbackSemantics, is_visible
 
@@ -31,12 +33,13 @@ class SignalWorker:
         self.eng = eng
         self.sem = semantics
         self.n_calls = 0       # 语义调用计数（judge/relevant_set/consolidate）
+        self.n_recog_fail = 0  # 识别器失败计数：失败退化 selected-hit，必须外显
 
     def process(self, t: int, kinds: set | None = None) -> dict:
         """排空信号队列。kinds 非 None 时只处理指定种类，未匹配的信号
         重新入队（按引擎合并规则归位）。返回处理统计。"""
         stats = {"judged": 0, "resolved": 0, "credited": 0,
-                 "reflected": 0, "thin": 0}
+                 "reflected": 0, "thin": 0, "recog_fail": 0}
         requeue = []
         for sig in self.eng.drain_signals():
             if kinds is not None and sig.kind not in kinds:
@@ -44,7 +47,7 @@ class SignalWorker:
             elif sig.kind == "conflict_pending":
                 stats["resolved"] += self._judge(sig.payload, t, stats)
             elif sig.kind == "feedback_pending":
-                stats["credited"] += self._recognize(sig.payload, t)
+                stats["credited"] += self._recognize(sig.payload, t, stats)
             elif sig.kind == "maintenance_due":
                 stats["reflected"] += self._consolidate(sig.payload, t)
             elif sig.kind == "thin_recall":
@@ -82,7 +85,7 @@ class SignalWorker:
                                             b.belief_id, b.value)))
         return self.eng.submit_verdicts(verdicts, t)
 
-    def _recognize(self, payload, t: int) -> int:
+    def _recognize(self, payload, t: int, stats: dict) -> int:
         ret = payload["retrieval"]
         if ret.credited:
             return 0
@@ -94,6 +97,13 @@ class SignalWorker:
             self.n_calls += 1
             used = fn([m.text for m in ret.selected],
                       payload["question"], payload["answer"])
+        if used is None:                        # 识别器失败：退化全记 + 计数外显
+            self.n_recog_fail += 1
+            stats["recog_fail"] += 1
+            if self.n_recog_fail == 1:
+                print("[worker] recognizer 失败（第 1 次），"
+                      "credit 退化 selected-hit", file=sys.stderr, flush=True)
+            used = [True] * len(ret.selected)
         if len(used) != len(ret.selected):
             raise RuntimeError(
                 f"relevant_set 返回长度 {len(used)} != selected "

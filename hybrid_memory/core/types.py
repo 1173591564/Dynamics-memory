@@ -95,9 +95,10 @@ class MemorySemantics(Protocol):
 class FeedbackSemantics(Protocol):
     """可选能力：response-level recognizer。
     实现了它，engine.feedback 才会只给真被答案用上的记忆发 useful-hit；
-    缺失时静默退化为 selected-hit 全记——strict 记账语义随之失效。"""
+    缺失时退化为 selected-hit 全记。返回 None 表示识别失败——worker
+    计数告警后同样退化全记，失败不静默。"""
     def relevant_set(self, texts: list, question: str,
-                     answer: str) -> list: ...
+                     answer: str) -> list | None: ...
 
 
 @runtime_checkable
