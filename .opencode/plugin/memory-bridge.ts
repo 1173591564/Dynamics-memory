@@ -30,6 +30,7 @@ export default (async ({ directory }) => {
   // 占位进程抢占或 token 轮换，静默重试会持续喂数据给错误对象
   const tokenFile = `${directory}/.opencode/memory/.memory-token`
   let warned401 = false
+  let authDead = false
   const auth = async () => {
     const f = Bun.file(tokenFile)
     return (await f.exists()) ? (await f.text()).trim() : ""
@@ -44,7 +45,6 @@ export default (async ({ directory }) => {
     }
     return r.ok
   }
-  let authDead = false
   const get = async (path: string) => {
     if (authDead) return null
     try {
@@ -117,7 +117,9 @@ export default (async ({ directory }) => {
       if (!ready || !sessionID) return
       const p = pending.get(sessionID)
       if (!p) return
-      const rec = await get(`/recall?q=${encodeURIComponent(p.user)}`)
+      // 走 POST /search：长 CJK 输入放 query string 会 ×3 URL 编码后
+      // 超 request-line 上限（recall 静默失败）；/search 与 /recall 返回同构
+      const rec = await post("/search", { query: p.user })
       if (!rec?.context) return
       p.retrievalId = rec.retrieval_id
       output.system.push(
@@ -155,7 +157,9 @@ export default (async ({ directory }) => {
           return
         }
         const retrievalId = p.retrievalId
-        inflight = (async () => {
+        // 链式而非覆写：dispose await inflight 必须等到最后一个在途回路，
+        // 否则提前 idle 的 observe/feedback 会被 proc.kill 截断丢数据
+        inflight = inflight.then(async () => {
           log(`idle: observe turn (user=${p.user.length}ch, reply=${reply.length}ch)`)
           const obs = await post("/observe", { user_text: p.user, assistant_text: reply })
           log(`idle: observe → ${JSON.stringify(obs)}`)
@@ -167,7 +171,7 @@ export default (async ({ directory }) => {
             })
             log(`idle: feedback → ${JSON.stringify(fb)}`)
           }
-        })()
+        })
       }
     },
 

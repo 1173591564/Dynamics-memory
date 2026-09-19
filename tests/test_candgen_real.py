@@ -44,6 +44,19 @@ def test_redact_secrets():
     assert "sk-" not in redact_secrets("key 是 sk-abc123def456ghi789")
     assert "[REDACTED]" in redact_secrets("api_key = \"0123456789abcdefZZ\"")
     assert redact_secrets("普通事实") == "普通事实"
+    # 新增分支：带横杠新格式 key / gh[x]_ / JWT / 赋值式 / PEM 整块
+    assert "sk-proj" not in redact_secrets("sk-proj-AbC123def456")
+    assert "ghp_" not in redact_secrets("token ghp_A1b2C3d4E5f6G7h8I9j0")
+    assert "github_pat_" not in redact_secrets(
+        "github_pat_11ABCDEFG0abcdefghijklmn")
+    assert "eyJ" not in redact_secrets(
+        "jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.dGVzdHNpZw")
+    assert "[REDACTED]" in redact_secrets("password=hunter2xyz")
+    pem = ("-----BEGIN RSA PRIVATE KEY-----\n"
+           "MIIEpAIBAAKCAQEA7blahblahkeymaterial\n"
+           "-----END RSA PRIVATE KEY-----")
+    out = redact_secrets(f"配置 {pem} 完毕")
+    assert "blahblah" not in out and "PRIVATE KEY" not in out
 
 
 def test_parse_candidates_json_array_and_redact():

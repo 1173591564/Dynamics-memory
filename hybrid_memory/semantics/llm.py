@@ -52,8 +52,10 @@ def _one_word(out: str) -> str:
 
 
 def _index_set(out: str, n: int) -> list[bool] | None:
-    """解析 "1,3" / "NONE" → bool 列表；解析失败返回 None。"""
-    s = out.strip().lower()
+    """解析 "1,3" / "NONE" → bool 列表；解析失败返回 None。
+    NONE 容忍尾部标点（"NONE."）：否则被判成识别失败 → worker 退化
+    全记——本意是"一条都没用上"反而变成全记，指标直接反过来。"""
+    s = out.strip().lower().rstrip(".。!！?？,，;；:：")
     if s == "none" or not s:
         return [False] * n if s == "none" else None
     idx = set()

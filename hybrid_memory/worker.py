@@ -39,21 +39,30 @@ class SignalWorker:
         """排空信号队列。kinds 非 None 时只处理指定种类，未匹配的信号
         重新入队（按引擎合并规则归位）。返回处理统计。"""
         stats = {"judged": 0, "resolved": 0, "credited": 0,
-                 "reflected": 0, "thin": 0, "recog_fail": 0}
+                 "reflected": 0, "thin": 0, "recog_fail": 0, "errors": 0}
         requeue = []
         for sig in self.eng.drain_signals():
             if kinds is not None and sig.kind not in kinds:
                 requeue.append(sig)
-            elif sig.kind == "conflict_pending":
-                stats["resolved"] += self._judge(sig.payload, t, stats)
-            elif sig.kind == "feedback_pending":
-                stats["credited"] += self._recognize(sig.payload, t, stats)
-            elif sig.kind == "maintenance_due":
-                stats["reflected"] += self._consolidate(sig.payload, t)
-            elif sig.kind == "thin_recall":
-                stats["thin"] += 1
-            else:
-                requeue.append(sig)          # 未知信号不吞，回队
+                continue
+            try:
+                if sig.kind == "conflict_pending":
+                    stats["resolved"] += self._judge(sig.payload, t, stats)
+                elif sig.kind == "feedback_pending":
+                    stats["credited"] += self._recognize(sig.payload, t, stats)
+                elif sig.kind == "maintenance_due":
+                    stats["reflected"] += self._consolidate(sig.payload, t)
+                elif sig.kind == "thin_recall":
+                    stats["thin"] += 1
+                else:
+                    requeue.append(sig)      # 未知信号不吞，回队
+            except Exception as exc:         # noqa: BLE001
+                # 单信号失败不能拖垮整批：drain 已清空队列，不回队就是丢
+                stats["errors"] += 1
+                requeue.append(sig)
+                print(f"[worker] 信号 {sig.kind} 处理失败（已回队）: "
+                      f"{type(exc).__name__}: {exc}",
+                      file=sys.stderr, flush=True)
         for sig in requeue:
             self.eng.signals.emit(sig.kind, sig.payload, sig.t,
                                   key=sig.key, merge=_requeue_merge)
@@ -97,17 +106,15 @@ class SignalWorker:
             self.n_calls += 1
             used = fn([m.text for m in ret.selected],
                       payload["question"], payload["answer"])
-        if used is None:                        # 识别器失败：退化全记 + 计数外显
+        # 识别器失败（None=传输/解析失败；长度不齐=违反协议）：计数外显 +
+        # 退化 selected-hit——不抛异常，否则毒信号每次回队重炸整批
+        if used is None or len(used) != len(ret.selected):
             self.n_recog_fail += 1
             stats["recog_fail"] += 1
             if self.n_recog_fail == 1:
                 print("[worker] recognizer 失败（第 1 次），"
                       "credit 退化 selected-hit", file=sys.stderr, flush=True)
             used = [True] * len(ret.selected)
-        if len(used) != len(ret.selected):
-            raise RuntimeError(
-                f"relevant_set 返回长度 {len(used)} != selected "
-                f"{len(ret.selected)}")
         return self.eng.submit_relevance(ret, used, t)
 
     def _consolidate(self, payload, t: int) -> int:

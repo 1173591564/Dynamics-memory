@@ -293,3 +293,68 @@ def test_worker_absent_system_operates_and_queue_bounded():
     assert len(eng.signals) <= 8
     assert eng.signals.n_dropped > 0            # 无人消费 → 有界丢弃计数
     assert eng.pool_sizes()["M"] >= 0           # 引擎照常运转
+
+
+class _RecogStub:
+    """relevant_set 返回指定值（None=失败 / 长度不齐=违约），其余委托。"""
+
+    def __init__(self, inner, ret):
+        self._inner = inner
+        self._ret = ret
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def relevant_set(self, texts, question, answer):
+        return self._ret
+
+
+def _feedback_setup(sem_wrap=None):
+    """一次 defer 检索 + feedback 信号已入队的场景。"""
+    emb, world, eng = make(cfg=Cfg(defer_credit=True, useful_hit=True))
+    b = world.beliefs[0]
+    eng.observe([Event(b.id, b.value, b.phrasings[b.value][0])], 0)
+    ret = eng.retrieve(emb.vec_for(b.entity, b.id, b.value),
+                       Query(b.id, "q"), 0)
+    eng.feedback(ret, "q", "a", 0)
+    w = SignalWorker(eng, sem_wrap(world) if sem_wrap else world)
+    return eng, ret, w
+
+
+def test_worker_recog_fail_counts_and_degrades():
+    # relevant_set 返 None = 识别失败：计数外显 + 退化 selected-hit 全记
+    eng, ret, w = _feedback_setup(lambda world: _RecogStub(world, None))
+    stats = w.process(0)
+    assert stats["recog_fail"] == 1 and w.n_recog_fail == 1
+    assert stats["credited"] == 1 and ret.credited
+    assert ret.n_useful == len(ret.selected)      # 退化全记
+
+
+def test_worker_recog_bad_length_is_failure_not_crash():
+    # 长度不齐 = 违反协议：同样计数退化，不再抛 RuntimeError 丢整批信号
+    # （selected 可能只有 1 条，用空列表保证长度必不齐）
+    eng, ret, w = _feedback_setup(lambda world: _RecogStub(world, []))
+    stats = w.process(0)
+    assert stats["recog_fail"] == 1
+    assert ret.credited and ret.n_useful == len(ret.selected)
+
+
+def test_worker_error_containment_requeues_failed_signal():
+    # 毒信号（judge 炸）不能拖垮同批其他信号：feedback 照常结算，
+    # 失败信号回队重试而不是随 drain 蒸发
+    emb, world, eng = make(cfg=Cfg(defer_credit=True, tension_delay=0))
+    b = world.beliefs[0]
+    eng.observe([Event(b.id, b.value, b.phrasings[b.value][0])], 0)
+    eng.mems[1] = Memory(1, b.id, b.value, "m1", emb.embed(["m1"])[0])
+    eng._next_id = 2
+    eng.add_tension(0, 1, 0)
+    ret = eng.retrieve(emb.vec_for(b.entity, b.id, b.value),
+                       Query(b.id, "q"), 0)
+    eng.feedback(ret, "q", "a", 0)
+    eng.step(0)   # conflict_pending 与 feedback_pending 同批在队
+    w = SignalWorker(eng, _Judge(world, fail=True))
+    stats = w.process(0)
+    assert stats["errors"] == 1                   # 毒信号被隔离计数
+    assert stats["credited"] >= 1 and ret.credited  # 同批好信号照常落地
+    left = [s.kind for s in eng.drain_signals()]
+    assert left == ["conflict_pending"]           # 失败信号回队未丢

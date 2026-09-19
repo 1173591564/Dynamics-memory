@@ -24,6 +24,7 @@ import os
 import pickle
 import re
 import secrets
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -42,17 +43,20 @@ from .semantics.llm import LLMSemantics
 from .worker import SignalWorker
 
 _RETRIEVAL_KEEP = 512   # retrieval 注册表上限（feedback 用，防无界增长）
-_MEM_TAG_RE = re.compile(r"<\s*/?\s*relevant-memories\s*>", re.IGNORECASE)
+# [^>]* 单趟即可：匹配内部不含 '>'，嵌套 payload 被整体吃掉，
+# 任何残留的 "relevant-memories" 片段都凑不成完整 tag
+_MEM_TAG_RE = re.compile(r"<\s*/?\s*relevant-memories[^>]*>", re.IGNORECASE)
 
 
 def _safe_mem_text(text: str) -> str:
-    """记忆文本进 <relevant-memories> 包裹块前的消毒：中和同名分隔符，
-    防存储型注入破 tag 逃逸污染 system prompt。"""
+    """记忆文本进 <relevant-memories> 包裹块前的消毒：中和同名分隔符
+    （含嵌套/带属性/自闭合变体），防存储型注入破 tag 逃逸污染
+    system prompt。"""
     return _MEM_TAG_RE.sub(" ", text)
 
 _COUNTERS = ("n_promote", "n_demote", "n_evict", "n_archive", "n_revive",
              "n_merge", "n_collision", "n_tension", "n_resolve", "n_agg",
-             "n_consolidate")
+             "n_consolidate", "n_shadow_dropped")
 
 _STATE_KEYS = {"mems", "tensions", "next_id", "consolidation_pending",
                "consolidation_deferred", "counters", "t", "unit_id", "scene"}
@@ -70,6 +74,7 @@ _PICKLE_SAFE = {
     ("hybrid_memory.core.types", "Memory"),
     ("hybrid_memory.core.types", "Tension"),
     ("hybrid_memory.core.types", "Pool"),
+    ("hybrid_memory.core.types", "Retrieval"),
     ("numpy._core.multiarray", "_reconstruct"),
     ("numpy.core.multiarray", "_reconstruct"),   # numpy<2 兼容
     ("numpy", "dtype"), ("numpy", "ndarray"),
@@ -103,7 +108,19 @@ class MemoryService:
         self._retrievals: dict[int, Retrieval] = {}
         self._next_retrieval = 0
         if self.state_path and self.state_path.exists():
-            self._load()
+            try:
+                self._load()
+            except Exception as exc:  # noqa: BLE001
+                # 损坏/恶意 state 不能让 sidecar 启动即死（桥会整体瘫痪）：
+                # 隔离坏文件后空启动，损失状态好过丢记忆服务
+                corrupt = self.state_path.with_suffix(".corrupt")
+                try:
+                    os.replace(self.state_path, corrupt)
+                except OSError:
+                    pass
+                print(f"[memory-sidecar] state.pkl 损坏已隔离为 "
+                      f"{corrupt.name}（{exc}）——空启动",
+                      file=sys.stderr, flush=True)
 
     def _load_or_create_token(self) -> str:
         """HTTP 鉴权令牌：持久化在 state_dir/.memory-token（插件侧同路径
@@ -111,7 +128,10 @@ class MemoryService:
         p = (self.state_path.parent / ".memory-token"
              if self.state_path else None)
         if p and p.exists():
-            return p.read_text(encoding="utf-8").strip()
+            tok = p.read_text(encoding="utf-8").strip()
+            if tok:
+                return tok
+            # 空/全空白 token 文件 = 坏状态：当作不存在，重写一个
         tok = secrets.token_hex(16)
         if p:
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -124,24 +144,25 @@ class MemoryService:
 
     # ---- 引擎操作 ----
     def observe(self, user_text: str, assistant_text: str) -> dict:
-        unit = InteractionUnit(id=self._unit_id, start_time=self._t,
-                               end_time=self._t, user_text=user_text,
+        with self._lock:   # uid/scene 记账在锁内，并发 observe 不会撞号
+            uid = self._unit_id
+            self._unit_id += 1
+            t, scene = self._t, self._scene
+        unit = InteractionUnit(id=uid, start_time=t, end_time=t,
+                               user_text=user_text,
                                assistant_text=assistant_text,
                                assistant_turns=1)
-        window = InteractionWindow(id=self._unit_id, start_unit_id=self._unit_id,
-                                   end_unit_id=self._unit_id,
-                                   start_time=self._t, end_time=self._t,
-                                   units=(unit,))
-        self._unit_id += 1
-        gen = self.generator.generate(window, self._scene)
-        self._scene = gen.scene_name or self._scene
-        evs = [Event(self.semantics.fingerprint(normalize(c.text)),
-                     normalize(c.text), c.text, c.source_unit_ids,
-                     salience=c.salience, scene=self._scene)
-               for c in gen.candidates]
+        window = InteractionWindow(id=uid, start_unit_id=uid, end_unit_id=uid,
+                                   start_time=t, end_time=t, units=(unit,))
+        gen = self.generator.generate(window, scene)   # LLM 调用锁外
         with self._lock:
+            self._scene = gen.scene_name or self._scene
+            evs = [Event(self.semantics.fingerprint(normalize(c.text)),
+                         normalize(c.text), c.text, c.source_unit_ids,
+                         salience=c.salience, scene=self._scene)
+                   for c in gen.candidates]
             if evs:
-                self.engine.observe(evs, self._t)
+                self.engine.observe(evs, self._t)   # 提交时刻的 t，保单调
             self.engine.step(self._t)
             wstats = self.worker.process(self._t)
             self._t += 1
@@ -221,6 +242,8 @@ class MemoryService:
             "consolidation_pending": self.engine._consolidation_pending,
             "consolidation_deferred": self.engine._consolidation_deferred,
             "counters": {k: getattr(self.engine, k) for k in _COUNTERS},
+            "retrievals": self._retrievals,
+            "next_retrieval": self._next_retrieval,
             "t": self._t, "unit_id": self._unit_id, "scene": self._scene}
         with self._lock:
             tmp = self.state_path.with_suffix(".tmp")
@@ -245,6 +268,9 @@ class MemoryService:
         eng._consolidation_deferred = state["consolidation_deferred"]
         for k, v in state["counters"].items():
             setattr(eng, k, v)
+        # retrievals/next_retrieval 后加字段：旧存档没有，.get 兼容
+        self._retrievals = state.get("retrievals", {})
+        self._next_retrieval = state.get("next_retrieval", 0)
         self._t = state["t"]
         self._unit_id = state["unit_id"]
         self._scene = state["scene"]
@@ -278,8 +304,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _authorized(self) -> bool:
-        return (self.headers.get("Authorization")
-                == f"Bearer {self.service.token}")
+        return secrets.compare_digest(
+            self.headers.get("Authorization") or "",
+            f"Bearer {self.service.token}")
 
     def _body(self) -> dict:
         ct = (self.headers.get("Content-Type") or "").split(";")[0].strip()
@@ -289,18 +316,29 @@ class _Handler(BaseHTTPRequestHandler):
             n = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             raise _HttpError(400, "bad Content-Length")
+        if n < 0:
+            raise _HttpError(400, "bad Content-Length")
         if n > _MAX_BODY:
             raise _HttpError(413, "body too large")
         if not n:
             return {}
-        return json.loads(self.rfile.read(n).decode("utf-8"))
+        try:
+            body = json.loads(self.rfile.read(n).decode("utf-8"))
+        except ValueError:
+            raise _HttpError(400, "malformed JSON body")
+        if not isinstance(body, dict):
+            raise _HttpError(400, "body must be a JSON object")
+        return body
+
+    _VERDICTS = {"synonym", "update", "contradiction", "collision", "pending"}
 
     def _dispatch(self, path: str, q: dict, body: dict) -> None:
         svc = self.service
         if path == "/health":
-            self._reply(200, {"ok": True, "t": svc._t,
-                              "mems": svc.engine.pool_sizes(),
-                              "tensions": len(svc.engine.tensions)})
+            with svc._lock:   # pool_sizes 迭代 mems，与 observe 并发会炸
+                self._reply(200, {"ok": True, "t": svc._t,
+                                  "mems": svc.engine.pool_sizes(),
+                                  "tensions": len(svc.engine.tensions)})
         elif path == "/recall":
             try:
                 k = int(q["k"]) if q.get("k") else None
@@ -308,26 +346,42 @@ class _Handler(BaseHTTPRequestHandler):
                 raise _HttpError(400, "k must be int")
             if k is not None and k <= 0:
                 raise _HttpError(400, "k must be positive")
-            self._reply(200, svc.recall(q.get("q", ""), k))
+            query = q.get("q", "")
+            if not query:
+                raise _HttpError(400, "q required")
+            self._reply(200, svc.recall(query, k))
         elif path == "/conflicts":
             self._reply(200, svc.conflicts())
         elif path == "/observe":
             self._reply(200, svc.observe(body.get("user_text", ""),
                                          body.get("assistant_text", "")))
         elif path == "/feedback":
-            self._reply(200, svc.feedback(int(body.get("retrieval_id", -1)),
-                                          body.get("question", ""),
+            try:
+                rid = int(body.get("retrieval_id", -1))
+            except (TypeError, ValueError):
+                raise _HttpError(400, "retrieval_id must be int")
+            self._reply(200, svc.feedback(rid, body.get("question", ""),
                                           body.get("answer", "")))
         elif path == "/resolve":
-            self._reply(200, svc.resolve(int(body.get("left", -1)),
-                                         int(body.get("right", -1)),
-                                         str(body.get("verdict", "pending"))))
+            try:
+                left = int(body.get("left", -1))
+                right = int(body.get("right", -1))
+            except (TypeError, ValueError):
+                raise _HttpError(400, "left/right must be int")
+            verdict = str(body.get("verdict", "pending"))
+            if verdict not in self._VERDICTS:
+                raise _HttpError(400, f"verdict must be one of "
+                                      f"{sorted(self._VERDICTS)}")
+            self._reply(200, svc.resolve(left, right, verdict))
         elif path == "/search":
             k = body.get("k")
             if k is not None and (not isinstance(k, int)
                                   or isinstance(k, bool) or k <= 0):
                 raise _HttpError(400, "k must be positive int")
-            self._reply(200, svc.recall(body.get("query", ""), k))
+            query = body.get("query", "")
+            if not isinstance(query, str) or not query:
+                raise _HttpError(400, "query required")
+            self._reply(200, svc.recall(query, k))
         elif path == "/save":
             self._reply(200, svc.save())
         else:
@@ -400,6 +454,12 @@ def build_default_service(project_dir: str | Path,
 
     mem_dir = Path(project_dir) / ".opencode" / "memory"
     mem_dir.mkdir(parents=True, exist_ok=True)
+    # 目录内含 bearer token + 全量记忆语料：用户项目里通常没有 gitignore
+    # 覆盖它（opencode 自带的 ensureGitignore 只管 node_modules 等）——
+    # 自己写一个，防 `git add .` 把 token 和 state 提交进库
+    gi = mem_dir / ".gitignore"
+    if not gi.exists():
+        gi.write_text("*\n", encoding="utf-8")
     key = _load_env_key(Path(project_dir))
 
     def chat_fn(system: str, user: str) -> str:

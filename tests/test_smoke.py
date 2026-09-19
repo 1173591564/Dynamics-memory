@@ -413,6 +413,10 @@ def test_llm_semantics_parse_with_fake_chat():
         [True, False, True]
     sem3 = LLMSemantics(None, chat_fn=lambda s, u: "NONE")
     assert sem3.relevant_set(["x", "y"], "q", "a") == [False, False]
+    # "NONE." 尾部标点仍是 NONE——否则判成失败 → worker 退化全记，
+    # "一条没用上"反而全记，指标直接反过来
+    sem3b = LLMSemantics(None, chat_fn=lambda s, u: "NONE.")
+    assert sem3b.relevant_set(["x", "y"], "q", "a") == [False, False]
     sem4 = LLMSemantics(None, chat_fn=lambda s, u: "??")
     assert sem4.relevant_set(["x"], "q", "a") is None  # 失败→None，worker 计数退化
 
@@ -1165,7 +1169,7 @@ def test_consolidation_none_defers_signature_no_starvation():
         frozenset({3, 4, 5} | new_id)
 
 
-def test_consolidation_callback_error_propagates():
+def test_consolidation_callback_error_contained():
     cfg = Cfg(consolidation_on=True, consolidation_salience_budget=1.0,
               consolidation_min_items=1, salience_on=True)
     emb, world, eng = make(cfg=cfg)
@@ -1175,11 +1179,12 @@ def test_consolidation_callback_error_propagates():
     b = world.beliefs[0]
     eng.observe([Event(b.id, b.value, b.phrasings[b.value][0], (), 1.0)], 0)
     eng.step(0)                              # 只发信号，不回调
-    with pytest.raises(RuntimeError, match="bug"):
-        worker.process(0)                     # 回调编程错误在 worker 侧抛出
+    stats = worker.process(0)                # 回调编程错误被隔离：计数+回队，
+    assert stats["errors"] == 1              # 不拖垮同批其他信号
     assert eng._consolidation_pending == {0}
     assert eng.n_consolidate == 0
     assert eng._consolidation_deferred[""] == frozenset({0})  # 发射即记签名
+    assert [s.kind for s in eng.drain_signals()] == ["maintenance_due"]
 
 
 def test_consolidation_novelty_ignores_hidden_members():

@@ -118,24 +118,33 @@ class OpencodeRunner:
             agent: str | None = None) -> str:
         self._seq += 1
         payload = self.payload_dir / f"call_{self._tag}_{self._seq}.txt"
-        payload.write_text(system + "\n\n---\n\n" + user, encoding="utf-8")
-        try:    # --file 相对 --dir 解析；payload 在 workdir 内时给相对路径
-            ref = str(payload.relative_to(self.workdir))
-        except ValueError:
-            ref = str(payload)
-        cmd = [self._exe, "run", instruction or _CLI_INSTRUCTION,
-               "--format", "json", "--pure",
-               "-m", self.model,
-               "--dir", str(self.workdir),
-               f"--file={ref}"]
-        if agent:
-            cmd += ["--agent", agent]
         try:
-            code, stdout, stderr = self._exec(cmd, self._env, self.timeout_s)
-        except subprocess.TimeoutExpired as exc:
-            raise ZhipuChatError(f"opencode timeout after {self.timeout_s}s") from exc
+            payload.write_text(system + "\n\n---\n\n" + user,
+                               encoding="utf-8")
+            try:    # --file 相对 --dir 解析；payload 在 workdir 内时给相对路径
+                ref = str(payload.relative_to(self.workdir))
+            except ValueError:
+                ref = str(payload)
+            cmd = [self._exe, "run", instruction or _CLI_INSTRUCTION,
+                   "--format", "json", "--pure",
+                   "-m", self.model,
+                   "--dir", str(self.workdir),
+                   f"--file={ref}"]
+            if agent:
+                cmd += ["--agent", agent]
+            try:
+                code, stdout, stderr = self._exec(cmd, self._env,
+                                                  self.timeout_s)
+            except subprocess.TimeoutExpired as exc:
+                raise ZhipuChatError(
+                    f"opencode timeout after {self.timeout_s}s") from exc
         finally:
-            payload.unlink(missing_ok=True)   # 附件含未脱敏全文，不留盘
+            try:
+                # 附件含未脱敏全文，不留盘；文件被占（杀毒/将死子进程）时
+                # 清理失败不能掩盖真正的业务异常
+                payload.unlink(missing_ok=True)
+            except OSError:
+                pass
         if code != 0:
             raise ZhipuChatError(
                 f"opencode exited {code}: {(stderr or '')[-500:]}")

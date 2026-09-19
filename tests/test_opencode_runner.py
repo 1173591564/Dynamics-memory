@@ -195,6 +195,20 @@ def test_workdir_payload_split(tmp_path):
     assert not list(pd.glob("call_*.txt"))      # 附件用完即删
 
 
+def test_payload_deleted_on_failure_paths(tmp_path):
+    # finally 的真正目的：失败路径（非零退出 / exec 抛异常）附件也不留盘
+    fake = _FakeExec("garbage", code=1)
+    r = _runner(tmp_path, fake)
+    with pytest.raises(ZhipuChatError):
+        r.run(system="S", user="U")
+    assert not list(r.payload_dir.glob("call_*.txt"))
+
+    r2 = _runner(tmp_path, _FakeExec(OSError("spawn fail")))
+    with pytest.raises(OSError):
+        r2.run(system="S", user="U")
+    assert not list(r2.payload_dir.glob("call_*.txt"))
+
+
 class _FailRunner:
     """chat 恒抛 ZhipuChatError 的假 runner。"""
 
