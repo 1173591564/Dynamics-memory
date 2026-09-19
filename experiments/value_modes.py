@@ -14,6 +14,7 @@ from hybrid_memory.core.engine import MemoryEngine
 from hybrid_memory.core.types import Event, Pool, Query
 from hybrid_memory.embed.synthetic import SyntheticEmbedder
 from hybrid_memory.sim.world import StreamGen
+from hybrid_memory.worker import SignalWorker
 
 SETS = ("p01", "r1_confidence", "r12_salience", "r123_novelty")
 SEEDS = tuple(range(20))
@@ -35,6 +36,7 @@ def run_one(feature_set: str, seed: int) -> dict:
                       t_noise=1000, noise_end=1001, t_conflict=1000,
                       query_rate=0.0)
     eng = MemoryEngine(cfg, emb, world)
+    worker = SignalWorker(eng, world)
     high = world._spawn("critical", 0, 0, birth=0)
     low = world._spawn("minor", 0, 0, birth=0)
     flow = world._spawn("routine", 0, 0, birth=0)
@@ -110,6 +112,7 @@ def run_one(feature_set: str, seed: int) -> dict:
                                     if cfg.confidence_on else None),
             })
         eng.step(t)
+        worker.process(t)
         if flow_promoted_at is None and any(
                 m.belief_id == flow.id and m.pool is Pool.MEMORY
                 for m in eng.mems.values()):

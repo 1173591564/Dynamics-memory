@@ -34,6 +34,7 @@ from hybrid_memory.embed.base import cosine
 from hybrid_memory.embed.cache import SqliteEmbeddingCache
 from hybrid_memory.embed.zhipu import ZhipuEmbedder
 from hybrid_memory.semantics import RealChatSemantics, normalize
+from hybrid_memory.worker import SignalWorker
 
 DATA = P.DATA_REAL
 CANDGEN = P.CANDGEN_DIR / "real-candgen-k3-s3.jsonl"
@@ -91,6 +92,7 @@ def main() -> None:
               tau_dup=args.tau_dup, tau_sim=args.tau_sim,
               useful_hit=False)   # 真实数据无 recognizer：selected-hit 记账
     eng = MemoryEngine(cfg, emb, semantics)
+    worker = SignalWorker(eng, semantics)   # 标注文件裁决走信号通路
 
     by_avail: dict[int, list] = {}
     for w in windows:
@@ -121,6 +123,7 @@ def main() -> None:
                      "top_sim": round(top_sim, 4),
                      "C": pools["C"], "M": pools["M"], "A": pools["A"]})
         eng.step(t)
+        worker.process(t)
 
     # 未消解 tension → 人类工作清单
     review_path = P.QA / "tensions_review.jsonl"

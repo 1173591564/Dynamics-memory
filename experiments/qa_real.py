@@ -33,6 +33,7 @@ from hybrid_memory.llm import chat
 from hybrid_memory.semantics import RealChatSemantics, normalize
 from hybrid_memory.semantics.llm import LLMSemantics
 from hybrid_memory.semantics.opencode import OpencodeSemantics
+from hybrid_memory.worker import SignalWorker
 
 DATA = P.DATA_REAL
 CANDGEN = P.CANDGEN_DIR / "real-candgen-k3-s3-v2.jsonl"
@@ -144,6 +145,7 @@ def main() -> None:
             useful_hit=args.feedback, defer_credit=args.feedback),
         args.feature_set)
     eng = MemoryEngine(cfg, emb, semantics)
+    worker = SignalWorker(eng, semantics)
 
     by_avail: dict[int, list] = defaultdict(list)
     for w in windows:
@@ -178,7 +180,9 @@ def main() -> None:
                              + f"\n\n问题：{q['question']}",
                         cache_dir=P.CHAT_CACHE)
         if args.feedback and pred is not None:
-            n_fb = eng.feedback(ret, q["question"], pred, t)
+            eng.feedback(ret, q["question"], pred, t)
+            worker.process(t)
+            n_fb = ret.n_useful
         else:
             n_fb = None
         ev_set = frozenset(q["evidence_units"])
@@ -215,11 +219,13 @@ def main() -> None:
             print(f"[t={t}] {q['qid']} ({q['qtype']}) n_mem={r['n_mem']} "
                   f"ev={r['evidence_recall']} correct={r['correct']}")
         eng.step(t)
+        worker.process(t)
     # ask_at 超出流尾的问题：流末补注后用终态回答
     for tt in sorted(k for k in by_avail if k >= len(units)):
         for wid in by_avail[tt]:
             _observe(wid, len(units))
     eng.step(len(units))
+    worker.process(len(units))
     for tt in sorted(k for k in by_ask if k >= len(units)):
         for q in by_ask[tt]:
             r = _answer(q, tt)

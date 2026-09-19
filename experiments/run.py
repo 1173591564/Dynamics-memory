@@ -24,6 +24,7 @@ from hybrid_memory.core.engine import MemoryEngine
 from hybrid_memory.embed.synthetic import SyntheticEmbedder
 from hybrid_memory.metrics import QueryCounts, Recorder, StepMetrics
 from hybrid_memory.sim.world import StreamGen
+from hybrid_memory.worker import SignalWorker
 
 T = 220
 SEEDS = tuple(range(10))
@@ -56,6 +57,7 @@ def run_one(name: str, cfg: Cfg, seed: int = 0) -> Recorder:
     emb = SyntheticEmbedder(seed=seed)
     world = StreamGen(emb, seed=seed)
     eng = MemoryEngine(cfg, emb, world)
+    worker = SignalWorker(eng, world)   # ground-truth 裁判走信号通路
     recorder = Recorder()
 
     for t in range(T):
@@ -68,6 +70,7 @@ def run_one(name: str, cfg: Cfg, seed: int = 0) -> Recorder:
             q_emb = emb.embed([query.text], keys=[key])[0]
             counts.add(eng.retrieve(q_emb, query, t))
         eng.step(t)
+        worker.process(t)
         recorder.record(eng, t, world.phase(t), counts)
     return recorder
 

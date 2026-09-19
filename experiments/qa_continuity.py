@@ -40,6 +40,7 @@ from hybrid_memory.llm import chat
 from hybrid_memory.semantics import RealChatSemantics, normalize
 from hybrid_memory.semantics.llm import LLMSemantics
 from hybrid_memory.semantics.opencode import OpencodeSemantics
+from hybrid_memory.worker import SignalWorker
 
 DATA = P.DATA_REAL
 CANDGEN = P.CANDGEN_DIR / "real-candgen-k3-s3-v2.jsonl"
@@ -174,6 +175,7 @@ def main() -> None:
             useful_hit=args.feedback, defer_credit=args.feedback),
         args.feature_set)
     eng = MemoryEngine(cfg, emb, semantics)
+    worker = SignalWorker(eng, semantics)
 
     by_avail: dict[int, list] = defaultdict(list)
     for w in windows:
@@ -245,6 +247,7 @@ def main() -> None:
             eng.feedback(ret, units[t].user_text,
                          pred_mem or units[t].assistant_text, t)
         eng.step(t)
+        worker.process(t)   # 信号通路：tension 裁决/recognizer/巩固
     print(f"replay done, {len(jobs)} reader+judge jobs",
           flush=True)
 

@@ -1,4 +1,8 @@
-"""信号层（P1 影子模式）测试：发射点、队列有界/合并、操作面等价性。"""
+"""信号层测试：发射点、队列有界/合并、worker 消费与操作面等价性。
+
+P2 后引擎不做语义判定：conflict 信号由 maintenance 对老化 tension 发射，
+feedback_pending 由 engine.feedback 发射，shadow 信用恒延迟结算。
+"""
 import math
 import os
 import sys
@@ -14,6 +18,7 @@ from hybrid_memory.core.signals import SignalQueue
 from hybrid_memory.core.types import Event, Memory, Pool, Query
 from hybrid_memory.embed.synthetic import SyntheticEmbedder
 from hybrid_memory.sim.world import StreamGen
+from hybrid_memory.worker import SignalWorker
 
 
 def make(seed=0, cfg=None):
@@ -67,16 +72,42 @@ def test_queue_bound_and_drop_counter():
     assert len(q) == 0
 
 
-def test_conflict_signal_coalesces_pairs():
-    emb, world, eng = make()
+def test_conflict_signal_emits_aged_pairs_at_step():
+    emb, world, eng = make(cfg=Cfg(tension_delay=0))
+    b = world.beliefs[0]
+    for i in range(3):
+        eng.mems[i] = Memory(i, b.id, b.value, f"m{i}",
+                             np.array([1.0, 0.0]))
+    eng._next_id = 3
     eng.add_tension(0, 1, 0)
     eng.add_tension(1, 2, 0)
-    sigs = eng.drain_signals()
-    assert [s.kind for s in sigs] == ["conflict_pending"]
-    assert sigs[0].payload == [(0, 1), (1, 2)]
-    # 同一对再次出现（observations++）不再发射
-    eng.add_tension(0, 1, 1)
+    # add_tension 不直接发射；maintenance 对老化未决对统一发射
     assert eng.drain_signals() == []
+    eng.step(0)
+    sigs = [s for s in eng.drain_signals() if s.kind == "conflict_pending"]
+    assert len(sigs) == 1
+    assert sigs[0].payload == [(0, 1), (1, 2)]
+    # 未决对下一步仍重发（worker retry 通道），pair 不重复
+    eng.step(1)
+    sigs = [s for s in eng.drain_signals() if s.kind == "conflict_pending"]
+    assert len(sigs) == 1
+    assert sigs[0].payload == [(0, 1), (1, 2)]
+
+
+def test_conflict_signal_respects_tension_delay():
+    emb, world, eng = make(cfg=Cfg(tension_delay=5))
+    b = world.beliefs[0]
+    for i in range(2):
+        eng.mems[i] = Memory(i, b.id, b.value, f"m{i}",
+                             np.array([1.0, 0.0]))
+    eng._next_id = 2
+    eng.add_tension(0, 1, 3)
+    eng.step(4)
+    assert not [s for s in eng.drain_signals()
+                if s.kind == "conflict_pending"]   # 未老化不发
+    eng.step(8)
+    sigs = [s for s in eng.drain_signals() if s.kind == "conflict_pending"]
+    assert sigs[0].payload == [(0, 1)]
 
 
 def test_thin_recall_deduped_per_step():
@@ -90,20 +121,28 @@ def test_thin_recall_deduped_per_step():
     assert kinds.count("thin_recall") == 2   # t=0 合并成一条，t=1 一条
 
 
-def test_feedback_pending_emitted_only_under_defer():
+def test_feedback_pending_emitted_by_feedback_call():
     emb, world, eng = make(cfg=Cfg(defer_credit=True))
     b = world.beliefs[0]
     eng.observe([Event(b.id, b.value, b.phrasings[b.value][0])], 0)
     ret = eng.retrieve(emb.vec_for(b.entity, b.id, b.value),
                        Query(b.id, "q"), 0)
+    # retrieve 不发 feedback_pending（还没有答案可判）
+    assert not [s for s in eng.drain_signals()
+                if s.kind == "feedback_pending"]
+    eng.feedback(ret, "问题", "回答", 0)
     sigs = [s for s in eng.drain_signals() if s.kind == "feedback_pending"]
-    assert len(sigs) == 1 and sigs[0].payload["retrieval"] is ret
-    # defer 关闭：不发 feedback_pending
+    assert len(sigs) == 1
+    assert sigs[0].payload["retrieval"] is ret
+    assert sigs[0].payload["question"] == "问题"
+    assert sigs[0].payload["answer"] == "回答"
+    # defer 关闭：retrieve 就地结清 → feedback 直接报错
     emb2, world2, eng2 = make(cfg=Cfg(defer_credit=False))
     eng2.observe([Event(b.id, b.value, b.phrasings[b.value][0])], 0)
-    eng2.retrieve(emb2.vec_for(b.entity, b.id, b.value), Query(b.id, "q"), 0)
-    assert not [s for s in eng2.drain_signals()
-                if s.kind == "feedback_pending"]
+    ret2 = eng2.retrieve(emb2.vec_for(b.entity, b.id, b.value),
+                         Query(b.id, "q"), 0)
+    with pytest.raises(RuntimeError):
+        eng2.feedback(ret2, "q", "a", 0)
 
 
 def test_submit_relevance_matches_feedback_effects():
@@ -120,7 +159,7 @@ def test_submit_relevance_matches_feedback_effects():
         eng.submit_relevance(ret, [True], 0)
 
 
-def test_submit_verdicts_synonym_matches_sync_path():
+def test_submit_verdicts_synonym_matches_worker_path():
     def _setup(seed):
         emb, world, eng = make(seed=seed, cfg=Cfg(tension_delay=0))
         b = world.beliefs[0]
@@ -129,16 +168,17 @@ def test_submit_verdicts_synonym_matches_sync_path():
         eng.mems[0], eng.mems[1] = a, bb
         eng._next_id = 2
         eng.add_tension(0, 1, 0)
-        return eng, a, bb
+        return world, eng, a, bb
 
-    eng_sync, a1, b1 = _setup(0)
-    eng_sync.semantics = _Judge(eng_sync.semantics)
-    eng_sync.step(0)
-    eng_op, a2, b2 = _setup(0)
+    world_w, eng_w, a1, b1 = _setup(0)
+    eng_w.step(0)   # 老化发 conflict_pending
+    stats = SignalWorker(eng_w, _Judge(world_w, verdict="synonym")).process(0)
+    assert stats["resolved"] == 1
+    world_op, eng_op, a2, b2 = _setup(0)
     n = eng_op.submit_verdicts([(0, 1, "synonym")], 0)
 
     assert n == 1
-    for eng, a, b in ((eng_sync, a1, b1), (eng_op, a2, b2)):
+    for eng, a, b in ((eng_w, a1, b1), (eng_op, a2, b2)):
         assert b.superseded_by == a.id and b.pool is Pool.ARCHIVE
         assert a.evid == 1 + 1
         assert eng.n_merge == 1 and eng.n_resolve == 1
@@ -193,16 +233,9 @@ def test_add_reflection_admits_memory():
     assert m.derived_from == ()
 
 
-def test_shadow_sync_mode_credits_immediately():
-    eng, ret, rival, m = _suppression_setup(Cfg(), verdict="update")
-    assert m.d_shadow == 1.0 and m.last_hit == 0      # 同步模式即时记账
-    assert eng._shadow_pending == []
-    assert (0, 1) in eng.tensions
-
-
-def test_shadow_defer_records_without_judge():
-    eng, ret, rival, m = _suppression_setup(
-        Cfg(shadow_defer=True), fail=True)            # judge 被调即炸
+def test_shadow_records_pending_without_judge():
+    # 压制路径恒延迟记账：引擎全程不调 judge（fail=True 被调即炸）
+    eng, ret, rival, m = _suppression_setup(Cfg(), fail=True)
     assert m.d_shadow == 0.0                          # 未结算
     assert len(eng._shadow_pending) == 1
     key, mid, t_ret, rel = eng._shadow_pending[0]
@@ -210,22 +243,22 @@ def test_shadow_defer_records_without_judge():
     assert eng.tensions                              # backlog 照常
 
 
-def test_shadow_defer_settles_on_update_verdict():
-    eng, ret, rival, m = _suppression_setup(Cfg(shadow_defer=True))
+def test_shadow_settles_on_update_verdict():
+    eng, ret, rival, m = _suppression_setup(Cfg())
     n = eng.submit_verdicts([(1, 0, "update")], 5)
     assert n == 1 and eng._shadow_pending == []
     assert m.d_shadow == 1.0 and m.last_hit == 0      # 结算用检索时刻
     assert m.superseded_by == 0 and m.pool is Pool.ARCHIVE
 
 
-def test_shadow_defer_synonym_no_credit():
-    eng, ret, rival, m = _suppression_setup(Cfg(shadow_defer=True))
+def test_shadow_synonym_no_credit():
+    eng, ret, rival, m = _suppression_setup(Cfg())
     eng.submit_verdicts([(1, 0, "synonym")], 5)
     assert m.d_shadow == 0.0 and eng._shadow_pending == []
 
 
-def test_shadow_defer_pending_verdict_credits_keeps_backlog():
-    eng, ret, rival, m = _suppression_setup(Cfg(shadow_defer=True))
+def test_shadow_pending_verdict_credits_keeps_backlog():
+    eng, ret, rival, m = _suppression_setup(Cfg())
     n = eng.submit_verdicts([(1, 0, "pending")], 5)
     assert n == 0
     assert m.d_shadow == 1.0                          # 非 synonym → 发信用
@@ -233,18 +266,17 @@ def test_shadow_defer_pending_verdict_credits_keeps_backlog():
     assert (0, 1) in eng.tensions                     # backlog 保留
 
 
-def test_shadow_defer_settles_via_sync_maintenance():
-    eng, ret, rival, m = _suppression_setup(
-        Cfg(shadow_defer=True, tension_delay=0))
-    eng.semantics = _Judge(eng.semantics, verdict="update")
-    eng.step(0)
+def test_shadow_settles_via_worker():
+    eng, ret, rival, m = _suppression_setup(Cfg(tension_delay=0))
+    eng.step(0)   # 老化发 conflict_pending
+    SignalWorker(eng, _Judge(eng.semantics, verdict="update")).process(0)
     assert m.d_shadow == 1.0 and eng._shadow_pending == []
     assert eng.n_resolve == 1 and not eng.tensions
 
 
 def test_shadow_pending_bounded():
     eng, ret, rival, m = _suppression_setup(
-        Cfg(shadow_defer=True, shadow_pending_cap=1))
+        Cfg(shadow_pending_cap=1))
     eng._record_shadow_pending(m, rival, 5, True)
     assert len(eng._shadow_pending) == 1 and eng.n_shadow_dropped == 1
 

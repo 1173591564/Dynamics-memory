@@ -1,7 +1,9 @@
 """写入回路：Event → ingest dedup → 新条目进 C（单层模式直接进 M）。
 
-dedup 语义：sim>τ_dup 且判为 synonym（同 belief 同值）→ evid++，不新增；
-sim>τ_dup 但非同义（update/contradiction/collision）→ 新增 + tension 对。
+dedup 语义：sim>τ_dup 且 verbatim（同 belief 同值，确定性判据）→ evid++，
+不新增；sim>τ_dup 但非 verbatim → 新增 + tension 对，verdict 留给 worker
+裁决（引擎不做语义判定）。无 worker 时近重复共存、tension 挂 backlog，
+检索以 contested 形式如实端出。
 """
 from __future__ import annotations
 
@@ -21,15 +23,13 @@ def run_ingest(eng, events: list[Event], t: int) -> None:
     for ev, vec in zip(events, vecs):
         best = max(active, key=lambda m: cosine(vec, m.emb), default=None)
         sim = cosine(vec, best.emb) if best else 0.0
-        verdict = None
-        if cfg.ingest_dedup and best is not None and sim > cfg.tau_dup:
-            verdict = semantics.judge(ev.belief_id, ev.value,
-                                      best.belief_id, best.value)
 
         novelty = 1.0 if best is None else max(0.0, min(1.0, 1.0 - sim))
         sal = max(0.0, min(1.0, ev.salience))
         if (cfg.ingest_dedup and best is not None
-                and sim > cfg.tau_dup and verdict == "synonym"):
+                and sim > cfg.tau_dup
+                and ev.belief_id == best.belief_id
+                and ev.value == best.value):   # verbatim：确定性 dedup
             discount_to(best, t, cfg)
             best.evid += 1          # 确认事件：证据汇聚，不新增
             best.last_seen = t

@@ -15,6 +15,7 @@ from hybrid_memory.core.types import Event, Memory, Pool, Query, Retrieval
 from hybrid_memory.embed.synthetic import SyntheticEmbedder
 from hybrid_memory.metrics import QueryCounts
 from hybrid_memory.sim.world import StreamGen
+from hybrid_memory.worker import SignalWorker
 
 
 def make(seed=0, cfg=None, **world_kwargs):
@@ -97,15 +98,31 @@ def test_ingest_low_sim_never_calls_judge():
     assert not eng.tensions
 
 
-def test_ingest_high_sim_dedup_calls_judge_once():
+def test_ingest_high_sim_verbatim_dedup_needs_no_judge():
+    # 同 belief_id + 同 value 是确定性 verbatim：内联合并，不走语义裁决
     table = {"a": [1.0, 0.0], "a2": [1.0, 0.0]}
     world, eng = _stub_engine(Cfg(), table)
-    spy = _JudgeSpy(world, verdict="synonym")
-    eng.semantics = spy
+    eng.semantics = _JudgeSpy(world, verdict="synonym", fail=True)
     eng.observe([Event(0, "va", "a")], 0)
-    eng.observe([Event(0, "va", "a2")], 1)   # sim=1>τ_dup → 判一次
-    assert len(spy.calls) == 1
+    eng.observe([Event(0, "va", "a2")], 1)
     assert len(eng.mems) == 1 and eng.mems[0].evid == 2
+    assert not eng.tensions
+
+
+def test_ingest_near_dup_resolves_via_worker():
+    # 非 verbatim 近重复：各立条目 + tension，verdict 由 worker 回报后合并
+    table = {"a": [1.0, 0.0], "a2": [1.0, 0.0]}
+    world, eng = _stub_engine(Cfg(tension_delay=0), table)
+    spy = _JudgeSpy(world, verdict="synonym")
+    eng.observe([Event(0, "va", "a")], 0)
+    eng.observe([Event(0, "vb", "a2")], 1)
+    assert len(eng.mems) == 2 and len(eng.tensions) == 1
+    assert len(spy.calls) == 0               # 引擎不判
+    eng.step(1)                              # 老化发 conflict_pending
+    stats = SignalWorker(eng, spy).process(1)
+    assert stats["resolved"] == 1 and len(spy.calls) == 1
+    assert eng.mems[0].evid == 2 and eng.mems[1].pool is Pool.ARCHIVE
+    assert not eng.tensions
 
 
 def test_ingest_dedup_off_high_sim_no_judge_still_tension():
@@ -276,6 +293,7 @@ def test_delayed_tension_scope_resolution():
     eng.step(2)
     assert len(eng.tensions) == 1
     eng.step(3)
+    SignalWorker(eng, world).process(3)
     assert not eng.tensions
     # 异 scope 矛盾 → 条件化聚合 memory，成员收编退居幕后
     agg = next(m for m in eng.mems.values() if m.agg_members)
@@ -302,10 +320,14 @@ def test_shadow_credit_reaches_relevant_challenger():
     result = eng.retrieve(q_emb, query, 1)
     assert result.selected == [incumbent_memory]
     assert result.suppressed == [(challenger_memory.id, incumbent_memory.id)]
+    # 恒延迟：verdict 到达前 shadow 不结算
+    assert challenger_memory.d_shadow == 0.0
+    eng.step(11)   # tension_delay=10，first_seen=1 → 老化发信号
+    SignalWorker(eng, world).process(11)   # contradiction → 结算 shadow
     assert challenger_memory.d_shadow == 1.0
-    assert challenger_memory.last_hit == 1
+    assert challenger_memory.last_hit == 1   # 结算用原检索时刻
     before = challenger_memory.v
-    eng.step(1)
+    eng.step(12)
     assert challenger_memory.v > before
 
 
@@ -320,6 +342,7 @@ def test_drift_supersedes_old_value_after_delay():
     belief.value = new_value
     eng.observe([Event(belief.id, new_value, belief.phrasings[new_value][0])], 1)
     eng.step(1)
+    SignalWorker(eng, world).process(1)   # 信号通路裁决 update → 新替旧
     old_memory = next(m for m in eng.mems.values() if m.value == old_value)
     new_memory = next(m for m in eng.mems.values() if m.value == new_value)
     assert old_memory.pool is Pool.ARCHIVE
@@ -369,8 +392,9 @@ def test_deferred_credit_only_rewards_recognized():
         Event(other.id, other.value, other.phrasings[other.value][0]),
     ], 0)
     ret2 = eng2.retrieve(q_emb, query, 0)
-    n = eng2.feedback(ret2, "q", "answer", 0)
-    assert n == 1 and ret2.n_useful == 1
+    eng2.feedback(ret2, "q", "answer", 0)          # 发 feedback_pending
+    SignalWorker(eng2, Recog()).process(0)          # worker 判 relevant_set
+    assert ret2.n_useful == 1
     assert ret2.selected[0].d_hit == 1.0
     assert ret2.selected[1].d_hit == 0.0
 
@@ -493,8 +517,9 @@ def test_feedback_on_provisional_does_not_change_confidence():
     eng.mems[0] = low
     result = eng.retrieve(np.array([1.0, 0.0]), Query(b.id, "q"), 0)
     assert result.provisional == [low]
-    n = eng.feedback(result, "q", "a", 0)
-    assert n == 1
+    eng.feedback(result, "q", "a", 0)
+    SignalWorker(eng, world).process(0)   # world 无 relevant_set → 全记
+    assert result.n_useful == 1
     assert low.hits == 1 and low.d_hit == 1.0
     assert low.conf_pos == 0.0 and low.conf_neg == 0.0
 
@@ -509,6 +534,7 @@ def test_contradiction_scoped_no_negative_evidence():
         Event(right.id, right.value, right.phrasings[right.value][0]),
     ], 0)
     eng.step(0)
+    SignalWorker(eng, world).process(0)
     a, b = eng.mems[0], eng.mems[1]
     agg = next(m for m in eng.mems.values() if m.agg_members)
     assert not agg.pending_review
@@ -541,6 +567,7 @@ def test_contradiction_unscoped_adds_negative_evidence():
         Event(right.id, right.value, right.phrasings[right.value][0]),
     ], 0)
     eng.step(0)
+    SignalWorker(eng, Unscoped()).process(0)
     a, b = eng.mems[0], eng.mems[1]
     agg = next(m for m in eng.mems.values() if m.agg_members)
     assert agg.pending_review
@@ -666,6 +693,7 @@ def test_salience_propagates_on_merge_update_aggregate():
     eng.mems[1] = m2
     eng.add_tension(0, 1, 0)
     eng.step(0)
+    SignalWorker(eng, world).process(0)
     keep = m1 if m1.superseded_by is None else m2
     assert keep is m2      # m2 salience 高衰减慢 → v 高者留
     assert keep.salience == 0.9
@@ -679,6 +707,7 @@ def test_salience_propagates_on_merge_update_aggregate():
     eng.mems[11] = m4
     eng.add_tension(10, 11, 5)
     eng.step(5)
+    SignalWorker(eng, world).process(5)
     assert m3.superseded_by == m4.id
     assert m4.salience == 0.9
     assert m4.novelty == 0.1
@@ -693,6 +722,7 @@ def test_salience_propagates_on_merge_update_aggregate():
     eng.mems[21] = m6
     eng.add_tension(20, 21, 5)
     eng.step(5)
+    SignalWorker(eng, world).process(5)
     agg = next(m for m in eng.mems.values() if m.agg_members == (20, 21))
     assert agg.salience == 0.8
     assert agg.novelty == 0.8
@@ -785,6 +815,7 @@ def test_aggregate_novelty_max_without_extra_v_bonus():
     eng.mems[1] = b
     eng.add_tension(0, 1, 0)
     eng.step(0)
+    SignalWorker(eng, world).process(0)
     agg = next(m for m in eng.mems.values() if m.agg_members == (0, 1))
     assert not agg.pending_review
     assert agg.novelty == 0.8
@@ -797,9 +828,11 @@ def test_consolidation_below_budget_not_called():
     emb, world, eng = make(cfg=cfg)
     sem = _Consolidatable(world, Event(0, "v", "refl"))
     eng.semantics = sem
+    worker = SignalWorker(eng, sem)
     b = world.beliefs[0]
     eng.observe([Event(b.id, b.value, b.phrasings[b.value][0], (), 0.5)], 0)
     eng.step(0)
+    worker.process(0)
     assert sem.calls == []
     assert eng.n_consolidate == 0
     assert all(m.kind == "fact" for m in eng.mems.values())
@@ -816,11 +849,13 @@ def test_consolidation_threshold_creates_reflection_once():
                 conf_pos=2.0, conf_neg=1.0)
     sem = _Consolidatable(world, out)
     eng.semantics = sem
+    worker = SignalWorker(eng, sem)
     for i in range(4):
         b = world.beliefs[i]
         eng.observe([Event(b.id, b.value, b.phrasings[b.value][0],
                            (i,), 1.0)], i)
     eng.step(5)
+    worker.process(5)
     # 4 条合格 fact，预算 4.0>=3.5、数 4>=3 → 取 top-3 (salience,last_seen,…)
     # 全同 salience → last_seen 降序取 id 1,2,3 → 回调按 (birth,id) 时序
     assert sem.calls == [[1, 2, 3]]
@@ -844,6 +879,7 @@ def test_consolidation_threshold_creates_reflection_once():
     # 恰好移除 chosen；reflection 不进 pending；下一步不级联
     assert eng._consolidation_pending == {0}
     eng.step(6)
+    worker.process(6)
     assert sem.calls == [[1, 2, 3]]
     assert eng.n_consolidate == 1
 
@@ -854,11 +890,13 @@ def test_consolidation_none_callback_leaves_pending():
     emb, world, eng = make(cfg=cfg)
     sem = _Consolidatable(world, None)
     eng.semantics = sem
+    worker = SignalWorker(eng, sem)
     for i in range(3):
         b = world.beliefs[i]
         eng.observe([Event(b.id, b.value, b.phrasings[b.value][0],
                            (), 1.0)], 0)
     eng.step(0)
+    worker.process(0)
     assert sem.calls == [[0, 1, 2]]
     assert eng.n_consolidate == 0
     assert eng._consolidation_pending == {0, 1, 2}
@@ -870,6 +908,7 @@ def test_consolidation_prunes_ineligible_pending():
     emb, world, eng = make(cfg=cfg)
     sem = _Consolidatable(world, None)
     eng.semantics = sem
+    worker = SignalWorker(eng, sem)
     for i in range(4):
         b = world.beliefs[i]
         eng.observe([Event(b.id, b.value, b.phrasings[b.value][0],
@@ -883,6 +922,7 @@ def test_consolidation_prunes_ineligible_pending():
     eng.mems[50] = ghost
     eng._consolidation_pending.update({50, 77})   # 非 fact + 不存在
     eng.step(0)
+    SignalWorker(eng, sem).process(0)
     assert eng._consolidation_pending == set()
     assert sem.calls == []
     assert eng.n_consolidate == 0
@@ -926,9 +966,11 @@ def test_consolidation_reflection_gets_no_write_evidence():
     out = Event(rb.id, rb.value, "状态反射", kind="reflection")
     sem = _Consolidatable(world, out)
     eng.semantics = sem
+    worker = SignalWorker(eng, sem)
     b = world.beliefs[0]
     eng.observe([Event(b.id, b.value, b.phrasings[b.value][0], (), 1.0)], 0)
     eng.step(0)
+    worker.process(0)
     refl = next(m for m in eng.mems.values() if m.kind == "reflection")
     # Event 未带证据 → 0，不是 conf_write_evidence 的独立证据
     assert refl.conf_pos == 0.0 and refl.conf_neg == 0.0
@@ -1024,12 +1066,14 @@ def test_consolidation_scene_groups_no_cross_budget():
     emb, world, eng = make(cfg=cfg)
     sem = _Consolidatable(world, None)
     eng.semantics = sem
+    worker = SignalWorker(eng, sem)
     # 每组各自预算 2.0 < 3.0，全局 4.0 ≥ 3.0 → 不得触发
     for i, scene in ((0, "A"), (1, "A"), (2, "B"), (3, "B")):
         b = world.beliefs[i]
         eng.observe([Event(b.id, b.value, b.phrasings[b.value][0],
                            (), 1.0, scene=scene)], 0)
     eng.step(0)
+    worker.process(0)
     assert sem.calls == []
     assert eng.n_consolidate == 0
 
@@ -1042,11 +1086,13 @@ def test_consolidation_ready_scene_only():
     out = Event(rb.id, rb.value, "A组状态", kind="reflection", scene="A")
     sem = _Consolidatable(world, out)
     eng.semantics = sem
+    worker = SignalWorker(eng, sem)
     for i, scene in ((0, "A"), (1, "A"), (2, "A"), (3, "B"), (4, "B")):
         b = world.beliefs[i]
         eng.observe([Event(b.id, b.value, b.phrasings[b.value][0],
                            (), 1.0, scene=scene)], i)
     eng.step(5)
+    worker.process(5)
     assert sem.calls == [[0, 1, 2]]          # 只有 ready 的 A 组
     refl = next(m for m in eng.mems.values() if m.kind == "reflection")
     assert refl.derived_from == (0, 1, 2)
@@ -1062,16 +1108,19 @@ def test_consolidation_picks_most_recent_scene_first():
     out = Event(rb.id, rb.value, "状态", kind="reflection", scene="B")
     sem = _Consolidatable(world, out)
     eng.semantics = sem
+    worker = SignalWorker(eng, sem)
     for i, t, scene in ((0, 0, "A"), (1, 1, "A"), (2, 2, "A"),
                         (3, 5, "B"), (4, 6, "B"), (5, 7, "B")):
         b = world.beliefs[i]
         eng.observe([Event(b.id, b.value, b.phrasings[b.value][0],
                            (), 1.0, scene=scene)], t)
     eng.step(7)
+    worker.process(7)
     # 两组都 ready：B 的 max last_seen=7 > A 的 2 → 先 B
     assert sem.calls == [[3, 4, 5]]
     assert eng._consolidation_pending == {0, 1, 2}
     eng.step(8)
+    worker.process(8)
     assert sem.calls == [[3, 4, 5], [0, 1, 2]]
     assert eng.n_consolidate == 2
 
@@ -1086,17 +1135,20 @@ def test_consolidation_none_defers_signature_no_starvation():
     sem = _Consolidatable(
         world, lambda mems: None if mems[0].scene == "B" else good)
     eng.semantics = sem
+    worker = SignalWorker(eng, sem)
     for i, t, scene in ((0, 0, "A"), (1, 1, "A"), (2, 2, "A"),
                         (3, 5, "B"), (4, 6, "B"), (5, 7, "B")):
         b = world.beliefs[i]
         eng.observe([Event(b.id, b.value, b.phrasings[b.value][0],
                            (), 1.0, scene=scene)], t)
     eng.step(7)
+    worker.process(7)
     # B 更新近 → 先试；None → 记签名、pending 不动
     assert sem.calls == [[3, 4, 5]]
     assert eng._consolidation_deferred["B"] == frozenset({3, 4, 5})
     assert eng.n_consolidate == 0
     eng.step(8)
+    worker.process(8)
     # B 同签名跳过，不再饿死 A
     assert sem.calls == [[3, 4, 5], [0, 1, 2]]
     assert eng.n_consolidate == 1
@@ -1105,6 +1157,7 @@ def test_consolidation_none_defers_signature_no_starvation():
     eng.observe([Event(b.id, b.value, b.phrasings[b.value][0],
                        (), 1.0, scene="B")], 9)
     eng.step(9)
+    worker.process(9)
     new_id = eng._consolidation_pending - {3, 4, 5}
     assert len(new_id) == 1
     assert sem.calls[-1] == [3, 4, 5] + sorted(new_id)  # 时序尾部
@@ -1118,13 +1171,15 @@ def test_consolidation_callback_error_propagates():
     emb, world, eng = make(cfg=cfg)
     sem = _Consolidatable(world, RuntimeError("bug"))
     eng.semantics = sem
+    worker = SignalWorker(eng, sem)
     b = world.beliefs[0]
     eng.observe([Event(b.id, b.value, b.phrasings[b.value][0], (), 1.0)], 0)
+    eng.step(0)                              # 只发信号，不回调
     with pytest.raises(RuntimeError, match="bug"):
-        eng.step(0)
+        worker.process(0)                     # 回调编程错误在 worker 侧抛出
     assert eng._consolidation_pending == {0}
     assert eng.n_consolidate == 0
-    assert eng._consolidation_deferred == {}   # 异常不写 deferred 签名
+    assert eng._consolidation_deferred[""] == frozenset({0})  # 发射即记签名
 
 
 def test_consolidation_novelty_ignores_hidden_members():
@@ -1143,6 +1198,7 @@ def test_consolidation_novelty_ignores_hidden_members():
     sem = _Consolidatable(world, out)
     eng.semantics = sem
     eng.step(0)
+    SignalWorker(eng, sem).process(0)
     refl = next(m for m in eng.mems.values() if m.kind == "reflection")
     # 可见邻居 src 的 sim=0 → novelty=1；若隐藏成员被计入则为 0
     assert refl.novelty == 1.0

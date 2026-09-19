@@ -35,6 +35,7 @@ from hybrid_memory.llm import chat
 from hybrid_memory.semantics import RealChatSemantics, normalize
 from hybrid_memory.semantics.llm import LLMSemantics
 from hybrid_memory.semantics.opencode import OpencodeSemantics
+from hybrid_memory.worker import SignalWorker
 
 READER_SYS = ("你在协助一个进行中的工程项目。根据给出的记忆回答问题。"
               "标为[未确认]的条目只能作为线索，不得作为确定结论；"
@@ -80,6 +81,7 @@ def main() -> None:
                         useful_hit=True, defer_credit=True),
                     args.feature_set)
     eng = MemoryEngine(cfg, emb, semantics)
+    worker = SignalWorker(eng, semantics)
 
     by_avail = defaultdict(list)
     for w in windows:
@@ -122,6 +124,7 @@ def main() -> None:
         eng.feedback(ret, units[t].user_text,
                      pred_mem or units[t].assistant_text, t)
         eng.step(t)
+        worker.process(t)
     print(f"replay {time.time()-t0:.0f}s, {len(dumps)} eval pts", flush=True)
 
     for d in dumps:

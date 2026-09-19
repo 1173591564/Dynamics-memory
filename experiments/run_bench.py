@@ -32,6 +32,7 @@ from hybrid_memory.embed.zhipu import ZhipuEmbedder
 from hybrid_memory.llm import chat
 from hybrid_memory.semantics import RealChatSemantics, normalize
 from hybrid_memory.datasets.real_chat import build_interaction_windows
+from hybrid_memory.worker import SignalWorker
 
 CG_DIR = P.CANDGEN_DIR / "bench-candgen"
 DOTENV = Path(".env")
@@ -104,10 +105,12 @@ def _judge_answer(question: str, gold: str, pred: str, key: str,
 def run_instance(inst: BenchInstance, args, emb, key: str,
                  gen: OpencodeCliGenerator) -> dict:
     cands, windows = _gen_or_load(inst, args.size, args.stride, gen)
+    semantics = RealChatSemantics(None)
     eng = MemoryEngine(
         Cfg(theta=args.theta, cap_m=args.cap_m, k=args.k,
             tau_dup=args.tau_dup, tau_sim=args.tau_sim, useful_hit=False),
-        emb, RealChatSemantics(None))
+        emb, semantics)
+    worker = SignalWorker(eng, semantics)
     n_units = len(inst.units)
     by_avail: dict[int, list] = {}
     for w, rec_c in zip(windows, (cands.get(w.id) for w in windows)):
@@ -134,11 +137,13 @@ def run_instance(inst: BenchInstance, args, emb, key: str,
         for rec_c in by_avail.get(t, []):
             _observe(rec_c, t)
         eng.step(t)
+        worker.process(t)
     # 最后一个窗口恰好在流尾完成：问题在 t=n_units 提出，此时它已可用
     for tt in sorted(k for k in by_avail if k >= n_units):
         for rec_c in by_avail[tt]:
             _observe(rec_c, n_units)
     eng.step(n_units)
+    worker.process(n_units)
 
     qres = []
     for q in inst.queries:

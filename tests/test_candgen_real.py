@@ -18,6 +18,7 @@ from hybrid_memory.core.types import Event, Pool
 from hybrid_memory.datasets.real_chat import (InteractionUnit,
                                               InteractionWindow)
 from hybrid_memory.semantics import RealChatSemantics, normalize
+from hybrid_memory.worker import SignalWorker
 
 
 class _StubEmbedder:
@@ -139,12 +140,13 @@ def test_real_semantics_judge_levels():
 
 
 def test_pending_tension_stays_in_backlog():
-    """真实 judge 未标注时，tension 过 delay 也不消解。"""
+    """真实 judge 未标注时，worker 回报 pending，tension 不消解。"""
     sem = RealChatSemantics()
     v_same = np.array([1.0, 0.0], dtype=np.float32)
     table = {"事实A措辞": v_same, "事实A另一措辞": v_same}
     emb = _StubEmbedder(table)
     eng = MemoryEngine(Cfg(tension_delay=2), emb, sem)
+    worker = SignalWorker(eng, sem)
     # 两条规范化不同但向量相同的候选 → ingest 近重复 → tension
     eng.observe([Event(sem.fingerprint("事实A措辞"), normalize("事实A措辞"),
                        "事实A措辞")], 0)
@@ -153,13 +155,15 @@ def test_pending_tension_stays_in_backlog():
     assert len(eng.mems) == 2 and len(eng.tensions) == 1
     for t in range(1, 6):
         eng.step(t)
+        worker.process(t)
     assert len(eng.tensions) == 1, "pending verdict 不应消解"
     assert eng.n_resolve == 0
-    # 补上标注后再 step 应消解
+    # 补上标注后 worker 再判应消解
     key = next(iter(eng.tensions))
     a, b = eng.mems[key[0]], eng.mems[key[1]]
     sem.labels[tuple(sorted((a.value, b.value)))] = "synonym"
     eng.step(6)
+    worker.process(6)
     assert len(eng.tensions) == 0 and eng.n_merge == 1
 
 

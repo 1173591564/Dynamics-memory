@@ -100,17 +100,18 @@ def run_retrieve(eng, q_emb: np.ndarray, q: Query, t: int) -> Retrieval:
             m.shadow_hits += 1
             if m.id in rival.derived_from or rival.id in m.derived_from:
                 return False   # 派生血缘：不裁判、不进 backlog、不发 shadow 信用
-            if cfg.shadow_credit and cfg.shadow_defer:
-                # 延迟记账：压制路径不裁判，本地谓词先算，verdict 到达时
-                # （submit_verdicts 或过渡期 maintenance 同步裁决）结算
+            if cfg.shadow_credit:
+                # 恒延迟记账：压制路径不裁判（引擎无 LLM），本地谓词先算，
+                # verdict 经 submit_verdicts 到达时结算 shadow 信用
                 rel = eng.semantics.relevant(m.belief_id, m.value, q, t)
                 eng._record_shadow_pending(m, rival, t, rel)
-            else:
-                verdict = eng.semantics.judge(
-                    m.belief_id, m.value, rival.belief_id, rival.value)
-                if (cfg.shadow_credit and verdict != "synonym"
-                        and eng.semantics.relevant(m.belief_id, m.value, q, t)):
-                    eng._issue_shadow_credit(m, t)
+                if not cfg.tension_on:
+                    # tension 关闭时该对不进 backlog，直接发信号求 verdict
+                    # 供 shadow 结算（merge 去重防 payload 膨胀）
+                    eng.signals.emit(
+                        "conflict_pending", [tuple(sorted((m.id, rival.id)))],
+                        t, key="conflict",
+                        merge=lambda o, n: o + [p for p in n if p not in o])
             eng.add_tension(m.id, rival.id, t)   # 压制对全部进 tension 待裁决
             return False
         return True
@@ -176,10 +177,8 @@ def run_retrieve(eng, q_emb: np.ndarray, q: Query, t: int) -> Retrieval:
     ret.selected = selected
     ret.n_shortlisted = len(shortlist)
 
-    # ---- 信号发射（P1 影子：同步路径照旧，仅并行广播"有活可干"）----
-    if cfg.defer_credit and selected:
-        eng.signals.emit("feedback_pending",
-                         {"retrieval": ret, "q": q.text}, t)
+    # ---- 信号发射：thin_recall 在此发；feedback_pending 由 engine.feedback
+    # 携带 question/answer 发射（retrieve 时还没有答案，无法归因）----
     if len(selected) < cfg.k:
         eng.signals.emit("thin_recall",
                          {"q": q.text, "n_selected": len(selected)}, t,

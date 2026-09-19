@@ -17,6 +17,7 @@ from hybrid_memory.core.engine import MemoryEngine
 from hybrid_memory.core.types import Event, Pool, Query
 from hybrid_memory.embed.synthetic import SyntheticEmbedder
 from hybrid_memory.sim.world import StreamGen
+from hybrid_memory.worker import SignalWorker
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "out", "runs")
@@ -40,6 +41,7 @@ def run_shadow(seed: int, shadow_credit: bool) -> tuple[list[dict], int | None]:
     world = StreamGen(emb, seed=seed, n_stable=0, t_drift=1000,
                       t_noise=1000, noise_end=1001, t_conflict=1000)
     eng = MemoryEngine(cfg, emb, world)
+    worker = SignalWorker(eng, world)
     incumbent = world._spawn("like", 0, 0, entity=0, scope="work", birth=0)
     challenger = None
     promoted_at = None
@@ -56,6 +58,7 @@ def run_shadow(seed: int, shadow_credit: bool) -> tuple[list[dict], int | None]:
         if challenger is not None:
             challenger_recall = float(query(eng, emb, world, challenger, t).n_useful > 0)
         eng.step(t)
+        worker.process(t)
         challenger_memories = ([m for m in eng.mems.values()
                                 if challenger is not None and m.belief_id == challenger.id]
                                if challenger is not None else [])
@@ -90,6 +93,7 @@ def run_stream(name: str, seed: int) -> list[dict]:
                       noise_end=STREAM_T, t_conflict=STREAM_T + 1,
                       noise_rate=6.0, query_rate=2.0)
     eng = MemoryEngine(cfg, emb, world)
+    worker = SignalWorker(eng, world)
     rows = []
 
     for t in range(STREAM_T):
@@ -103,6 +107,7 @@ def run_stream(name: str, seed: int) -> list[dict]:
             selected += len(result.selected)
             unique_relevant += int(result.n_useful > 0)
         eng.step(t)
+        worker.process(t)
         active = [m for m in eng.mems.values() if m.pool is not Pool.ARCHIVE]
         in_m = [m for m in active if m.pool is Pool.MEMORY]
         pollution_m = (sum(not world.valid(m.belief_id, m.value, t) for m in in_m) / len(in_m)

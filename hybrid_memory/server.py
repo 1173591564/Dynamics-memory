@@ -35,6 +35,7 @@ from .embed.base import Embedder
 from .llm import chat
 from .semantics import normalize
 from .semantics.llm import LLMSemantics
+from .worker import SignalWorker
 
 _RETRIEVAL_KEEP = 512   # retrieval 注册表上限（feedback 用，防无界增长）
 
@@ -51,6 +52,7 @@ class MemoryService:
         self.semantics = semantics
         self.generator = generator
         self.engine = MemoryEngine(cfg, emb, semantics)
+        self.worker = SignalWorker(self.engine, semantics)
         self.state_path = (Path(state_dir) / "state.pkl"
                            if state_dir else None)
         self._lock = threading.RLock()
@@ -83,10 +85,11 @@ class MemoryService:
             if evs:
                 self.engine.observe(evs, self._t)
             self.engine.step(self._t)
+            wstats = self.worker.process(self._t)
             self._t += 1
             pool = self.engine.pool_sizes()
         return {"candidates": len(evs), "scene": self._scene, "pool": pool,
-                "t": self._t}
+                "t": self._t, "worker": wstats}
 
     def _format_context(self, ret: Retrieval) -> str:
         prov_ids = {m.id for m in ret.provisional}
@@ -128,8 +131,9 @@ class MemoryService:
             ret = self._retrievals.get(retrieval_id)
             if ret is None:
                 return {"error": f"unknown retrieval_id {retrieval_id}"}
-            n = self.engine.feedback(ret, question, answer, self._t)
-            return {"n_useful": n}
+            self.engine.feedback(ret, question, answer, self._t)
+            self.worker.process(self._t)   # 排空 feedback_pending 等信号
+            return {"n_useful": ret.n_useful}
 
     def conflicts(self) -> dict:
         with self._lock:

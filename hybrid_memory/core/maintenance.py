@@ -77,33 +77,30 @@ def run_maintenance(eng, t: int) -> None:
             m.pool = Pool.ARCHIVE
             eng.n_archive += 1
 
-    _resolve_tensions(eng, t)
+    _emit_pending_conflicts(eng, t)
     maybe_consolidate(eng, t)
 
 
-def _resolve_tensions(eng, t: int) -> None:
+def _emit_pending_conflicts(eng, t: int) -> None:
+    """tension 维护：剪掉死对/链塌缩对，把到达 tension_delay 的未决对
+    以 conflict_pending 信号交给 worker 裁决（引擎不做语义判定）。
+    verdict 经 submit_verdicts 回报后由 apply_resolution 消解。"""
     cfg = eng.cfg
+    aged: list[tuple[int, int]] = []
     for key, tension in list(eng.tensions.items()):
-        if t - tension.first_seen < cfg.tension_delay:
-            continue
         if tension.left not in eng.mems or tension.right not in eng.mems:
             del eng.tensions[key]
             continue
-        a, b = eng.mems[tension.left], eng.mems[tension.right]
-        a = follow_chain(eng, a)
-        b = follow_chain(eng, b)
+        a = follow_chain(eng, eng.mems[tension.left])
+        b = follow_chain(eng, eng.mems[tension.right])
         if a.id == b.id:
             del eng.tensions[key]
             continue
-        discount_to(a, t, cfg)
-        discount_to(b, t, cfg)
-        verdict = eng.semantics.judge(a.belief_id, a.value, b.belief_id, b.value)
-        eng._settle_shadow(key, verdict)   # 过渡期：同步裁决也结算延迟 shadow
-        if verdict == "pending":    # 真实数据：无标注不消解，留在 backlog
-            continue
-        del eng.tensions[key]
-        eng.n_resolve += 1
-        apply_resolution(eng, a, b, verdict, t)
+        if t - tension.first_seen >= cfg.tension_delay:
+            aged.append(key)
+    if aged:
+        eng.signals.emit("conflict_pending", aged, t, key="conflict",
+                         merge=lambda o, n: o + [p for p in n if p not in o])
 
 
 def follow_chain(eng, m: Memory) -> Memory:
@@ -122,6 +119,7 @@ def apply_resolution(eng, a: Memory, b: Memory, verdict: str, t: int) -> None:
         keep.evid += drop.evid
         keep.hits += drop.hits
         keep.src = keep.src | drop.src
+        keep.last_seen = max(keep.last_seen, drop.last_seen)
         keep.conf_pos += drop.conf_pos
         keep.conf_neg += drop.conf_neg
         keep.conf_updated_at = t

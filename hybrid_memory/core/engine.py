@@ -1,9 +1,12 @@
 """MemoryEngine 门面：agent runtime 视角是 observe / retrieve / step。
 
-信号化（P1 影子模式）：引擎在有活可干时向 SignalQueue 发射信号
-（conflict_pending / feedback_pending / maintenance_due / thin_recall），
-并暴露操作面（submit_relevance / submit_verdicts / add_reflection）供
-后续 LLM worker 回报。P1 阶段同步 semantics 调用照旧，行为不变。
+信号化（P2）：引擎不做语义判定——不调用 judge / relevant_set /
+consolidate。有活可干时向 SignalQueue 发射信号（conflict_pending /
+feedback_pending / maintenance_due / thin_recall），worker 拉取信号、
+自主调 LLM、再经操作面（submit_relevance / submit_verdicts /
+add_reflection）回报。semantics 只剩本地谓词（relevant / valid / scope /
+embedding_key，无网络调用）。无 worker 时引擎照常运转：tension 挂
+backlog、检索以 contested 端出、信用停留在 pending——不静默丢活。
 内部三回路拆在 ingest / retrieval / maintenance 模块。
 """
 from __future__ import annotations
@@ -12,10 +15,10 @@ import numpy as np
 
 from ..config import Cfg
 from ..core.signals import SignalQueue
-from ..core.types import (Event, FeedbackSemantics, Memory,
-                          MemorySemantics, Pool, Query, Retrieval, Tension)
+from ..core.types import (Event, Memory, MemorySemantics, Pool, Query,
+                          Retrieval, Tension)
 from ..embed.base import Embedder
-from . import consolidation, ingest, maintenance, retrieval
+from . import confidence, consolidation, ingest, maintenance, retrieval
 
 
 class MemoryEngine:
@@ -57,8 +60,8 @@ class MemoryEngine:
         if tension is None:
             self.tensions[key] = Tension(key[0], key[1], t, t)
             self.n_tension += 1
-            self.signals.emit("conflict_pending", [key], t,
-                              key="conflict", merge=lambda o, n: o + n)
+            # 信号不在此发射：maintenance 对到达 tension_delay 的未决对
+            # 统一发 conflict_pending（保持原同步裁决的老化时序语义）
         else:
             tension.last_seen = t
             tension.observations += 1
@@ -74,24 +77,22 @@ class MemoryEngine:
 
     def feedback(self, ret: Retrieval, question: str, answer: str,
                  t: int) -> int:
-        """response-level 记账：recognizer 判哪些入选记忆真被答案用上，
-        只给它们发 useful-hit。semantics 不满足 FeedbackSemantics 时
-        退化为 selected-hit（全记）。仅应在 cfg.defer_credit=True 时
-        调用、且每次 retrieve 至多调一次。返回实际入账条数。"""
+        """response-level 记账（信号化）：不直接判 recognizer，把
+        (retrieval, question, answer) 以 feedback_pending 信号交给
+        worker；worker 判完经 submit_relevance 回报才真正入账。
+        仅应在 cfg.defer_credit=True 时调用、且每次 retrieve 至多调一次。
+        返回 0——入账是异步的，真实入账数由 submit_relevance 返回。"""
         if not ret.selected:
             return 0
-        if ret.credited:
+        if ret.credited or ret.feedback_sent:
             raise RuntimeError(
-                "feedback 重复记账：该 Retrieval 已结清"
+                "feedback 重复调用：该 Retrieval 已结清或已在待判队列"
                 "（defer_credit=False 时 retrieve 就地结算，不应再调 feedback）")
-        fn = (self.semantics.relevant_set
-              if isinstance(self.semantics, FeedbackSemantics) else None)
-        used = (fn([m.text for m in ret.selected], question, answer)
-                if fn else [True] * len(ret.selected))
-        if len(used) != len(ret.selected):
-            raise RuntimeError(
-                f"relevant_set 返回长度 {len(used)} != selected {len(ret.selected)}")
-        return self.submit_relevance(ret, used, t)
+        ret.feedback_sent = True
+        self.signals.emit("feedback_pending",
+                          {"retrieval": ret, "question": question,
+                           "answer": answer}, t)
+        return 0
 
     def submit_relevance(self, ret: Retrieval, used: list, t: int) -> int:
         """操作面：worker 回报 recognizer 结果（哪些入选记忆真被用上），
@@ -117,7 +118,7 @@ class MemoryEngine:
         ret.credited = True
         return n
 
-    # ---- shadow 延迟记账（shadow_defer=True 时启用）----
+    # ---- shadow 延迟记账（压制路径恒延迟：verdict 到达时结算）----
     def _record_shadow_pending(self, m: Memory, rival: Memory, t: int,
                                rel: bool) -> None:
         key = tuple(sorted((m.id, rival.id)))
@@ -173,6 +174,8 @@ class MemoryEngine:
                 continue
             del self.tensions[key]
             self.n_resolve += 1
+            confidence.discount_to(a, t, self.cfg)   # 消解前折损对齐 V 数学
+            confidence.discount_to(b, t, self.cfg)
             maintenance.apply_resolution(self, a, b, verdict, t)
             n += 1
         return n

@@ -128,5 +128,7 @@ class Retrieval:
     # selected 中低于置信阈值的子集，下游必须标注
     n_shortlisted: int = 0
     n_useful: int = 0
-    credited: bool = False    # 信用是否已结清（retrieve 或 feedback 置位，
-                            # 防 defer_credit 误配/feedback 重复调用双计）
+    credited: bool = False    # 信用是否已结清（retrieve 就地结算或
+                            # submit_relevance 置位，防重复记账）
+    feedback_sent: bool = False   # 已发 feedback_pending 信号（防重复发射：
+                            # 信号被丢弃时 credited 仍是 False，只靠它不够）
