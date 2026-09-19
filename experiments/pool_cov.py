@@ -34,6 +34,7 @@ from hybrid_memory.embed.zhipu import ZhipuEmbedder
 from hybrid_memory.llm import chat
 from hybrid_memory.semantics import RealChatSemantics, normalize
 from hybrid_memory.semantics.llm import LLMSemantics
+from hybrid_memory.semantics.opencode import OpencodeSemantics
 
 READER_SYS = ("你在协助一个进行中的工程项目。根据给出的记忆回答问题。"
               "标为[未确认]的条目只能作为线索，不得作为确定结论；"
@@ -46,6 +47,10 @@ def main() -> None:
     ap.add_argument("--feature-set", default="p01")
     ap.add_argument("--out-prefix", default="poolcov")
     ap.add_argument("--lex-weight", type=float, default=0.0)
+    ap.add_argument("--opencode", action="store_true",
+                    help="LLM 裁判走 opencode agent 壳")
+    ap.add_argument("--opencode-strict", action="store_true",
+                    help="opencode 裁判失败即中止（默认降级并计数）")
     ap.add_argument("--allow-remote", action="store_true")
     args = ap.parse_args()
 
@@ -57,9 +62,14 @@ def main() -> None:
 
     emb = ZhipuEmbedder(api_key=key, cache=SqliteEmbeddingCache(P.EMB_CACHE),
                         offline=False)
-    semantics = LLMSemantics(P.QA / "tension_labels.jsonl",
-                             model="glm-5.3-flash",
-                             cache_dir=CHAT_CACHE, api_key=key)
+    if args.opencode:
+        semantics = OpencodeSemantics(
+            P.QA / "tension_labels.jsonl", cache_dir=CHAT_CACHE,
+            env_extra={"ZAI_API_KEY": key}, strict=args.opencode_strict)
+    else:
+        semantics = LLMSemantics(P.QA / "tension_labels.jsonl",
+                                 model="glm-5.3-flash",
+                                 cache_dir=CHAT_CACHE, api_key=key)
     cfg = configure(Cfg(theta=0.35, cap_m=8, k=5,
                         tau_dup=0.85, tau_sim=0.78,
                         lex_weight=args.lex_weight,
@@ -132,6 +142,9 @@ def main() -> None:
     out.write_text(json.dumps(dumps, ensure_ascii=False, indent=2),
                    encoding="utf-8")
     print("saved", out)
+    n_failed = getattr(semantics, "n_failed", 0)
+    if n_failed:
+        print(f"⚠ opencode 裁判失败 {n_failed} 次（已走降级路径）", flush=True)
 
 
 if __name__ == "__main__":

@@ -27,10 +27,6 @@ def maybe_consolidate(eng, t: int) -> None:
                 or m.pending_review or m.kind != "fact"):
             pending.discard(mid)
 
-    if not isinstance(eng.semantics, ConsolidationSemantics):
-        return
-    fn = eng.semantics.consolidate
-
     eligible = [eng.mems[i] for i in pending]
     groups: dict[str, list] = {}
     for m in eligible:
@@ -49,6 +45,17 @@ def maybe_consolidate(eng, t: int) -> None:
              if len(items) >= cfg.consolidation_min_items
              and _budget(items) >= cfg.consolidation_salience_budget
              and deferred.get(scene) != frozenset(m.id for m in items)]
+
+    # 信号发射：有可巩固的组就广播（worker 可批量处理；P1 影子模式下
+    # 同步回调照旧）。按 scene 合并，只保留最新输入签名。
+    for scene, items, _sig in ready:
+        eng.signals.emit("maintenance_due",
+                         {"scene": scene, "ids": [m.id for m in items]}, t,
+                         key=f"maint:{scene}", merge=lambda o, n: n)
+
+    if not isinstance(eng.semantics, ConsolidationSemantics):
+        return
+    fn = eng.semantics.consolidate
     if not ready:
         return
 
@@ -65,7 +72,14 @@ def maybe_consolidate(eng, t: int) -> None:
     if event is None:
         deferred[scene] = signature   # 同输入不重复尝试，等新源进来
         return
+    admit_reflection(eng, event, chosen, t)
+    deferred.pop(scene, None)   # 组名与 event.scene 不一致时也清组签名
 
+
+def admit_reflection(eng, event, chosen, t: int) -> Memory:
+    """reflection 入库：嵌入、novelty 计算、建档、清理 pending/deferred。
+    同步回调路径与操作面 add_reflection 共用。"""
+    cfg = eng.cfg
     key = eng.semantics.embedding_key(event.belief_id, event.value)
     vec = eng.emb.embed([event.text], keys=[key])[0]
     active = [m for m in eng.mems.values() if is_visible(m)]
@@ -92,6 +106,7 @@ def maybe_consolidate(eng, t: int) -> None:
         scene=event.scene)
     eng.mems[m.id] = m
     for c in chosen:
-        pending.discard(c.id)
-    deferred.pop(scene, None)
+        eng._consolidation_pending.discard(c.id)
+    eng._consolidation_deferred.pop(m.scene, None)
     eng.n_consolidate += 1
+    return m

@@ -9,5 +9,9 @@ experiments/out/runs/*-memories.jsonl
 experiments/out/qa/tensions_review.jsonl
 experiments/out/qa/tension_labels.jsonl
 experiments/out/tmp/
+.opencode/tmp/
+.opencode/node_modules/
+.opencode/memory/
+opencode/
 __pycache__/
 *.pyc

@@ -32,6 +32,7 @@ from hybrid_memory.embed.zhipu import ZhipuEmbedder
 from hybrid_memory.llm import chat
 from hybrid_memory.semantics import RealChatSemantics, normalize
 from hybrid_memory.semantics.llm import LLMSemantics
+from hybrid_memory.semantics.opencode import OpencodeSemantics
 
 DATA = P.DATA_REAL
 CANDGEN = P.CANDGEN_DIR / "real-candgen-k3-s3-v2.jsonl"
@@ -91,6 +92,12 @@ def main() -> None:
     ap.add_argument("--no-reader", action="store_true")
     ap.add_argument("--llm-judge", action="store_true",
                     help="tension 裁决走 LLM（RealChatSemantics→LLMSemantics）")
+    ap.add_argument("--opencode", action="store_true",
+                    help="LLM 裁判走 opencode agent 壳（需 --llm-judge）")
+    ap.add_argument("--opencode-model", default="zhipu-env/glm-5.3-flash",
+                    help="opencode 侧模型（provider/model 格式）")
+    ap.add_argument("--opencode-strict", action="store_true",
+                    help="opencode 裁判失败即中止（默认降级并计数）")
     ap.add_argument("--feedback", action="store_true",
                     help="延迟记账：recognizer 按回答判 useful-hit")
     ap.add_argument("--feature-set", choices=tuple(FEATURE_SETS), default="p01")
@@ -106,6 +113,10 @@ def main() -> None:
         raise SystemExit(
             "--feedback requires --llm-judge（否则 recognizer 缺失，"
             "静默退化为 selected-hit 全记，strict 记账失效）")
+    if args.opencode and not args.llm_judge:
+        raise SystemExit("--opencode requires --llm-judge")
+    if args.opencode and args.offline:
+        raise SystemExit("--opencode 无法离线运行（CLI 需要远端）")
 
     units = load_interaction_units(args.data)
     windows = build_interaction_windows(units, size=3, stride=3)
@@ -115,9 +126,15 @@ def main() -> None:
     key = None if args.offline else load_dotenv_key(args.dotenv)
     emb = ZhipuEmbedder(api_key=key, cache=SqliteEmbeddingCache(
         P.EMB_CACHE), offline=args.offline)
-    semantics = (LLMSemantics(args.labels, model=args.reader_model,
-                              cache_dir=P.CHAT_CACHE, api_key=key)
-                 if args.llm_judge else RealChatSemantics(args.labels))
+    if args.llm_judge and args.opencode:
+        semantics = OpencodeSemantics(
+            args.labels, model=args.opencode_model, cache_dir=P.CHAT_CACHE,
+            env_extra={"ZAI_API_KEY": key}, strict=args.opencode_strict)
+    elif args.llm_judge:
+        semantics = LLMSemantics(args.labels, model=args.reader_model,
+                                 cache_dir=P.CHAT_CACHE, api_key=key)
+    else:
+        semantics = RealChatSemantics(args.labels)
     cfg = configure(
         Cfg(theta=args.theta, cap_m=args.cap_m, k=args.k,
             tau_dup=args.tau_dup, tau_sim=args.tau_sim,
@@ -228,6 +245,8 @@ def main() -> None:
         "elapsed_s": round(time.time() - t0, 1),
         "feature_set": args.feature_set,
         "features": list(FEATURE_SETS[args.feature_set]),
+        "opencode": {"enabled": bool(args.opencode),
+                     "failed": getattr(semantics, "n_failed", 0)},
         "cfg": {"theta": args.theta, "cap_m": args.cap_m, "k": args.k,
                 "tau_dup": args.tau_dup, "tau_sim": args.tau_sim},
     }
@@ -236,6 +255,10 @@ def main() -> None:
                               ensure_ascii=False, indent=2),
                    encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
+    n_failed = getattr(semantics, "n_failed", 0)
+    if n_failed:
+        print(f"⚠ opencode 裁判失败 {n_failed} 次（已走降级路径）——"
+              f"本轮结果不可用于质量对比", flush=True)
 
 
 if __name__ == "__main__":

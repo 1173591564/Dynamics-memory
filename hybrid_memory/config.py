@@ -64,6 +64,10 @@ class Cfg:
     consolidation_salience_budget: float = 6.0
     consolidation_min_items: int = 5
     consolidation_max_items: int = 12
+    signal_queue_cap: int = 256   # 引擎→LLM 信号队列容量（超限丢最旧+计数）
+    shadow_defer: bool = False    # True → 压制时不裁判，shadow 信用延迟到
+                                  # verdict 到达（submit_verdicts/同步裁决）时结算
+    shadow_pending_cap: int = 256  # 延迟记账待结算队列容量（超限丢最旧+计数）
     capacity_on: bool = True     # False → M 池无界
     suppression_on: bool = True
     tension_on: bool = True

@@ -90,65 +90,76 @@ def _resolve_tensions(eng, t: int) -> None:
             del eng.tensions[key]
             continue
         a, b = eng.mems[tension.left], eng.mems[tension.right]
-        while a.superseded_by is not None or a.aggregated_into is not None:
-            a = eng.mems[a.superseded_by or a.aggregated_into]
-        while b.superseded_by is not None or b.aggregated_into is not None:
-            b = eng.mems[b.superseded_by or b.aggregated_into]
+        a = follow_chain(eng, a)
+        b = follow_chain(eng, b)
         if a.id == b.id:
             del eng.tensions[key]
             continue
         discount_to(a, t, cfg)
         discount_to(b, t, cfg)
         verdict = eng.semantics.judge(a.belief_id, a.value, b.belief_id, b.value)
+        eng._settle_shadow(key, verdict)   # 过渡期：同步裁决也结算延迟 shadow
         if verdict == "pending":    # 真实数据：无标注不消解，留在 backlog
             continue
         del eng.tensions[key]
         eng.n_resolve += 1
+        apply_resolution(eng, a, b, verdict, t)
 
-        if verdict == "synonym":
-            keep, drop = (a, b) if a.v >= b.v else (b, a)
-            keep.v = cfg.eta_c * (a.v + b.v)
-            keep.evid += drop.evid
-            keep.hits += drop.hits
-            keep.src = keep.src | drop.src
-            keep.conf_pos += drop.conf_pos
-            keep.conf_neg += drop.conf_neg
-            keep.conf_updated_at = t
-            keep.salience = max(a.salience, b.salience)
-            drop.superseded_by = keep.id
-            drop.pool = Pool.ARCHIVE
-            eng.n_merge += 1
-        elif verdict == "update":
-            keep, drop = (a, b) if a.birth >= b.birth else (b, a)
-            keep.evid += 1
-            keep.src = keep.src | drop.src
-            keep.salience = max(a.salience, b.salience)
-            drop.superseded_by = keep.id
-            drop.pool = Pool.ARCHIVE
-            eng.n_merge += 1
-        elif verdict == "contradiction":
-            pa = eng.semantics.scope(a.belief_id)
-            pb = eng.semantics.scope(b.belief_id)
-            if pa and pb and pa != pb:
-                # 找到作用域 → 条件化合并表述（异 scope 可条件同真，不加负证据）
-                text = (f"冲突版本（按作用域条件化）:\n"
-                        f"- [{pa} | t={a.birth}] {a.text}\n"
-                        f"- [{pb} | t={b.birth}] {b.text}")
-                _make_aggregate(eng, a, b, t, text, pending=False)
-            else:
-                # 找不到作用域 → 双方降权让衰减自然裁决，
-                # 同时收进聚合 memory 等人工终裁
-                if cfg.confidence_on:
-                    a.conf_neg += cfg.conf_negative_evidence
-                    b.conf_neg += cfg.conf_negative_evidence
-                a.v *= 0.5
-                b.v *= 0.5
-                text = (f"冲突版本（待裁决）:\n"
-                        f"- [t={a.birth}] {a.text}\n"
-                        f"- [t={b.birth}] {b.text}")
-                _make_aggregate(eng, a, b, t, text, pending=True)
+
+def follow_chain(eng, m: Memory) -> Memory:
+    """沿 superseded/aggregated 指针追到当前代表条目。"""
+    while m.superseded_by is not None or m.aggregated_into is not None:
+        m = eng.mems[m.superseded_by or m.aggregated_into]
+    return m
+
+
+def apply_resolution(eng, a: Memory, b: Memory, verdict: str, t: int) -> None:
+    """对已裁决的 (a, b) 施加消解动作。tension 的摘除与计数由调用方负责。"""
+    cfg = eng.cfg
+    if verdict == "synonym":
+        keep, drop = (a, b) if a.v >= b.v else (b, a)
+        keep.v = cfg.eta_c * (a.v + b.v)
+        keep.evid += drop.evid
+        keep.hits += drop.hits
+        keep.src = keep.src | drop.src
+        keep.conf_pos += drop.conf_pos
+        keep.conf_neg += drop.conf_neg
+        keep.conf_updated_at = t
+        keep.salience = max(a.salience, b.salience)
+        drop.superseded_by = keep.id
+        drop.pool = Pool.ARCHIVE
+        eng.n_merge += 1
+    elif verdict == "update":
+        keep, drop = (a, b) if a.birth >= b.birth else (b, a)
+        keep.evid += 1
+        keep.src = keep.src | drop.src
+        keep.salience = max(a.salience, b.salience)
+        drop.superseded_by = keep.id
+        drop.pool = Pool.ARCHIVE
+        eng.n_merge += 1
+    elif verdict == "contradiction":
+        pa = eng.semantics.scope(a.belief_id)
+        pb = eng.semantics.scope(b.belief_id)
+        if pa and pb and pa != pb:
+            # 找到作用域 → 条件化合并表述（异 scope 可条件同真，不加负证据）
+            text = (f"冲突版本（按作用域条件化）:\n"
+                    f"- [{pa} | t={a.birth}] {a.text}\n"
+                    f"- [{pb} | t={b.birth}] {b.text}")
+            _make_aggregate(eng, a, b, t, text, pending=False)
         else:
-            eng.n_collision += 1
+            # 找不到作用域 → 双方降权让衰减自然裁决，
+            # 同时收进聚合 memory 等人工终裁
+            if cfg.confidence_on:
+                a.conf_neg += cfg.conf_negative_evidence
+                b.conf_neg += cfg.conf_negative_evidence
+            a.v *= 0.5
+            b.v *= 0.5
+            text = (f"冲突版本（待裁决）:\n"
+                    f"- [t={a.birth}] {a.text}\n"
+                    f"- [t={b.birth}] {b.text}")
+            _make_aggregate(eng, a, b, t, text, pending=True)
+    else:
+        eng.n_collision += 1
 
 
 def _make_aggregate(eng, a, b, t: int, text: str, pending: bool) -> None:
