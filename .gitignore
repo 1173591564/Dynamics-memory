@@ -12,6 +12,5 @@ experiments/out/tmp/
 .opencode/tmp/
 .opencode/node_modules/
 .opencode/memory/
-opencode/
 __pycache__/
 *.pyc
