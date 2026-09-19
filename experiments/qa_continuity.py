@@ -114,6 +114,8 @@ def main() -> None:
     ap.add_argument("--eval-stride", type=int, default=5)
     ap.add_argument("--max-units", type=int, default=0,
                     help="只回放前 N 个 unit（0=全部；端到端冒烟用）")
+    ap.add_argument("--size", type=int, default=3, help="窗口大小（须与 candgen 一致）")
+    ap.add_argument("--stride", type=int, default=3, help="窗口步长（须与 candgen 一致）")
     ap.add_argument("--groups", default="memory,flat,none")
     ap.add_argument("--flat-chars", type=int, default=400)
     ap.add_argument("--llm-judge", action="store_true",
@@ -147,7 +149,8 @@ def main() -> None:
     units = load_interaction_units(args.data)
     if args.max_units:
         units = units[: args.max_units]
-    windows = build_interaction_windows(units, size=3, stride=3)
+    windows = build_interaction_windows(units, size=args.size,
+                                        stride=args.stride)
     candgen = _load_candgen(args.candgen)
     eval_pts = _pick_eval_points(units, args.eval_start, args.eval_stride)
     groups = args.groups.split(",")

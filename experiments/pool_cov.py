@@ -46,6 +46,9 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--feature-set", default="p01")
     ap.add_argument("--out-prefix", default="poolcov")
+    ap.add_argument("--candgen", type=Path, default=CANDGEN)
+    ap.add_argument("--size", type=int, default=3, help="窗口大小（须与 candgen 一致）")
+    ap.add_argument("--stride", type=int, default=3, help="窗口步长（须与 candgen 一致）")
     ap.add_argument("--lex-weight", type=float, default=0.0)
     ap.add_argument("--opencode", action="store_true",
                     help="LLM 裁判走 opencode agent 壳")
@@ -56,8 +59,9 @@ def main() -> None:
 
     key = load_dotenv_key(DOTENV)
     units = load_interaction_units(DATA)
-    windows = build_interaction_windows(units, size=3, stride=3)
-    candgen = _load_candgen(CANDGEN)
+    windows = build_interaction_windows(units, size=args.size,
+                                        stride=args.stride)
+    candgen = _load_candgen(args.candgen)
     eval_pts = _pick_eval_points(units, 25, 5)
 
     emb = ZhipuEmbedder(api_key=key, cache=SqliteEmbeddingCache(P.EMB_CACHE),

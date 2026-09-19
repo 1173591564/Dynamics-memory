@@ -90,6 +90,8 @@ def main() -> None:
     ap.add_argument("--tau-sim", type=float, default=0.78)
     ap.add_argument("--reader-model", default="glm-5.3-flash")
     ap.add_argument("--no-reader", action="store_true")
+    ap.add_argument("--size", type=int, default=3, help="窗口大小（须与 candgen 一致）")
+    ap.add_argument("--stride", type=int, default=3, help="窗口步长（须与 candgen 一致）")
     ap.add_argument("--llm-judge", action="store_true",
                     help="tension 裁决走 LLM（RealChatSemantics→LLMSemantics）")
     ap.add_argument("--opencode", action="store_true",
@@ -119,7 +121,8 @@ def main() -> None:
         raise SystemExit("--opencode 无法离线运行（CLI 需要远端）")
 
     units = load_interaction_units(args.data)
-    windows = build_interaction_windows(units, size=3, stride=3)
+    windows = build_interaction_windows(units, size=args.size,
+                                        stride=args.stride)
     candgen = _load_candgen(args.candgen)
     questions = _load_questions(args.questions)
 
