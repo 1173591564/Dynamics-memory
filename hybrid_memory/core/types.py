@@ -61,6 +61,12 @@ class Memory:
     kind: str = "fact"
     derived_from: tuple[int, ...] = ()
     scene: str = ""
+    # 来源通道：passive（被动 candgen）/ repair（recall_miss 修复）/
+    # extract（extract_due 定向抽取）/ mining（周期挖掘）/ agent（主 agent
+    # 主动提议）。只做审计与消融分组，不参与 V——需求来源值不值初始加分，
+    # 交给评测决定。
+    origin: str = "passive"
+    entity: str = ""        # agent 提议时回填的实体键（实体版本链的锚，可空）
 
 
 @dataclass
@@ -75,6 +81,8 @@ class Event:
     conf_pos: float | None = None
     conf_neg: float | None = None
     scene: str = ""
+    origin: str = "passive"
+    entity: str = ""
 
 
 @dataclass

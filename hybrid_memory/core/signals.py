@@ -63,5 +63,27 @@ class SignalQueue:
         self._by_key.clear()
         return out
 
+    def take(self, kinds) -> list[Signal]:
+        """只摘走指定种类的信号，其余原位保留（顺序不变）。
+
+        多消费者共用一个队列时用它而不是 drain+回队：语义 worker 拿
+        conflict/feedback/maintenance，agent worker 拿 recall_miss/extract_due，
+        互不干扰、不重排。"""
+        kinds = set(kinds)
+        out, keep = [], deque()
+        for sig in self._items:
+            (out if sig.kind in kinds else keep).append(sig)
+        self._items = keep
+        for sig in out:
+            if sig.key:
+                self._by_key.pop((sig.kind, sig.key), None)
+        return out
+
+    def peek_kinds(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for sig in self._items:
+            counts[sig.kind] = counts.get(sig.kind, 0) + 1
+        return counts
+
     def __len__(self) -> int:
         return len(self._items)

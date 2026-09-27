@@ -142,7 +142,10 @@ def apply_resolution(eng, a: Memory, b: Memory, verdict: str, t: int) -> None:
         drop.pool = Pool.ARCHIVE
         eng.n_merge += 1
     elif verdict == "update":
-        keep, drop = (a, b) if a.birth >= b.birth else (b, a)
+        # 新替旧：同一时间步诞生时按 id 定新旧（后入库者新），否则
+        # 调查员"提议 + supersedes"在同一步里会把新条目当旧的归档
+        keep, drop = ((a, b) if (a.birth, a.id) >= (b.birth, b.id)
+                      else (b, a))
         keep.evid += 1
         keep.src = keep.src | drop.src
         keep.salience = max(a.salience, b.salience)

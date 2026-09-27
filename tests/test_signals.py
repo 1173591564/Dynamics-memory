@@ -248,7 +248,9 @@ def test_shadow_settles_on_update_verdict():
     n = eng.submit_verdicts([(1, 0, "update")], 5)
     assert n == 1 and eng._shadow_pending == []
     assert m.d_shadow == 1.0 and m.last_hit == 0      # 结算用检索时刻
-    assert m.superseded_by == 0 and m.pool is Pool.ARCHIVE
+    # 两条同 birth：update 以 id 定新旧（后入库者新）→ 保留 m(1)，归档 rival(0)
+    assert rival.superseded_by == 1 and rival.pool is Pool.ARCHIVE
+    assert m.superseded_by is None and m.pool is not Pool.ARCHIVE
 
 
 def test_shadow_synonym_no_credit():
@@ -358,3 +360,127 @@ def test_worker_error_containment_requeues_failed_signal():
     assert stats["credited"] >= 1 and ret.credited  # 同批好信号照常落地
     left = [s.kind for s in eng.drain_signals()]
     assert left == ["conflict_pending"]           # 失败信号回队未丢
+
+
+# ================================================== 衔尾蛇信号：recall_miss / extract_due / 操作面 propose
+class _HashEmbedder:
+    """字符哈希词袋：真实文本可嵌入、确定、无网络。"""
+    def embed(self, texts, keys=None):
+        out = []
+        for t in texts:
+            v = np.zeros(32)
+            for ch in t:
+                v[hash(ch) % 32] += 1
+            out.append(v / (np.linalg.norm(v) or 1.0))
+        return np.array(out, dtype=np.float32)
+
+
+def _plain_engine():
+    from hybrid_memory.semantics import RealChatSemantics
+    return MemoryEngine(Cfg(), _HashEmbedder(), RealChatSemantics(None))
+
+
+def test_take_only_removes_requested_kinds_in_order():
+    q = SignalQueue()
+    q.emit("conflict_pending", {}, 0)
+    q.emit("recall_miss", {"q": "a"}, 1, key="miss:a")
+    q.emit("extract_due", {"unit_id": 3}, 2, key="unit:3")
+    q.emit("feedback_pending", {}, 3)
+    got = q.take(("recall_miss", "extract_due"))
+    assert [s.kind for s in got] == ["recall_miss", "extract_due"]
+    assert [s.kind for s in q.drain()] == ["conflict_pending", "feedback_pending"]
+    assert q.peek_kinds() == {}
+
+
+def test_take_releases_keys_so_signal_can_be_re_emitted():
+    q = SignalQueue()
+    q.emit("recall_miss", {"q": "a"}, 1, key="miss:a")
+    q.take(("recall_miss",))
+    q.emit("recall_miss", {"q": "a"}, 2, key="miss:a")
+    assert q.peek_kinds() == {"recall_miss": 1}
+
+
+def test_report_miss_dedupes_by_question_and_merges_payload():
+    eng = _plain_engine()
+    eng.report_miss("端口 是多少", 1, hint="不对", source="correction")
+    eng.report_miss("端口是多少", 2, hint="用了日志工具", source="agent_tool",
+                    entities=("handler.ts",))
+    eng.report_miss("", 3, source="external")          # 空问题忽略
+    sigs = eng.signals.take(("recall_miss",))
+    assert len(sigs) == 1
+    p = sigs[0].payload
+    assert p["hints"] == ["不对", "用了日志工具"]
+    assert p["sources"] == ["correction", "agent_tool"]
+    assert p["entities"] == ["handler.ts"] and p["first_t"] == 1
+    assert sigs[0].t == 2                              # 刷新到最新
+
+
+def test_report_unit_dedupes_by_unit_and_unions_reasons():
+    eng = _plain_engine()
+    eng.report_unit(7, 1, reasons=("decision",), entities=("a.ts",))
+    eng.report_unit(7, 2, reasons=("quant", "decision"), entities=("b.ts",))
+    eng.report_unit(8, 2, reasons=())                  # 无原因不发
+    sigs = eng.signals.take(("extract_due",))
+    assert len(sigs) == 1
+    assert sigs[0].payload["reasons"] == ["decision", "quant"]
+    assert sigs[0].payload["entities"] == ["a.ts", "b.ts"]
+
+
+def test_engine_propose_requires_non_passive_origin_and_keeps_it():
+    eng = _plain_engine()
+    ev = Event("x", "x", "x", (0,))                    # 默认 origin=passive
+    with pytest.raises(ValueError):
+        eng.propose([ev], 0)
+    ev2 = Event("hermes 现为 form agent", "hermes 现为 form agent",
+                "hermes 现为 form agent", (0,), origin="repair", entity="hermes")
+    ids = eng.propose([ev2], 0)
+    assert ids and eng.mems[ids[0]].origin == "repair"
+    assert eng.mems[ids[0]].entity == "hermes"
+
+
+def test_semantic_worker_leaves_agent_signals_in_queue():
+    from hybrid_memory.semantics import RealChatSemantics
+    eng = _plain_engine()
+    eng.report_miss("q", 0, source="external")
+    eng.report_unit(1, 0, reasons=("decision",))
+    SignalWorker(eng, RealChatSemantics(None)).process(0)
+    assert eng.signals.peek_kinds() == {"recall_miss": 1, "extract_due": 1}
+
+
+def test_worker_two_phase_lock_does_not_hold_lock_during_semantics():
+    """worker 持服务锁时只做引擎读写；调 semantics 时锁必须是放开的。"""
+    import threading
+    emb, world, eng = make()
+    lock = threading.RLock()
+    seen = []
+
+    class _Probe:
+        def __getattr__(self, name):
+            return getattr(world, name)
+
+        def judge(self, *args):
+            # 若 worker 在锁内调我们，这里 acquire 会因 RLock 可重入而成功，
+            # 所以改用另一线程探测：另一线程能拿到锁 ⇔ worker 没持锁
+            got = []
+
+            def probe():
+                ok = lock.acquire(timeout=0.5)
+                got.append(ok)
+                if ok:
+                    lock.release()
+            th = threading.Thread(target=probe)
+            th.start()
+            th.join()
+            seen.append(bool(got and got[0]))
+            return world.judge(*args)
+
+    eng.semantics = _Probe()
+    worker = SignalWorker(eng, eng.semantics, lock=lock)
+    eng.signals.emit("conflict_pending", [(0, 1)], 0, key="conflict")
+    b = world.beliefs[0]
+    eng.mems[0] = Memory(0, b.id, b.value, "a", np.array([1.0, 0.0]), v=0.6)
+    eng.mems[1] = Memory(1, b.id, b.value, "b", np.array([0.99, 0.14]), v=0.5)
+    eng._next_id = 2
+    eng.add_tension(0, 1, 0)
+    worker.process(1)
+    assert seen and all(seen)

@@ -192,6 +192,72 @@ class MemoryEngine:
         """worker 拉取待处理信号（清空队列）。"""
         return self.signals.drain()
 
+    # ---- 衔尾蛇：拉式提取的信号面与操作面 ----
+    # 引擎仍不调 LLM。这里只把"有活可干"变成小载荷信号（不含日志原文），
+    # 由 agent worker 拉证据、经 propose 回报。
+
+    @staticmethod
+    def miss_key(q: str) -> str:
+        return "miss:" + "".join(q.split()).lower()[:200]
+
+    def report_miss(self, q: str, t: int, *, hint: str = "",
+                    source: str = "", retrieval: Retrieval | None = None,
+                    entities: tuple = ()) -> None:
+        """记忆没接住一次需求：发 recall_miss。来源 source ∈
+        {recognizer_none, correction, agent_tool, thin, external}。
+        同一问题在队列里只留一条，新的 hint/source 合并进去。
+        载荷带上当时已召回的记忆 id/文本，供调查员避免重复提议。"""
+        if not q or not q.strip():
+            return
+        retrieved = [{"id": m.id, "t": m.birth, "text": m.text}
+                     for m in (retrieval.selected if retrieval else [])]
+        payload = {"q": q, "hints": [hint] if hint else [],
+                   "sources": [source] if source else [],
+                   "retrieved": retrieved, "entities": list(entities),
+                   "first_t": t}
+
+        def merge(old, new):
+            for k in ("hints", "sources"):
+                old[k] = old[k] + [x for x in new[k] if x not in old[k]]
+            if new["retrieved"] and not old["retrieved"]:
+                old["retrieved"] = new["retrieved"]
+            old["entities"] = list(dict.fromkeys(old["entities"]
+                                                 + new["entities"]))
+            return old
+
+        self.signals.emit("recall_miss", payload, t,
+                          key=self.miss_key(q), merge=merge)
+
+    def report_unit(self, unit_id: int, t: int, *, scene: str = "",
+                    reasons: tuple = (), entities: tuple = ()) -> None:
+        """触发扫描命中的日志单元：发 extract_due，调查员以该 unit 为锚
+        做带上下文（timeline）的定向抽取。按 unit 去重，原因并集。"""
+        if not reasons:
+            return
+        payload = {"unit_id": int(unit_id), "scene": scene,
+                   "reasons": list(dict.fromkeys(reasons)),
+                   "entities": list(dict.fromkeys(entities))}
+
+        def merge(old, new):
+            old["reasons"] = list(dict.fromkeys(old["reasons"] + new["reasons"]))
+            old["entities"] = list(dict.fromkeys(old["entities"]
+                                                 + new["entities"]))
+            return old
+
+        self.signals.emit("extract_due", payload, t,
+                          key=f"unit:{int(unit_id)}", merge=merge)
+
+    def propose(self, events: list[Event], t: int) -> list[int]:
+        """操作面：agent 提议的记忆入库。与 observe 走同一条 ingest 回路
+        （同样 dedup、同样进 C 池、同样动力学）——提议不享有任何捷径。
+        返回本次真正新建的 memory id（verbatim 命中已有条目的不在其中）。"""
+        for ev in events:
+            if ev.origin == "passive":
+                raise ValueError("propose 的 Event 必须标明非 passive 的 origin")
+        before = self._next_id
+        ingest.run_ingest(self, events, t)
+        return list(range(before, self._next_id))
+
     # ---- metrics 辅助 ----
     def pool_sizes(self) -> dict[str, int]:
         out = {p.value: 0 for p in Pool}

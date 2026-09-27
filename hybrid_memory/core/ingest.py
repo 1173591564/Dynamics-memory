@@ -56,7 +56,7 @@ def run_ingest(eng, events: list[Event], t: int) -> None:
                    salience=sal if cfg.salience_on else cfg.salience_default,
                    novelty=novelty,
                    kind=ev.kind, derived_from=ev.derived_from,
-                   scene=ev.scene)
+                   scene=ev.scene, origin=ev.origin, entity=ev.entity)
         eng.mems[m.id] = m
         active.append(m)
         if cfg.consolidation_on and m.kind != "reflection":
