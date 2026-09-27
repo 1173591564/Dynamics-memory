@@ -70,3 +70,9 @@ class Cfg:
     suppression_on: bool = True
     tension_on: bool = True
     archive_retrieval: bool = True
+
+    # ---- 衔尾蛇：recall_miss 的信号源 ----
+    # 纠正检测（用户开口就在纠正）与 agent 工具痕迹（主 agent 自己去查了
+    # 日志）恒开——精度高。recognizer 回 NONE 精度低（闲聊也是 NONE），
+    # 每次都要花一次调查员调用，默认关；拿到 miss_type 分布证据后再定。
+    miss_on_recognizer_none: bool = False

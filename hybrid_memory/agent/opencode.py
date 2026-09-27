@@ -70,9 +70,13 @@ class OpencodeRunner:
                  exe: str | None = None, scratch_dir=None,
                  timeout_s: int = 300, env_extra: dict | None = None,
                  config_path=None, cache_dir=None, executor=None,
-                 workdir=None, payload_dir=None):
+                 workdir=None, payload_dir=None, pure: bool = True):
         self.model = model
         self.timeout_s = timeout_s
+        # pure=True：--pure 不加载插件（裁判/抽取器等无工具角色，防插件递归
+        # 捕获）；pure=False：加载插件——调查员需要插件提供的 log_*/memory_*
+        # 工具，此时靠 MEMORY_BRIDGE_ROLE=worker 让插件只注册工具、不挂钩子
+        self.pure = pure
         self._exe = exe or shutil.which("opencode")
         if self._exe is None:
             raise RuntimeError("opencode CLI not found on PATH")
@@ -115,7 +119,8 @@ class OpencodeRunner:
         return out
 
     def run(self, *, system: str, user: str, instruction: str | None = None,
-            agent: str | None = None) -> str:
+            agent: str | None = None, env_extra: dict | None = None) -> str:
+        """env_extra：本次调用追加的环境变量（如每信号的 MEMORY_BRIDGE_SIGNAL）。"""
         self._seq += 1
         payload = self.payload_dir / f"call_{self._tag}_{self._seq}.txt"
         try:
@@ -126,15 +131,16 @@ class OpencodeRunner:
             except ValueError:
                 ref = str(payload)
             cmd = [self._exe, "run", instruction or _CLI_INSTRUCTION,
-                   "--format", "json", "--pure",
+                   "--format", "json",
+                   *(["--pure"] if self.pure else []),
                    "-m", self.model,
                    "--dir", str(self.workdir),
                    f"--file={ref}"]
             if agent:
                 cmd += ["--agent", agent]
+            env = {**self._env, **(env_extra or {})} if env_extra else self._env
             try:
-                code, stdout, stderr = self._exec(cmd, self._env,
-                                                  self.timeout_s)
+                code, stdout, stderr = self._exec(cmd, env, self.timeout_s)
             except subprocess.TimeoutExpired as exc:
                 raise ZhipuChatError(
                     f"opencode timeout after {self.timeout_s}s") from exc
