@@ -41,11 +41,51 @@ flowchart LR
   一并端给下游（contested co-serve）；
 - **溯源**：每条记忆携带 `src` 源单元 id，检索级 evidence recall 可直接算。
 
+## 衔尾蛇：agent 主动操作日志（pull 回路）
+
+上面的流水线是推式的：日志 → 抽取 → 记忆，抽取器在窗口里没看出来的
+东西永远丢了，而真实瓶颈恰恰在抽取/召回（参照要点进 top-5 的仅 ~18%）。
+现在补上另一半——**记忆没接住的时候，agent 自己去翻日志，把查到的写回来**：
+
+```mermaid
+flowchart LR
+    O[/observe] --> L0[(L0 LogStore<br/>SQLite+FTS5)]
+    L0 --> S{触发扫描<br/>零 LLM}
+    S -->|extract_due| Q[信号队列]
+    R[/recall→feedback<br/>下一轮纠正 / 主 agent 用了 log_*] -->|recall_miss| Q
+    Q --> W[AgentWorker<br/>预算·因果上界·日限额]
+    W --> I[investigator<br/>opencode worker 角色]
+    I -->|log_search / timeline / stats / window| L0
+    I -->|/propose 校验后| E[(同一条 ingest 回路)]
+    I -->|/diagnose miss_type| D[diagnoses.jsonl]
+```
+
+- **L0 先于一切**：每轮交互先落 `LogStore`（`.opencode/memory/log.sqlite`），
+  再做被动蒸馏；candgen 失败不丢单元，转 `extract_due(candgen_failed)`。
+- **信号，不是轮询**：`recall_miss`（下一轮开口纠正 / 主 agent 用了日志工具 /
+  可选 recognizer NONE）与 `extract_due`（决策·数字·新实体·纠正·超长回复）。
+  引擎只发信号，仍然一次 LLM 都不调。
+- **工具面有闸**：`/log/*` 只返回片段与统计，原文只经 `log_window` 按字符
+  预算回展；每次调查按 `X-Signal-Id` 计量工具次数与回展字符（超限 429），
+  并施加 `before=t` 因果上界——调查员只能看到信号发生之前的日志。
+- **嘴不是什么都吃**：`/propose` 逐条校验溯源存在且在因果上界内、脱敏、
+  拒绝自指（"我检索了日志…"）、长度；`origin` 只是审计标签，不给 V 加成。
+- **火墙**：调查员跑在 `MEMORY_BRIDGE_ROLE=worker` 的 opencode 会话里，
+  插件只注册工具、不挂捕获钩子——它的会话永远不会被 observe。
+- **被动 candgen 原样保留**：它是对照组。三臂评测（passive / passive+pull /
+  raw-log-at-budget）赢不了"无差别读日志"，这个方向就不成立。
+
+运行：`python -m hybrid_memory.server --project <dir>`（插件会自动拉起）；
+`--no-agent` 或 `MEMORY_AGENT=off` 只跑被动路径；`GET /signals` 看队列、
+预算、`miss_type` 分布与调查员状态。设计与取舍见 `docs/ouroboros.md`。
+
 ## 目录
 
 ```text
-hybrid_memory/    包本体：core（引擎）/ candgen / embed / semantics / sim / datasets
+hybrid_memory/    包本体：core（引擎）/ logstore（L0）/ triggers / agent（调查员）/ candgen / embed / semantics / sim / datasets
+.opencode/        opencode 集成：plugin/memory-bridge.ts（main/worker 两角色）+ agent/*.md（judge/recognizer/candgen/consolidator/investigator）
 experiments/      驱动脚本 + paths.py（产物目录常量）+ out/（cache/candgen/runs/qa/bench/tmp）
+docs/             设计文档（ouroboros.md：pull 回路）
 data/             输入（原始日志与大体积 benchmark 不入库，见 .gitignore）
 tests/            pytest
 ```

@@ -965,11 +965,18 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=17872)
     ap.add_argument("--project", default=".")
     ap.add_argument("--model", default="glm-5.3-flash")
-    ap.add_argument("--agent-model", default="zhipu-env/glm-5.3-flash",
+    # 插件拉起 sidecar 时不传参，调查员相关配置允许走环境变量
+    ap.add_argument("--agent-model",
+                    default=os.environ.get("MEMORY_AGENT_MODEL",
+                                           "zhipu-env/glm-5.3-flash"),
                     help="调查员 agent 的 opencode 模型（provider/model）")
     ap.add_argument("--no-agent", action="store_true",
-                    help="不启动调查员（仅被动 candgen；信号有界堆积可观测）")
-    ap.add_argument("--agent-daily-cap", type=int, default=200)
+                    default=os.environ.get("MEMORY_AGENT", "").lower()
+                    in ("off", "0", "false"),
+                    help="不启动调查员（仅被动 candgen；信号有界堆积可观测）；"
+                         "环境变量 MEMORY_AGENT=off 等价")
+    ap.add_argument("--agent-daily-cap", type=int,
+                    default=int(os.environ.get("MEMORY_AGENT_DAILY_CAP", "200")))
     ap.add_argument("--agent-tool-calls", type=int, default=8)
     ap.add_argument("--agent-window-chars", type=int, default=4000)
     args = ap.parse_args()
