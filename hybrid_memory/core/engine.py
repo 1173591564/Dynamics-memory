@@ -46,6 +46,7 @@ class MemoryEngine:
         self.n_resolve = 0
         self.n_agg = 0
         self.n_consolidate = 0
+        self.n_chain_broken = 0   # supersede/aggregate 链断裂或成环（状态损坏痕迹）
 
     def next_id(self) -> int:
         i = self._next_id

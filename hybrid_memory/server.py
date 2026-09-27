@@ -56,7 +56,7 @@ def _safe_mem_text(text: str) -> str:
 
 _COUNTERS = ("n_promote", "n_demote", "n_evict", "n_archive", "n_revive",
              "n_merge", "n_collision", "n_tension", "n_resolve", "n_agg",
-             "n_consolidate", "n_shadow_dropped")
+             "n_consolidate", "n_shadow_dropped", "n_chain_broken")
 
 _STATE_KEYS = {"mems", "tensions", "next_id", "consolidation_pending",
                "consolidation_deferred", "counters", "t", "unit_id", "scene"}

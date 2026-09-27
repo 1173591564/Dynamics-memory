@@ -104,9 +104,23 @@ def _emit_pending_conflicts(eng, t: int) -> None:
 
 
 def follow_chain(eng, m: Memory) -> Memory:
-    """沿 superseded/aggregated 指针追到当前代表条目。"""
+    """沿 superseded/aggregated 指针追到当前代表条目。
+
+    两个防御：
+    - 不能写 `a or b`——memory id 从 0 起，superseded_by=0 会被当成 False
+      （曾让 experiments.run 在 step 里 KeyError: None）；
+    - 链成环（只可能来自损坏的 state.pkl）：计数外显并在环处停下，
+      不能让每次 step 都炸掉整个 sidecar。
+    """
+    seen = {m.id}
     while m.superseded_by is not None or m.aggregated_into is not None:
-        m = eng.mems[m.superseded_by or m.aggregated_into]
+        nxt = (m.superseded_by if m.superseded_by is not None
+               else m.aggregated_into)
+        if nxt in seen or nxt not in eng.mems:
+            eng.n_chain_broken += 1
+            break
+        seen.add(nxt)
+        m = eng.mems[nxt]
     return m
 
 
