@@ -181,12 +181,18 @@ permission:
 
 ## 8. 火墙：衔尾蛇不能把自己吃死
 
+> **2026-09 更新**：调查员已从"sidecar 拉起 `opencode run` 子进程 + 插件
+> worker 角色"改为 sidecar **进程内** function-calling 循环
+> （`hybrid_memory/agent/inline.py`）。下表前两行的风险因此按构造消失：
+> 调查员不经过 opencode、不调 observe，也不需要令牌/信号号透传；
+> 工具直接调服务方法并按 `signal_id` 计量。插件只剩主 agent 角色。
+
 | 风险 | 机制 |
 |---|---|
-| 递归捕获（investigator 的会话又被 observe） | 插件按 `MEMORY_BRIDGE_ROLE=worker` 环境变量门控：worker 角色只注册 `tool:`，不注册 `chat.message` / `system.transform` / `event` 钩子。`OpencodeRunner(env_extra=...)` 注入。**取代 `--pure`**，因为 investigator 需要插件的工具 |
-| token 路径错位 | worker 角色的插件从 `MEMORY_BRIDGE_TOKEN` 环境变量读 token，不读 `<dir>/.opencode/memory/.memory-token`（investigator 的 `--dir` 是本仓库，sidecar 的 state_dir 是用户项目） |
+| 递归捕获（investigator 的会话又被 observe） | ~~（旧）~~ 现为进程内循环，不产生 opencode 会话，天然不被 observe。旧方案：插件按 `MEMORY_BRIDGE_ROLE=worker` 环境变量门控：worker 角色只注册 `tool:`，不注册 `chat.message` / `system.transform` / `event` 钩子。`OpencodeRunner(env_extra=...)` 注入。**取代 `--pure`**，因为 investigator 需要插件的工具 |
+| token 路径错位 | ~~（旧，已不存在）~~ worker 角色的插件从 `MEMORY_BRIDGE_TOKEN` 环境变量读 token，不读 `<dir>/.opencode/memory/.memory-token`（investigator 的 `--dir` 是本仓库，sidecar 的 state_dir 是用户项目） |
 | 自指记忆 | candgen prompt 已禁；`/propose` 再加模式拒收；`origin` 可审计 |
-| 风暴 | 每信号 tool-call ≤ 8、window ≤ 4k 字、超时 300s（`OpencodeRunner.timeout_s`）；同时只跑 1 个 investigator；每日 LLM 调用总预算；`SignalQueue` 有界（现有） |
+| 风暴 | 每信号 tool-call ≤ 8、window ≤ 4k 字、单次 LLM 请求超时 + 轮数上限 tool_calls+2（末轮不给工具，强制收尾）；同时只跑 1 个 investigator；每日 LLM 调用总预算；`SignalQueue` 有界（现有） |
 | 幂等 | `recall_miss` key = 规范化问题；同 key 24h 内不重复修 |
 | 阻塞 | worker 移出 `observe` 的锁：后台线程 `drain(锁内) → agent(锁外) → submit(锁内)`。信号里的 `Retrieval` 对象改为按 `retrieval_id` 引用 |
 | 回放非确定 | 按 `(signal 指纹, prompt_version)` 缓存最终 JSON（`OpencodeRunner.chat` 的缓存机制扩展） |
@@ -241,18 +247,20 @@ permission:
 | `/propose` 校验（溯源/因果/脱敏/自指/长度/supersedes） | ✅ | `server.py` |
 | `/miss` `/diagnose` `/signals`；diagnoses.jsonl | ✅ | `server.py` |
 | AgentWorker（预算、重试/放弃、日限额、去重、锁外调查） | ✅ | `agent/loop.py` |
-| investigator 契约（提示、载荷、解析、opencode 传输） | ✅ | `agent/investigator.py` `.opencode/agent/investigator.md` |
-| 插件角色门控 + 6 个新工具 + 主 agent log_* → /miss | ✅ | `.opencode/plugin/memory-bridge.ts` |
+| investigator 契约（提示、载荷、解析） | ✅ | `agent/investigator.py` |
+| 进程内调查员（6 个只读工具的 function-calling 循环，写入只走最终 JSON） | ✅ | `agent/inline.py` |
+| 插件（主 agent：捕获/注入/记账 + 工具 + log_* → /miss） | ✅ | `.opencode/plugin/memory-bridge.ts` |
 | 语义 worker 两阶段锁（LLM 在锁外） | ✅ | `worker.py` |
 | 旧 state.pkl 迁移（origin/entity 默认值） | ✅ | `server.py::_load` |
 | recognizer NONE → recall_miss | ✅ 默认关 | `Cfg.miss_on_recognizer_none` |
 | 三臂评测（passive / pull / raw-at-budget）、repair yield | ⏳ 未做 | 需 API key + 私有日志；接口已留：`LogStore.add_units` 预灌、`AgentWorker(before_for=)` 因果上界注入、`serve(svc, 0)` 本地环回 |
 | P2（extract_due 接管被动抽取）、mining | ⏳ 等评测 | — |
 
-已离线验证：211 条单测（含 HTTP 往返、预算 429、提议拒绝原因、
+已离线验证：212 条单测（含 HTTP 往返、预算 429、提议拒绝原因、
 纠正→修复→召回改善的整条回路、线程起停、重启迁移）；sidecar 进程级
-冒烟（无 opencode CLI 时降级、SIGTERM 存盘）。未验证：真实 opencode
-worker 会话端到端（需 `opencode` + `ZAI_API_KEY`）。
+冒烟（SIGTERM 存盘）；官方 opencode CLI + 插件自动拉起 + mock LLM 的
+进程级端到端（捕获 → 注入 → 纠正 → 进程内调查员 → 提议入库）。
+未验证：接真 `ZAI_API_KEY` 的调查质量。
 
 ## 12a. 原实施顺序（文件级，保留作对照）
 

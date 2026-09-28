@@ -23,9 +23,20 @@
 pip install numpy pytest
 cp .env.example .env          # ZAI_API_KEY=...
 
-python -m pytest tests/                          # 211 passed
+python -m pytest tests/                          # 212 passed
 python -m hybrid_memory.server --project <dir>   # 或被 opencode 插件自动拉起
 ```
+
+接入 opencode（官方 CLI 即可，无需源码）：
+
+```bash
+npm i -g opencode-ai
+cd <本仓库> && opencode        # .opencode/plugin/memory-bridge.ts 自动加载并拉起 sidecar
+```
+
+<sub>给别的项目用：把 `memory-bridge.ts` 软链到 `<项目>/.opencode/plugin/`。插件的
+`@opencode-ai/plugin` 依赖按软链的真实路径解析，所以要先在本仓库里跑一次 opencode
+（或 `cd .opencode && npm i @opencode-ai/plugin`）让依赖装好。</sub>
 
 ```text
 交互回合 ──observe──→ L0 日志 + candgen 蒸馏 → 记忆池
@@ -88,9 +99,10 @@ flowchart LR
   （决策·数字·新实体触发）驱动后台调查员翻日志、核实、`/propose` 写回——
   **走同一条 ingest，无任何特权**
 - **闸在服务端**——log_* 只给片段与统计，原文按字符预算回展；
-  按 `X-Signal-Id` 计量（超限 429）；`before=t` 因果上界物理上锁死未来
-- **火墙**——调查员跑 `MEMORY_BRIDGE_ROLE=worker`，插件只注册工具不挂
-  捕获钩子，它的工作永远不会被 observe
+  按信号计量工具调用（超限拒绝）；`before=t` 因果上界物理上锁死未来
+- **火墙**——调查员是 sidecar 进程内的 function-calling 循环
+  （`agent/inline.py`），只有 6 个只读工具，不经过 opencode、不调 observe，
+  它的工作天然不会被记成记忆；写入只走最终 JSON → 服务端校验
 
 ## 记忆动力学
 
@@ -131,7 +143,7 @@ flowchart LR
 
 | 已验证 | 未验证 |
 |---|---|
-| `pytest` 211 通过 | 调查员端到端真跑（opencode + API） |
+| `pytest` 212 通过 | 调查员接真 API 端到端真跑 |
 | 因果回放评测（106 单元真实日志） | 真实会话的 miss 分布与记忆质量 |
 | 三臂对照：memory / flat / none | 有害命中率（旧事实推翻后不再注入） |
 
@@ -165,11 +177,12 @@ flowchart LR
 |---|---|---|
 | `MEMORY_AGENT` | on | `off` 只跑被动链路 |
 | `MEMORY_AGENT_DAILY_CAP` | 200 | 调查员日调用上限 |
-| `MEMORY_AGENT_MODEL` | zhipu-env/glm-5.3-flash | 调查员模型 |
+| `MEMORY_AGENT_MODEL` | glm-5.3-flash | 调查员模型（旧 `provider/model` 写法兼容） |
 | `MEMORY_BRIDGE_PORT` | 17872 | sidecar 端口 |
 | `ZAI_API_KEY` | — | LLM 凭证（candgen / judge / recognizer / 调查员） |
+| `ZAI_BASE_URL` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI 兼容端点（chat / embeddings），可换代理或本地 mock |
 
-<sub>调查员默认启用：opencode 在 PATH 且有 API key 就自动消费信号。
+<sub>调查员默认启用：有 API key 就自动消费信号（不依赖 opencode）。
 `GET /signals` 看队列、预算用量与 miss_type 分布；诊断落 `diagnoses.jsonl`。</sub>
 
 <details>
@@ -181,13 +194,14 @@ hybrid_memory/
   logstore.py    L0 日志层：SQLite + FTS5 + mentions 倒排 + 可选向量 RRF
   triggers.py    确定性触发扫描（零 LLM）
   worker.py      judge / recognizer / consolidator 两阶段锁调度
-  agent/         调查员：investigator（契约）/ loop（AgentWorker）
+  agent/         调查员：investigator（契约）/ inline（进程内工具循环）/ loop（AgentWorker）
+                 / opencode（OpencodeRunner，实验用 --opencode 壳）
   candgen/       被动蒸馏器
   server.py      sidecar HTTP 面
-.opencode/       plugin/memory-bridge.ts（main/worker 两角色）+ agent/*.md
+.opencode/       plugin/memory-bridge.ts（主 agent 桥）+ agent/*.md（实验用 judge 等壳）
 experiments/     评测驱动脚本 + out/ 产物
-docs/            ouroboros.md（pull 回路设计与取舍）
-tests/           pytest，211 项
+docs/            ouroboros.md（pull 回路设计与取舍）+ opencode-learning/（opencode 源码学习笔记）
+tests/           pytest，212 项
 ```
 </details>
 
