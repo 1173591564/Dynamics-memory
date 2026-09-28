@@ -20,7 +20,8 @@ class ZhipuEmbeddingError(RuntimeError):
 
 
 class ZhipuEmbedder(Embedder):
-    ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/embeddings"
+    ENDPOINT = os.environ.get(
+        "ZAI_BASE_URL", "https://open.bigmodel.cn/api/paas/v4").rstrip("/") + "/embeddings"
     _DIMENSIONS = (256, 512, 1024, 2048)
 
     def __init__(
