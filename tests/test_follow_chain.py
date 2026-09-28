@@ -11,8 +11,8 @@ from hybrid_memory.config import Cfg
 from hybrid_memory.core import maintenance
 from hybrid_memory.core.engine import MemoryEngine
 from hybrid_memory.core.types import Memory
-from hybrid_memory.embed.synthetic import SyntheticEmbedder
-from hybrid_memory.sim.world import StreamGen
+from sim_embed import SyntheticEmbedder
+from sim_world import StreamGen
 
 
 def _engine():
@@ -78,7 +78,7 @@ def test_step_with_tension_on_zero_chain_does_not_crash():
 
 @pytest.mark.parametrize("seed", [0, 1, 2])
 def test_synthetic_sim_runs_end_to_end(seed):
-    # experiments.run 的 ours 预设曾在此路径必现 KeyError
+    # 默认 Cfg 曾在此路径必现 KeyError（supersede 链 id=0）
     from hybrid_memory.worker import SignalWorker
     emb = SyntheticEmbedder(seed=seed)
     world = StreamGen(emb, seed=seed)

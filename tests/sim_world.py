@@ -16,8 +16,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from ..core.types import Event, Query
-from ..embed.base import Embedder
+from hybrid_memory.core.types import Event, Query
+from hybrid_memory.embed.base import Embedder
 
 
 @dataclass

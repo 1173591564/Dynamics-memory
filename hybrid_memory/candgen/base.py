@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from ..datasets.real_chat import InteractionWindow
+from ..interaction import InteractionWindow
 
 
 @dataclass(frozen=True)

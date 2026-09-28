@@ -12,9 +12,8 @@ from hybrid_memory.config import Cfg
 from hybrid_memory.core.confidence import discount_to, projected
 from hybrid_memory.core.engine import MemoryEngine
 from hybrid_memory.core.types import Event, Memory, Pool, Query, Retrieval
-from hybrid_memory.embed.synthetic import SyntheticEmbedder
-from hybrid_memory.metrics import QueryCounts
-from hybrid_memory.sim.world import StreamGen
+from sim_embed import SyntheticEmbedder
+from sim_world import StreamGen
 from hybrid_memory.worker import SignalWorker
 
 
@@ -1302,18 +1301,6 @@ def test_consolidation_pending_pruned_without_callback():
     eng._consolidation_pending.update({0, 42})   # 0=已归档，42=不存在
     maybe_consolidate(eng, 0)
     assert eng._consolidation_pending == set()
-
-
-def test_context_efficiency_counts_unique_facts():
-    emb = np.ones(4)
-    first = Memory(0, 0, "v", "a", emb)
-    second = Memory(1, 0, "v", "b", emb)
-    counts = QueryCounts()
-    counts.add(Retrieval(selected=[first, second], n_useful=2))
-    assert counts.selected == 2
-    assert counts.relevant == 2
-    assert counts.unique_selected == 1
-    assert counts.unique_relevant == 1
 
 
 if __name__ == "__main__":

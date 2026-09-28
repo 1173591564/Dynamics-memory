@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..agent.opencode import OpencodeRunner
-from ..datasets.real_chat import InteractionWindow
+from ..interaction import InteractionWindow
 from ..llm import ZhipuChatError
 from .base import CandidateGeneration
 from .prompt import INSTRUCTION, parse_generation, serialize_window
@@ -20,7 +20,7 @@ _CLI_INSTRUCTION = "读取附件，按其中说明完成情境切分与记忆提
 
 class OpencodeCliGenerator:
     def __init__(self, model: str = "zhipu-env/glm-5.3-flash",
-                 scratch_dir: str | Path = "experiments/out/_candgen_scratch",
+                 scratch_dir: str | Path = ".opencode/tmp/candgen",
                  timeout_s: int = 300, env_extra: dict | None = None,
                  config_path: str | Path | None = None):
         self._runner = OpencodeRunner(

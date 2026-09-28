@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .base import Embedder
+from hybrid_memory.embed.base import Embedder
 
 
 class SyntheticEmbedder(Embedder):

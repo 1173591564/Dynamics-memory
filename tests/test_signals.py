@@ -16,8 +16,8 @@ from hybrid_memory.config import Cfg
 from hybrid_memory.core.engine import MemoryEngine
 from hybrid_memory.core.signals import SignalQueue
 from hybrid_memory.core.types import Event, Memory, Pool, Query
-from hybrid_memory.embed.synthetic import SyntheticEmbedder
-from hybrid_memory.sim.world import StreamGen
+from sim_embed import SyntheticEmbedder
+from sim_world import StreamGen
 from hybrid_memory.worker import SignalWorker
 
 

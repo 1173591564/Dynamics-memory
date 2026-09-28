@@ -108,7 +108,7 @@ def follow_chain(eng, m: Memory) -> Memory:
 
     两个防御：
     - 不能写 `a or b`——memory id 从 0 起，superseded_by=0 会被当成 False
-      （曾让 experiments.run 在 step 里 KeyError: None）；
+      （曾让仿真回放在 step 里 KeyError: None）；
     - 链成环（只可能来自损坏的 state.pkl）：计数外显并在环处停下，
       不能让每次 step 都炸掉整个 sidecar。
     """

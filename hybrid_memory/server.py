@@ -63,7 +63,7 @@ from .candgen.prompt import redact_secrets
 from .config import Cfg
 from .core.engine import MemoryEngine
 from .core.types import Event, Query, Retrieval
-from .datasets.real_chat import InteractionUnit, InteractionWindow
+from .interaction import InteractionUnit, InteractionWindow
 from .embed.base import Embedder
 from .llm import chat
 from .logstore import LogStore, entities_in

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 
-from ..datasets.real_chat import InteractionWindow
+from ..interaction import InteractionWindow
 from .base import CandidateGeneration, MemoryCandidate
 
 INSTRUCTION = """\

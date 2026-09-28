@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from ..datasets.real_chat import InteractionWindow
+from ..interaction import InteractionWindow
 from .base import CandidateGeneration
 from .prompt import INSTRUCTION, parse_generation, serialize_window
 

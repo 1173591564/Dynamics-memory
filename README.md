@@ -23,7 +23,7 @@
 pip install numpy pytest
 cp .env.example .env          # ZAI_API_KEY=...
 
-python -m pytest tests/                          # 212 passed
+python -m pytest tests/                          # 205 passed
 python -m hybrid_memory.server --project <dir>   # 或被 opencode 插件自动拉起
 ```
 
@@ -132,44 +132,20 @@ flowchart LR
 | 矛盾不静默 | 同实体矛盾聚合收编（全版本+时间戳），未决 conflict 不许自信出场（contested co-serve） |
 | 可溯源 | 每条记忆携带源单元 id，可回 L0 查证；`origin` 纯审计不给 V 加成 |
 
-## 验证状态
+## 评测
 
-**机制层被测过，端到端还没活过。**
+评测平台 **TIDE** 与引擎完全分离（独立仓库，只经 HTTP 协议通信，真值不越过边界）。
+设计见 [`docs/benchmark-design.md`](docs/benchmark-design.md)。
 
-<img src="experiments/out/runs/dynamics.png" width="720" alt="动力学仿真：M 池贴容量封顶、生命周期控制、vitality 分离"/>
+sidecar 为评测提供的两个能力：
 
-<sub>10 种子均值的仿真：M 池贴着容量封顶走（有界性）、噪声暴下污染被压制在
-候选池而不进记忆池（门控生效）、有效与失效记忆的 vitality 明确分离。</sub>
-
-| 已验证 | 未验证 |
-|---|---|
-| `pytest` 212 通过 | 调查员接真 API 端到端真跑 |
-| 因果回放评测（106 单元真实日志） | 真实会话的 miss 分布与记忆质量 |
-| 三臂对照：memory / flat / none | 有害命中率（旧事实推翻后不再注入） |
-
-因果回放：t 时刻的提问只能用 t 之前流入的记忆，无前窥。
-
-| 评测 | 结果 |
-|---|---|
-| 续话感（1-5 分） | **memory 3.00** / flat 2.39 / none 2.23；≥4 分率 38% vs 8% |
-| 原始日志 QA（36 题） | acc **0.667**，拒答 3/3 全对 |
-| LoCoMo（跨分布对照） | 0.29——暴露蒸馏丢细节与协议错位 |
-
-<sub>已知边界：n 小的方向性证据而非决定性证据；judge 默认 verbatim
-规则（`--llm-judge` 启用 LLM 裁判链）；archive 池尚无界。</sub>
-
-## 机制证据分级
-
-`Cfg` 默认关掉所有可选机制，`--feature-set` 逐层开启——
-**拿不出评测证据的不进默认路径**。
-
-| 机制 | 13 点消融证据 | 处置 |
+| 参数 | 端点 | 作用 |
 |---|---|---|
-| salience 半衰期 | ≥4 率 +15pp，归档 108→69 | 唯一独立正贡献 |
-| confidence 置信门 | 单开 −0.077，配 salience 后回正 | 保留，默认关 |
-| novelty / consolidation / lex | 分数无效应或互有胜负 | 默认关 |
+| `passive` | `GET /recall?passive=1` / `POST /search {"passive": true}` | 在引擎副本上检索：不改任何状态、不登记 retrieval_id（评测探针用） |
+| `budget_tokens` | 同上 | 上下文按 `approx_tokens` 计数截断整行（CJK 单字 / ASCII 词 / 符号各记 1） |
 
-<sub>真实瓶颈在抽取/召回：参照要点进 top-5 仅 ~18%——pull 回路为此而建。</sub>
+<sub>旧的 experiments/ 评测已整体移除：其仿真与引擎共用真值对象、口径无法识别聚合输出、
+样本量不足以支持结论，数字不再引用。</sub>
 
 ## 配置
 
@@ -195,23 +171,12 @@ hybrid_memory/
   triggers.py    确定性触发扫描（零 LLM）
   worker.py      judge / recognizer / consolidator 两阶段锁调度
   agent/         调查员：investigator（契约）/ inline（进程内工具循环）/ loop（AgentWorker）
-                 / opencode（OpencodeRunner，实验用 --opencode 壳）
+                 / opencode（OpencodeRunner：可选 CLI 后端，默认路径不使用）
   candgen/       被动蒸馏器
+  interaction.py 对话单元 / 窗口类型
   server.py      sidecar HTTP 面
-.opencode/       plugin/memory-bridge.ts（主 agent 桥）+ agent/*.md（实验用 judge 等壳）
-experiments/     评测驱动脚本 + out/ 产物
-docs/            ouroboros.md（pull 回路设计与取舍）+ opencode-learning/（opencode 源码学习笔记）
-tests/           pytest，212 项
-```
-</details>
-
-<details>
-<summary><b>复现评测</b></summary>
-
-```bash
-python -m experiments.candgen_real                  # 窗口 → 候选（LLM）
-python -m experiments.run_real --allow-remote       # 因果回放
-python -m experiments.qa_continuity --allow-remote  # 续话感三臂
-python -m experiments.run_bench --dataset locomo    # 跨分布对照
+.opencode/       plugin/memory-bridge.ts（主 agent 桥）+ agent/*.md（OpencodeRunner 用的 judge 等角色壳）
+docs/            ouroboros.md（pull 回路设计）+ benchmark-design.md（TIDE 评测设计）+ opencode-learning/
+tests/           pytest（sim_world.py / sim_embed.py 是引擎单测夹具，不是评测）
 ```
 </details>

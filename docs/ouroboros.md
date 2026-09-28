@@ -76,8 +76,7 @@ unit_emb(unit_id INTEGER PRIMARY KEY, vec BLOB)   -- 可选，复用 embed 缓�
   URL / 环境变量名。`retrieval._ASCII_TOK` 就是它的雏形。CJK 实体不在这层做，
   交给 agent 提议时以 `entity_key` 回填。
 - `observe()` 改为：**先写 logstore（同步、确定性、毫秒级），再决定是否抽取**。
-- `experiments/` 回放脚本把整份 `l0-*.jsonl` 预灌 logstore，`before=t` 参数天然
-  实现因果约束——回放时 agent 物理上查不到 t 之后的单元。
+- `before=t` 参数实现因果上界——回放时 agent 物理上查不到 t 之后的单元。
 
 ## 4. 工具面（agent 能做什么）
 
@@ -232,9 +231,9 @@ permission:
 
 **赢不了 C，整个方向不成立**——因为本方向的全部论证是"agent 有选择地读日志 > 无差别读日志"。
 
-指标：续话感 / QA acc（现有）+ evidence recall（`src` vs `evidence_units`，README 说可算但没算）
-+ staleness rate + contested-honesty + tokens-per-correct + **repair yield**
-（回放中每个失败点跑修复，看后续依赖同一要点的题是否转对）+ `miss_type` 分布随时间变化。
+三臂在 TIDE 评测平台上比较（独立仓库，见 [`benchmark-design.md`](benchmark-design.md)）：
+A/C 走 T1 固定读者赛道的预算档，B 的修复收益（repair yield）只能在 T3 闭环赛道测；
+C 即平台内置参照系统 `raw-bm25`。
 
 ## 12. 实施状态（feat/ouroboros-p1）
 
@@ -253,36 +252,15 @@ permission:
 | 语义 worker 两阶段锁（LLM 在锁外） | ✅ | `worker.py` |
 | 旧 state.pkl 迁移（origin/entity 默认值） | ✅ | `server.py::_load` |
 | recognizer NONE → recall_miss | ✅ 默认关 | `Cfg.miss_on_recognizer_none` |
-| 三臂评测（passive / pull / raw-at-budget）、repair yield | ⏳ 未做 | 需 API key + 私有日志；接口已留：`LogStore.add_units` 预灌、`AgentWorker(before_for=)` 因果上界注入、`serve(svc, 0)` 本地环回 |
+| 评测接口：`/recall` 的 `passive`（引擎副本检索）与 `budget_tokens` | ✅ | `server.py::recall` |
+| 三臂评测（passive / pull / raw-at-budget）、repair yield | ⏳ 在 TIDE 上做 | T1 需真实 LLM 抽取才有意义；T3 闭环未实现 |
 | P2（extract_due 接管被动抽取）、mining | ⏳ 等评测 | — |
 
-已离线验证：212 条单测（含 HTTP 往返、预算 429、提议拒绝原因、
+已离线验证：205 条单测（含 HTTP 往返、预算 429、提议拒绝原因、
 纠正→修复→召回改善的整条回路、线程起停、重启迁移）；sidecar 进程级
 冒烟（SIGTERM 存盘）；官方 opencode CLI + 插件自动拉起 + mock LLM 的
 进程级端到端（捕获 → 注入 → 纠正 → 进程内调查员 → 提议入库）。
 未验证：接真 `ZAI_API_KEY` 的调查质量。
-
-## 12a. 原实施顺序（文件级，保留作对照）
-
-**第 1 周 — L0 与工具面**
-- `hybrid_memory/logstore.py`：SQLite + FTS5(trigram) + mentions + `search/timeline/stats/window`
-- `server.py`：`observe` 先写 logstore；新增 `/log/*` 四端点；`/propose` `/diagnose` + 校验
-- `memory-bridge.ts`：角色门控；新增 6 个工具；主 agent 调用 `log_*` 时上报 miss
-- `tests/test_logstore.py`、`tests/test_propose.py`
-
-**第 2 周 — 信号与手**
-- `core/types.py`：`Memory.origin`；`core/engine.py`：`propose()`；`recall_miss` 三个触发点
-- `worker.py`：`AgentWorker`（后台线程，dispatch `recall_miss` → `OpencodeRunner.run(agent="investigator")`，解析 JSON，回报）
-- `.opencode/agent/investigator.md`
-- `observe` 触发扫描 → `extract_due`（先只发信号不消费，验证信号面）
-
-**第 3 周 — 评测（分水岭）**
-- `experiments/qa_real.py --arm passive|pull|raw`；`experiments/raw_budget_baseline.py`
-- 三臂跑通，看 repair yield 与 evidence recall
-
-**之后**
-- `extract_due` 消费（P2）→ `conflict_pending` 升级为 timeline 裁决 → `mining_due`
-- 第 3 周结果出来前不做 mining。
 
 ## 13. 与项目原则的对齐
 

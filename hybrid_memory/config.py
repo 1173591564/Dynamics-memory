@@ -1,5 +1,5 @@
-"""Cfg: 全部常数 + 消融开关收一处。engine 代码里不出现"消融"概念——
-experiments/run.py 把预设翻译成具体 Cfg。"""
+"""Cfg: 全部常数 + 功能开关收一处。engine 代码里不出现"消融"概念——
+评测平台（TIDE，独立仓库）通过适配器传入具体 Cfg。"""
 from __future__ import annotations
 
 from dataclasses import dataclass
