@@ -2,6 +2,9 @@
 .env.*
 !.env.example
 data/l0-*.jsonl
+data/bench/*.json
+experiments/out/cache/
+experiments/out/candgen/
 .opencode/tmp/
 .opencode/node_modules/
 .opencode/memory/
