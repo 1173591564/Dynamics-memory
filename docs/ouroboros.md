@@ -250,7 +250,7 @@ C 即平台内置参照系统 `raw-bm25`。
 | 三臂评测（passive / pull / raw-at-budget）、repair yield | ⏳ 在 TIDE 上做 | T1 需真实 LLM 抽取才有意义；T3 闭环未实现 |
 | P2（extract_due 接管被动抽取）、mining | ⏳ 等评测 | — |
 
-已离线验证：188 条单测（含 HTTP 往返、预算 429、提议拒绝原因、
+已离线验证：187 条单测（含 HTTP 往返、预算 429、提议拒绝原因、
 纠正→修复→召回改善的整条回路、线程起停、重启迁移）；sidecar 进程级
 冒烟（SIGTERM 存盘）；官方 opencode CLI + 插件自动拉起 + mock LLM 的
 进程级端到端（捕获 → 注入 → 纠正 → 进程内调查员 → 提议入库）。

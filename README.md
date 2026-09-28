@@ -23,7 +23,7 @@
 pip install numpy pytest
 cp .env.example .env          # ZAI_API_KEY=...
 
-python -m pytest tests/                          # 188 passed
+python -m pytest tests/                          # 187 passed
 python -m hybrid_memory.server --project <dir>   # 或被 opencode 插件自动拉起
 ```
 
