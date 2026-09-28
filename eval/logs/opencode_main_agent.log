@@ -1,0 +1,40 @@
+timestamp=2026-09-28T11:19:54.113Z level=INFO run=81c619f5 message="creating instance" directory=/tmp/proj
+timestamp=2026-09-28T11:19:54.116Z level=INFO run=81c619f5 message=fromDirectory directory=/tmp/proj
+timestamp=2026-09-28T11:19:54.173Z level=INFO run=81c619f5 message=bootstrapping directory=/tmp/proj
+timestamp=2026-09-28T11:19:54.186Z level=INFO run=81c619f5 message=loading path=/home/user/.config/opencode/config.json
+timestamp=2026-09-28T11:19:54.187Z level=INFO run=81c619f5 message=loading path=/home/user/.config/opencode/opencode.json
+timestamp=2026-09-28T11:19:54.188Z level=INFO run=81c619f5 message=loading path=/home/user/.config/opencode/opencode.jsonc
+timestamp=2026-09-28T11:19:54.194Z level=INFO run=81c619f5 message=loading path=/tmp/proj/opencode.json
+timestamp=2026-09-28T11:19:54.219Z level=INFO run=81c619f5 message=loading path=/tmp/proj/.opencode/opencode.json
+timestamp=2026-09-28T11:19:54.220Z level=INFO run=81c619f5 message=loading path=/tmp/proj/.opencode/opencode.jsonc
+[memory-bridge:main] sidecar already up on :17872（复用，不重复拉起）
+[memory-bridge:main] sidecar ready on :17872
+timestamp=2026-09-28T11:19:54.457Z level=INFO run=81c619f5 message="all LSPs are disabled"
+timestamp=2026-09-28T11:19:54.459Z level=INFO run=81c619f5 message="all formatters are disabled"
+timestamp=2026-09-28T11:19:54.459Z level=INFO run=81c619f5 message=init
+timestamp=2026-09-28T11:19:54.716Z level=INFO run=81c619f5 message=created id=ses_f1841d5a4ffe1p90nNgvLkUzhl slug=neon-panda version=1.18.33 projectID=global directory=/tmp/proj path="" workspaceID=undefined parentID=undefined title="New session - 2026-09-28T11:19:54.716Z" agent=undefined model=undefined metadata=undefined permission="[{\"permission\":\"question\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_enter\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_exit\",\"pattern\":\"*\",\"action\":\"deny\"}]" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1790594394716 time.updated=1790594394716
+timestamp=2026-09-28T11:19:54.735Z level=INFO run=81c619f5 message="event connected"
+timestamp=2026-09-28T11:19:55.527Z level=INFO run=81c619f5 message=loop session.id=ses_f1841d5a4ffe1p90nNgvLkUzhl step=0
+[0m
+> build · glm-5.3-flash
+[0m
+timestamp=2026-09-28T11:19:55.553Z level=INFO run=81c619f5 message=stream providerID=zhipu-env modelID=glm-5.3-flash session.id=ses_f1841d5a4ffe1p90nNgvLkUzhl small=true agent=title mode=primary
+timestamp=2026-09-28T11:19:55.622Z level=INFO run=81c619f5 message=tracking hash=1abebf072524cd75522b669d9f00ac8a07c98525 cwd=/tmp/proj git=/home/user/.local/share/opencode/snapshot/global/ac4bf773dd63a5a355ca4153eadf59912da78137
+timestamp=2026-09-28T11:19:55.647Z level=INFO run=81c619f5 message="shell tool using shell" shell=/bin/bash
+timestamp=2026-09-28T11:19:55.664Z level=INFO run=81c619f5 message=init count=1
+timestamp=2026-09-28T11:19:55.839Z level=INFO run=81c619f5 message="watcher backend" directory=/tmp/proj platform=linux backend=inotify
+timestamp=2026-09-28T11:19:55.843Z level=INFO run=81c619f5 message="project copy refresh started" projectID=global
+timestamp=2026-09-28T11:19:55.845Z level=INFO run=81c619f5 message="project copy refresh done" projectID=global updated=[] removed=[]
+timestamp=2026-09-28T11:19:56.479Z level=INFO run=81c619f5 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=zhipu-env llm.model=glm-5.3-flash
+timestamp=2026-09-28T11:19:56.570Z level=INFO run=81c619f5 message="booting location services" directory=/tmp/proj workspaceID=undefined
+timestamp=2026-09-28T11:19:56.575Z level=INFO run=81c619f5 message=process session.id=ses_f1841d5a4ffe1p90nNgvLkUzhl messageID=msg_0e7be2d8b001gKP6cJv1pa68ID
+timestamp=2026-09-28T11:19:56.577Z level=INFO run=81c619f5 message=stream providerID=zhipu-env modelID=glm-5.3-flash session.id=ses_f1841d5a4ffe1p90nNgvLkUzhl small=false agent=build mode=primary
+timestamp=2026-09-28T11:19:56.595Z level=INFO run=81c619f5 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=zhipu-env llm.model=glm-5.3-flash
+（mock 回复）好的，我已了解当前项目状态。
+timestamp=2026-09-28T11:19:56.676Z level=INFO run=81c619f5 message=tracking hash=1abebf072524cd75522b669d9f00ac8a07c98525 cwd=/tmp/proj git=/home/user/.local/share/opencode/snapshot/global/ac4bf773dd63a5a355ca4153eadf59912da78137
+timestamp=2026-09-28T11:19:56.735Z level=INFO run=81c619f5 message=loop session.id=ses_f1841d5a4ffe1p90nNgvLkUzhl step=1
+timestamp=2026-09-28T11:19:56.736Z level=INFO run=81c619f5 message="exiting loop" session.id=ses_f1841d5a4ffe1p90nNgvLkUzhl
+[memory-bridge:main] idle: observe turn (user=19ch, reply=44ch)
+timestamp=2026-09-28T11:19:56.756Z level=INFO run=81c619f5 message="disposing instance" directory=/tmp/proj
+[memory-bridge:main] idle: observe → {"unit_id":31,"candidates":0,"scene":"在围绕 mock 项目做开发与调试","reasons":[],"pool":{"C":39,"M":0,"A":1},"t":32,"worker":{"judged":0,"resolved":0,"credited":0,"reflected":0,"thin":0,"recog_fail":0,"errors":0}}
+[memory-bridge:main] idle: feedback → {"n_useful":1,"worker":{"judged":0,"resolved":0,"credited":1,"reflected":0,"thin":0,"recog_fail":0,"errors":0}}

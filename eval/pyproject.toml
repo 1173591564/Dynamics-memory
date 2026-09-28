@@ -1,0 +1,12 @@
+[project]
+name = "tide"
+version = "0.1.0"
+description = "TIDE: Temporal Integrity & Dynamics Evaluation for agent memory systems"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["tide*"]

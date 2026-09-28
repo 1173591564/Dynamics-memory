@@ -1,0 +1,2 @@
+{"ts": 1790594457.6, "t": 34, "signal_id": "recall_miss-1-33", "kind": "recall_miss", "miss_type": "dropped_by_candgen", "note": "mock investigator", "usage": {"calls": 1, "window_used": 0, "elapsed_s": 8.3}}
+{"ts": 1790594462.1, "t": 34, "signal_id": "extract_due-2-33", "kind": "extract_due", "miss_type": "dropped_by_candgen", "note": "mock investigator", "usage": {"calls": 1, "window_used": 0, "elapsed_s": 4.5}}

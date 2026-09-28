@@ -134,8 +134,9 @@ flowchart LR
 
 ## 评测
 
-评测平台 **TIDE** 与引擎完全分离（独立仓库，只经 HTTP 协议通信，真值不越过边界）。
-设计见 [`docs/benchmark-design.md`](docs/benchmark-design.md)。
+评测平台 **TIDE** 与引擎完全分离（只经 HTTP 协议通信，真值不越过边界）。
+设计见 [`docs/benchmark-design.md`](docs/benchmark-design.md)，
+第一版可运行实现在 [`eval/`](eval/README.md)（场景驱动器 + 离线 mock + 基线报告）。
 
 sidecar 为评测提供的两个能力：
 
