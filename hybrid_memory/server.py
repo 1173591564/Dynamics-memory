@@ -43,6 +43,7 @@ Unpickler。依赖注入（cfg/emb/semantics/generator/logstore）便于测试�
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import pickle
@@ -291,45 +292,73 @@ class MemoryService:
                 "reasons": list(reasons), "pool": pool, "t": self._t,
                 "worker": wstats}
 
-    def _format_context(self, ret: Retrieval) -> str:
+    def _context_lines(self, ret: Retrieval) -> list[tuple[str, object]]:
         prov_ids = {m.id for m in ret.provisional}
         lines = []
         for m in ret.selected:
-            lines.append(
+            lines.append((
                 f"- {'[未确认] ' if m.id in prov_ids else ''}"
                 f"{'[项目状态汇总] ' if m.kind == 'reflection' else ''}"
-                f"[t={m.birth}] {_safe_mem_text(m.text)}")
+                f"[t={m.birth}] {_safe_mem_text(m.text)}", m))
         for m, rival in ret.contested:
-            lines.append(f"- ⚠️未决冲突：[t={rival.birth}] "
-                         f"{_safe_mem_text(rival.text)}"
-                         f"（与 t={m.birth} 条目冲突）")
-        return "\n".join(lines)
+            lines.append((f"- ⚠️未决冲突：[t={rival.birth}] "
+                          f"{_safe_mem_text(rival.text)}"
+                          f"（与 t={m.birth} 条目冲突）", None))
+        return lines
 
-    def recall(self, q: str, k: int | None = None) -> dict:
+    def _format_context(self, ret: Retrieval) -> str:
+        return "\n".join(line for line, _ in self._context_lines(ret))
+
+    def _probe_engine(self) -> MemoryEngine:
+        """被动探针用的引擎副本：retrieve 会改状态（shortlisted、压制、tension、
+        shadow pending、archive revive、信号），探针不能留下任何痕迹。
+        嵌入器 / 语义 / Cfg 是无状态依赖或共享配置，不复制。调用方须持锁。"""
+        eng = self.engine
+        memo = {id(eng.emb): eng.emb, id(eng.semantics): eng.semantics,
+                id(eng.cfg): eng.cfg}
+        return copy.deepcopy(eng, memo)
+
+    def recall(self, q: str, k: int | None = None, *,
+               budget_tokens: int | None = None,
+               passive: bool = False) -> dict:
+        """budget_tokens：上下文按 approx_tokens 计数的上限，按排序截断整行。
+        passive：在引擎副本上检索，不改任何状态、不登记 retrieval_id
+        （评测探针用；正常对话走非 passive）。"""
         qv = self.emb.embed([q])[0]
         with self._lock:
+            eng = self._probe_engine() if passive else self.engine
+            old_k = self.cfg.k
             if k is not None:
-                old_k, self.cfg.k = self.cfg.k, k
-                try:
-                    ret = self.engine.retrieve(qv, Query(-1, q), self._t)
-                finally:
-                    self.cfg.k = old_k
-            else:
-                ret = self.engine.retrieve(qv, Query(-1, q), self._t)
-            rid = self._next_retrieval
-            self._next_retrieval += 1
-            self._retrievals[rid] = ret
-            while len(self._retrievals) > _RETRIEVAL_KEEP:
-                self._retrievals.pop(min(self._retrievals))
+                self.cfg.k = k
+            try:
+                ret = eng.retrieve(qv, Query(-1, q), self._t)
+            finally:
+                self.cfg.k = old_k
+            lines, used, kept = [], 0, []
+            for line, m in self._context_lines(ret):
+                cost = approx_tokens(line) + (1 if lines else 0)
+                if budget_tokens is not None and used + cost > budget_tokens:
+                    break
+                lines.append(line)
+                used += cost
+                if m is not None:
+                    kept.append(m)
+            rid = None
+            if not passive:
+                rid = self._next_retrieval
+                self._next_retrieval += 1
+                self._retrievals[rid] = ret
+                while len(self._retrievals) > _RETRIEVAL_KEEP:
+                    self._retrievals.pop(min(self._retrievals))
             # 不在这里把 retrieval 关联到 _last_turn：/search 发生在回答
             # 之前，此刻 _last_turn 还是上一轮；关联由 /feedback 完成
-            return {"retrieval_id": rid, "context": self._format_context(ret),
-                    "n": len(ret.selected),
+            return {"retrieval_id": rid, "context": "\n".join(lines),
+                    "n": len(kept), "tokens": used,
                     "selected": [{"id": m.id, "text": m.text,
                                   "birth": m.birth, "kind": m.kind,
                                   "origin": m.origin,
                                   "src": sorted(m.src)}
-                                 for m in ret.selected]}
+                                 for m in kept]}
 
     def feedback(self, retrieval_id: int, question: str, answer: str) -> dict:
         with self._lock:
@@ -758,7 +787,16 @@ class _Handler(BaseHTTPRequestHandler):
             query = q.get("q", "")
             if not query:
                 raise _HttpError(400, "q required")
-            self._reply(200, svc.recall(query, k))
+            try:
+                budget = (int(q["budget_tokens"]) if q.get("budget_tokens")
+                          else None)
+            except ValueError:
+                raise _HttpError(400, "budget_tokens must be int")
+            if budget is not None and budget <= 0:
+                raise _HttpError(400, "budget_tokens must be positive")
+            self._reply(200, svc.recall(
+                query, k, budget_tokens=budget,
+                passive=q.get("passive", "") in ("1", "true")))
         elif path == "/conflicts":
             self._reply(200, svc.conflicts())
         elif path == "/signals":
@@ -802,7 +840,10 @@ class _Handler(BaseHTTPRequestHandler):
             query = body.get("query", "")
             if not isinstance(query, str) or not query:
                 raise _HttpError(400, "query required")
-            self._reply(200, svc.recall(query, k))
+            self._reply(200, svc.recall(
+                query, k, budget_tokens=_opt_int(body, "budget_tokens",
+                                                 positive=True),
+                passive=body.get("passive") is True))
         elif path == "/miss":
             query = _req_str(body, "query")
             hint = body.get("hint", "")
@@ -911,6 +952,15 @@ def serve(service: MemoryService, port: int,
     handler = type("_BoundHandler", (_Handler,), {"service": service})
     httpd = ThreadingHTTPServer((host, port), handler)
     return httpd
+
+
+_TOKEN_RE = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]|[A-Za-z0-9_]+|[^\sA-Za-z0-9_]")
+
+
+def approx_tokens(text: str) -> int:
+    """与 TIDE 平台一致的近似 token 计数：CJK 单字 = 1，ASCII 词 = 1，
+    其余非空白符号 = 1。只用于预算截断，不追求与具体 tokenizer 对齐。"""
+    return len(_TOKEN_RE.findall(text))
 
 
 # ============================ 默认组装 ============================

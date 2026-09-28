@@ -64,6 +64,46 @@ def test_recall_returns_context_and_registry():
     assert out["selected"][0]["text"] == "部署在 B 服务器"
 
 
+def _engine_fingerprint(svc):
+    eng = svc.engine
+    mems = sorted((m.id, m.pool.name, round(m.v, 9), m.shortlisted, m.hits,
+                   m.suppressed_by, m.last_hit) for m in eng.mems.values())
+    return (mems, sorted(eng.tensions), len(eng.signals),
+            len(eng._shadow_pending), svc._next_retrieval, svc._t)
+
+
+def test_passive_recall_leaves_no_trace():
+    svc = _service(texts=("部署在 B 服务器", "部署在 B 服务器，端口 8080"))
+    svc.observe("部署在哪", "已改到 B 服务器")
+    svc.observe("部署在哪", "端口 8080")
+    before = _engine_fingerprint(svc)
+    out = svc.recall("部署在哪", passive=True)
+    assert out["retrieval_id"] is None and out["n"] >= 1
+    assert "部署在 B 服务器" in out["context"]
+    assert _engine_fingerprint(svc) == before
+    active = svc.recall("部署在哪")          # 对照：非 passive 会留下痕迹
+    assert isinstance(active["retrieval_id"], int)
+    assert _engine_fingerprint(svc) != before
+
+
+def test_recall_budget_truncates_whole_lines():
+    from hybrid_memory.server import approx_tokens
+    svc = _service()
+    svc.observe("部署在哪", "已改到 B 服务器")
+    full = svc.recall("部署在哪", passive=True)
+    assert full["tokens"] == approx_tokens(full["context"]) > 0
+    tight = svc.recall("部署在哪", passive=True, budget_tokens=full["tokens"] - 1)
+    assert tight["context"] == "" and tight["n"] == 0 and tight["tokens"] == 0
+    exact = svc.recall("部署在哪", passive=True, budget_tokens=full["tokens"])
+    assert exact["context"] == full["context"]
+
+
+def test_approx_tokens_rule():
+    from hybrid_memory.server import approx_tokens
+    assert approx_tokens("部署在 B 服务器") == 7        # 6 个汉字 + 1 个 ASCII 词
+    assert approx_tokens("port=8080, zorvex_7") == 5  # port = 8080 , zorvex_7
+
+
 def test_feedback_credits_and_guards_double_call():
     svc = _service()
     svc.observe("部署在哪", "已改到 B 服务器")
