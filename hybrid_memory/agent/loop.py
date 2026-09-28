@@ -2,7 +2,7 @@
 
     take(recall_miss / extract_due)（锁内）
       → build_payload（锁内，只读小信息）
-      → investigate(payload)（锁外，可能几十秒：opencode 子进程 + 工具调用）
+      → investigate(payload)（锁外，可能几十秒：进程内 LLM 工具调用循环）
       → service.propose / resolve / diagnose（各自锁内）
 
 纪律（衔尾蛇不能把自己吃死）：

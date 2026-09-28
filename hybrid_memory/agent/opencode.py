@@ -73,9 +73,10 @@ class OpencodeRunner:
                  workdir=None, payload_dir=None, pure: bool = True):
         self.model = model
         self.timeout_s = timeout_s
-        # pure=True：--pure 不加载插件（裁判/抽取器等无工具角色，防插件递归
-        # 捕获）；pure=False：加载插件——调查员需要插件提供的 log_*/memory_*
-        # 工具，此时靠 MEMORY_BRIDGE_ROLE=worker 让插件只注册工具、不挂钩子
+        # pure=True（默认）：--pure 不加载插件——裁判/抽取器等实验壳没有工具，
+        # 也绝不能被插件捕获。调查员已改为 sidecar 进程内循环（agent/inline.py），
+        # 不再经本 runner；插件现在只有主 agent 角色，pure=False 会挂上捕获
+        # 钩子，除非明确要这样做否则不要用
         self.pure = pure
         self._exe = exe or shutil.which("opencode")
         if self._exe is None:
@@ -120,7 +121,7 @@ class OpencodeRunner:
 
     def run(self, *, system: str, user: str, instruction: str | None = None,
             agent: str | None = None, env_extra: dict | None = None) -> str:
-        """env_extra：本次调用追加的环境变量（如每信号的 MEMORY_BRIDGE_SIGNAL）。"""
+        """env_extra：本次调用追加的环境变量。"""
         self._seq += 1
         payload = self.payload_dir / f"call_{self._tag}_{self._seq}.txt"
         try:

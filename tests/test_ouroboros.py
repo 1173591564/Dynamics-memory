@@ -281,52 +281,86 @@ def test_repair_memories_survive_restart(tmp_path):
     assert json.loads(lines[0])["miss_type"] == "dropped_by_candgen"
 
 
-# ---------------------------------------------------------------- OpencodeInvestigator 传输层（假 runner）
-def test_opencode_investigator_wires_role_env_and_parses():
-    from hybrid_memory.agent.investigator import OpencodeInvestigator
+# ---------------------------------------------------------------- InlineInvestigator（进程内调查员，假 LLM）
+def _tool_msg(name, args, cid="c1"):
+    return {"role": "assistant", "content": "",
+            "tool_calls": [{"id": cid, "type": "function",
+                            "function": {"name": name,
+                                         "arguments": json.dumps(args, ensure_ascii=False)}}]}
+
+
+def test_inline_investigator_tool_loop_end_to_end(tmp_path):
+    """recall_miss → AgentWorker → 进程内 function-calling 循环：
+    log_search 真的打到服务层（按 signal_id 记账）→ 最终 JSON → propose 入库。
+    调查过程不产生任何 observe（火墙天然成立）。"""
+    from hybrid_memory.agent.inline import TOOLS, InlineInvestigator
+    svc = _svc(tmp_path)
+    svc.observe("端口改了吗", "服务端口从 8080 改成了 9090。")
+    svc.report_miss("服务端口是多少", source="correction")
+    seen = []
+
+    def fake_chat(messages, tools):
+        seen.append((messages, tools))
+        if len(seen) == 1:
+            assert {t["function"]["name"] for t in tools} == {
+                "log_search", "log_timeline", "log_stats", "log_window",
+                "memory_search", "memory_conflicts"}          # 只读工具面
+            payload = messages[1]["content"]
+            assert "服务端口是多少" in payload and '"signal_id"' in payload
+            return _tool_msg("log_search", {"query": "端口"})
+        tool_out = messages[-1]
+        assert tool_out["role"] == "tool" and "unit 0" in tool_out["content"]
+        return {"role": "assistant", "content": json.dumps({
+            "proposals": [{"text": "服务端口已从 8080 改为 9090。",
+                           "source_unit_ids": [0], "entity_key": "port"}],
+            "diagnosis": {"miss_type": "dropped_by_candgen", "note": "漏抽"}},
+            ensure_ascii=False)}
+
+    inv = InlineInvestigator(svc, chat_fn=fake_chat)
+    w = AgentWorker(svc, inv, kinds=("recall_miss",), budget=Budget(tool_calls=4))
+    n_units = svc.log.count()
+    st = w.process_once()
+    assert st["run"] == 1 and st["accepted"] == 1 and st["diagnosed"] == 1
+    assert svc.log.count() == n_units                     # 调查没被 observe
+    m = [m for m in svc.engine.mems.values() if m.origin == "repair"]
+    assert len(m) == 1 and "9090" in m[0].text and m[0].entity == "port"
+    diag = json.loads((tmp_path / "diagnoses.jsonl").read_text(
+        encoding="utf-8").splitlines()[-1])
+    assert diag["usage"]["calls"] == 1                    # 服务端按信号计量
+
+
+def test_inline_investigator_budget_and_turn_cap():
+    """工具预算用尽 → PermissionError 作为工具结果回给模型；
+    模型一直要工具 → 轮数上限后最后一轮不给工具、再不收尾就判失败。"""
+    from hybrid_memory.agent.inline import InlineInvestigator
+    svc = _svc()
+    svc.observe("a", "b")
+    sid = "recall_miss-x-1"
+    svc.open_budget(sid, tool_calls=1, window_chars=100, before=None)
+    calls = []
+
+    def greedy(messages, tools):
+        calls.append(tools)
+        return _tool_msg("log_search", {"query": "a"}, cid=str(len(calls)))
+
+    inv = InlineInvestigator(svc, chat_fn=greedy)
+    out = inv({"signal_id": sid, "budget": {"tool_calls": 1}})
+    assert out is None and inv.n_failed == 1
+    assert len(calls) == 3 and calls[-1] is None          # 1+2 轮，末轮无工具
+    assert svc.close_budget(sid)["calls"] == 2            # 第 2 次已超预算被拒
+
+    def bad_json(messages, tools):
+        return {"role": "assistant", "content": "不是 JSON"}
+    inv2 = InlineInvestigator(svc, chat_fn=bad_json)
+    assert inv2({"signal_id": "s"}) is None and inv2.n_failed == 1
+
+
+def test_inline_investigator_llm_error_and_model_compat():
+    from hybrid_memory.agent.inline import InlineInvestigator
     from hybrid_memory.llm import ZhipuChatError
 
-    class _Runner:
-        def __init__(self):
-            self.calls = []
-            self.reply = '{"proposals":[],"diagnosis":{"miss_type":"no_miss"}}'
-
-        def run(self, *, system, user, instruction=None, agent=None, env_extra=None):
-            self.calls.append({"system": system, "user": user, "agent": agent,
-                               "env_extra": env_extra})
-            if self.reply is None:
-                raise ZhipuChatError("opencode timeout")
-            return self.reply
-
-    r = _Runner()
-    inv = OpencodeInvestigator(port=1, token="tok", runner=r)
-    out = inv({"signal_id": "sig-9", "kind": "recall_miss", "q": "端口?"})
-    assert out is not None and out.diagnosis == {"miss_type": "no_miss", "note": ""}
-    call = r.calls[0]
-    assert call["agent"] == "investigator"
-    assert call["env_extra"] == {"MEMORY_BRIDGE_SIGNAL": "sig-9"}   # 每信号一个号
-    assert json.loads(call["user"])["q"] == "端口?"
-    assert "log_window" in call["system"] and "memory_propose" in call["system"]
-    r.reply = "不是 JSON"
-    assert inv({"signal_id": "s2"}) is None and inv.n_failed == 1
-    r.reply = None
-    assert inv({"signal_id": "s3"}) is None and inv.n_failed == 2
-    assert inv.n_calls == 3
-
-
-def test_opencode_investigator_runner_is_non_pure_worker(monkeypatch, tmp_path):
-    """真 runner 构造：pure=False（要插件工具）+ worker 角色/端口/令牌环境。"""
-    from hybrid_memory.agent import investigator as mod
-    captured = {}
-
-    class _FakeRunner:
-        def __init__(self, **kw):
-            captured.update(kw)
-    monkeypatch.setattr(mod, "OpencodeRunner", _FakeRunner)
-    mod.OpencodeInvestigator(port=17872, token="abc", model="m/x",
-                             env_extra={"ZAI_API_KEY": "k"}, workdir=tmp_path)
-    assert captured["pure"] is False and captured["model"] == "m/x"
-    env = captured["env_extra"]
-    assert env["MEMORY_BRIDGE_ROLE"] == "worker"
-    assert env["MEMORY_BRIDGE_PORT"] == "17872" and env["MEMORY_BRIDGE_TOKEN"] == "abc"
-    assert env["ZAI_API_KEY"] == "k"
+    def down(messages, tools):
+        raise ZhipuChatError("HTTP 401")
+    inv = InlineInvestigator(_svc(), chat_fn=down, model="zhipu-env/glm-5.3-flash")
+    assert inv({"signal_id": "s"}) is None and inv.n_failed == 1
+    assert inv.model == "glm-5.3-flash"                   # 兼容旧 provider/model 写法

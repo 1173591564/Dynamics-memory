@@ -1,26 +1,22 @@
-"""调查员（investigator）：引擎信号 → 小载荷任务 → opencode agent 用工具
-操作日志 → 严格 JSON 回报。
+"""调查员（investigator）契约：引擎信号 → 小载荷任务 → 用只读工具查日志
+→ 严格 JSON 回报。
 
-本模块只负责三件事，全部零 LLM：
+本模块只负责契约本身，全部零 LLM：
+  INVESTIGATOR_SYS            调查员系统提示
   build_payload(signal, ctx)  把信号翻译成调查员的附件（< 1k tokens，
                               不含日志原文，只含问题/场景/已召回/线索/预算）
   parse_investigation(text)   解析并规整 agent 输出（提议/裁决/诊断），
                               形状不对的条目丢弃而不是让整批失败
-  OpencodeInvestigator        把上面两步接到 OpencodeRunner：以
-                              MEMORY_BRIDGE_ROLE=worker 拉起 opencode，插件
-                              只注册工具、不挂捕获钩子（火墙）
 
-调查员看不到引擎内部，只经工具面（/log/*、/search）和操作面（/propose、
-/resolve、/diagnose）交互。
+传输（谁来跑这个 agent）在 agent/inline.py：sidecar 进程内的
+function-calling 循环，直接调服务层——不再拉起 opencode 子进程。
+调查员看不到引擎内部，只经只读工具（log_* / memory_search / memory_conflicts）
+取证；写入（提议/裁决/诊断）只经最终 JSON，由 AgentWorker 走服务端校验。
 """
 from __future__ import annotations
 
 import json
-import sys
 from dataclasses import dataclass, field
-
-from ..llm import ZhipuChatError
-from .opencode import OpencodeRunner
 
 MISS_TYPES = ("not_in_window", "dropped_by_candgen", "too_coarse",
               "wrong_scene", "never_logged", "no_miss")
@@ -35,7 +31,7 @@ INVESTIGATOR_SYS = """\
 
 任务按信号种类：
 - recall_miss：记忆没接住问题 q。在 before=t 之前的日志里找能回答 q 的证据；
-  找到 → 以 memory_propose 提交自包含的原子记忆；没找到 → diagnosis 说明。
+  找到 → 写进最终 JSON 的 proposals（自包含的原子记忆）；没找到 → diagnosis 说明。
   附件 retrieved 是当时已召回的记忆，不要重复提议同样内容。
 - extract_due：unit_id 这轮交互命中了触发条件（reasons）。先对 entities 做
   log_timeline 看历史，再 log_window 回展该 unit，提取值得长期记住的事实/决策/
@@ -188,48 +184,3 @@ def parse_investigation(text: str) -> Investigation | None:
                              "note": note.strip()[:500]
                              if isinstance(note, str) else ""}
     return inv
-
-
-# ---------------------------------------------------------------- 传输
-class OpencodeInvestigator:
-    """可调用对象：payload dict → Investigation | None（失败）。
-
-    runner 可注入（测试）；默认以 pure=False 拉起 opencode，让插件加载并
-    以 worker 角色只注册工具。每次调用把 signal_id 经 MEMORY_BRIDGE_SIGNAL
-    传给插件，插件给每个请求带 X-Signal-Id——窗口预算按信号计量，不依赖
-    LLM 记得传参。"""
-
-    def __init__(self, *, port: int, token: str,
-                 model: str = "zhipu-env/glm-5.3-flash",
-                 runner: OpencodeRunner | None = None,
-                 timeout_s: int = 300, env_extra: dict | None = None,
-                 workdir=None, cache_dir=None):
-        self.port = int(port)
-        self.token = token
-        env = {"MEMORY_BRIDGE_ROLE": "worker",
-               "MEMORY_BRIDGE_PORT": str(self.port),
-               "MEMORY_BRIDGE_TOKEN": token, **(env_extra or {})}
-        self._runner = runner or OpencodeRunner(
-            model=model, timeout_s=timeout_s, env_extra=env, pure=False,
-            workdir=workdir, cache_dir=cache_dir)
-        self.n_calls = 0
-        self.n_failed = 0
-
-    def __call__(self, payload: dict) -> Investigation | None:
-        self.n_calls += 1
-        user = json.dumps(payload, ensure_ascii=False, indent=1)
-        try:
-            out = self._runner.run(
-                system=INVESTIGATOR_SYS, user=user,
-                instruction=_CLI_INSTRUCTION, agent="investigator",
-                env_extra={"MEMORY_BRIDGE_SIGNAL": str(payload.get("signal_id", ""))})
-        except ZhipuChatError as exc:
-            self.n_failed += 1
-            if self.n_failed == 1:
-                print(f"[investigator] opencode 调用失败（第 1 次）: {exc}",
-                      file=sys.stderr, flush=True)
-            return None
-        inv = parse_investigation(out)
-        if inv is None:
-            self.n_failed += 1
-        return inv

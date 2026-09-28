@@ -967,9 +967,8 @@ def main() -> None:
     ap.add_argument("--model", default="glm-5.3-flash")
     # 插件拉起 sidecar 时不传参，调查员相关配置允许走环境变量
     ap.add_argument("--agent-model",
-                    default=os.environ.get("MEMORY_AGENT_MODEL",
-                                           "zhipu-env/glm-5.3-flash"),
-                    help="调查员 agent 的 opencode 模型（provider/model）")
+                    default=os.environ.get("MEMORY_AGENT_MODEL", "glm-5.3-flash"),
+                    help="调查员模型（直连 API；兼容旧的 provider/model 写法）")
     ap.add_argument("--no-agent", action="store_true",
                     default=os.environ.get("MEMORY_AGENT", "").lower()
                     in ("off", "0", "false"),
@@ -987,25 +986,21 @@ def main() -> None:
 
     agent = None
     if not args.no_agent:
-        from .agent.investigator import Budget, OpencodeInvestigator
+        from .agent.inline import InlineInvestigator
+        from .agent.investigator import Budget
         from .agent.loop import AgentWorker
-        try:
-            key = _load_env_key(Path(args.project))
-            # 不给调查员开 chat 缓存：载荷含唯一 signal_id 永不命中，只会
-            # 无界堆文件；诊断与用量已落 diagnoses.jsonl
-            inv = OpencodeInvestigator(
-                port=port, token=service.token, model=args.agent_model,
-                env_extra={"ZAI_API_KEY": key} if key else None,
-                timeout_s=300,
-                workdir=Path(__file__).resolve().parents[1])
+        key = _load_env_key(Path(args.project))
+        if not key:
+            print("[memory-sidecar] 调查员未启动: ZAI_API_KEY 未设置",
+                  file=sys.stderr, flush=True)
+        else:
+            # 进程内 function-calling 循环：不拉起 opencode 子进程，不经 HTTP
+            inv = InlineInvestigator(service, model=args.agent_model, api_key=key)
             agent = AgentWorker(service, inv, daily_cap=args.agent_daily_cap,
                                 budget=Budget(tool_calls=args.agent_tool_calls,
                                               window_chars=args.agent_window_chars))
             service.attach_agent(agent)
             agent.start()
-        except RuntimeError as exc:      # opencode CLI 不在 PATH
-            print(f"[memory-sidecar] 调查员未启动: {exc}", file=sys.stderr,
-                  flush=True)
 
     print(f"[memory-sidecar] http://127.0.0.1:{port} "
           f"project={Path(args.project).resolve()} "
