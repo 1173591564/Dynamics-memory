@@ -12,14 +12,14 @@ from hybrid_memory.config import Cfg
 from hybrid_memory.core.confidence import discount_to, projected
 from hybrid_memory.core.engine import MemoryEngine
 from hybrid_memory.core.types import Event, Memory, Pool, Query, Retrieval
-from sim_embed import SyntheticEmbedder
-from sim_world import StreamGen
+from fakes import SyntheticEmbedder
+from fakes import FakeWorld
 from hybrid_memory.worker import SignalWorker
 
 
-def make(seed=0, cfg=None, **world_kwargs):
+def make(seed=0, cfg=None):
     emb = SyntheticEmbedder(seed=seed)
-    world = StreamGen(emb, seed=seed, **world_kwargs)
+    world = FakeWorld()
     return emb, world, MemoryEngine(cfg or Cfg(), emb, world)
 
 
@@ -35,12 +35,12 @@ class _TableEmbedder:
 
 def _stub_engine(cfg, table):
     emb = SyntheticEmbedder(seed=0)
-    world = StreamGen(emb, seed=0)
+    world = FakeWorld()
     return world, MemoryEngine(cfg, _TableEmbedder(table), world)
 
 
 class _Consolidatable:
-    """StreamGen 委托 + 可注入 consolidate 回调（out 原样返回）。"""
+    """FakeWorld 委托 + 可注入 consolidate 回调（out 原样返回）。"""
 
     def __init__(self, world, out):
         self._world = world
@@ -159,7 +159,7 @@ def test_capacity_eviction():
     emb, world, eng = make()
     cfg = eng.cfg
     for i in range(cfg.cap_m + 5):
-        m_b = world._spawn(f"x{i}", 0, 0)
+        m_b = world.spawn(f"x{i}")
         eng.observe([Event(m_b.id, m_b.value, m_b.phrasings[m_b.value][0])], 0)
     for m in eng.mems.values():
         m.pool = Pool.MEMORY
@@ -172,20 +172,17 @@ def test_capacity_eviction():
 
 def test_retrieve_returns_topk():
     emb, world, eng = make()
-    events, queries = world.step(0)
-    eng.observe(events, 0)
-    if queries:
-        q = queries[0]
-        b = world.beliefs[q.target]
-        r = eng.retrieve(emb.vec_for(b.entity, b.id, b.value), q, 0)
-        assert len(r.selected) <= eng.cfg.k
+    eng.observe([world.event(b) for b in world.beliefs], 0)
+    b = world.beliefs[0]
+    r = eng.retrieve(emb.vec_for(b.entity, b.id, b.value), world.query(b.id), 0)
+    assert 1 <= len(r.selected) <= eng.cfg.k
 
 
 def test_relevance_is_query_specific():
     cfg = Cfg(k=5, suppression_on=False)
     emb, world, eng = make(cfg=cfg)
     target = world.beliefs[0]
-    distractor = world._spawn("other", 0, 0, entity=target.entity, scope="other")
+    distractor = world.spawn("other", entity=target.entity, scope="other")
     eng.observe([
         Event(target.id, target.value, target.phrasings[target.value][0]),
         Event(distractor.id, distractor.value, distractor.phrasings[distractor.value][0]),
@@ -201,7 +198,7 @@ def test_irrelevant_selection_does_not_extend_idle_life():
     cfg = Cfg(suppression_on=False)
     emb, world, eng = make(cfg=cfg)
     target = world.beliefs[0]
-    distractor = world._spawn("other", 0, 0, entity=target.entity, scope="other")
+    distractor = world.spawn("other", entity=target.entity, scope="other")
     eng.observe([Event(distractor.id, distractor.value,
                        distractor.phrasings[distractor.value][0])], 0)
     query = Query(target.id, "target")
@@ -216,7 +213,7 @@ def test_irrelevant_selection_does_not_extend_idle_life():
 
 def test_late_candidate_gets_full_idle_window():
     emb, world, eng = make()
-    belief = world._spawn("late", 0, 0, birth=100)
+    belief = world.spawn("late", birth=100)
     eng.observe([Event(belief.id, belief.value, belief.phrasings[belief.value][0])], 100)
     eng.step(100)
     assert eng.mems[0].pool is Pool.CANDIDATE
@@ -281,8 +278,8 @@ def test_freshness_does_not_bypass_quality_gate():
 def test_delayed_tension_scope_resolution():
     cfg = Cfg(tension_delay=3)
     emb, world, eng = make(cfg=cfg)
-    left = world._spawn("like", 0, 0, entity=100, scope="work")
-    right = world._spawn("dislike", 0, 0, entity=100, scope="casual")
+    left = world.spawn("like", entity=100, scope="work")
+    right = world.spawn("dislike", entity=100, scope="casual")
     eng.observe([
         Event(left.id, left.value, left.phrasings[left.value][0]),
         Event(right.id, right.value, right.phrasings[right.value][0]),
@@ -305,8 +302,8 @@ def test_delayed_tension_scope_resolution():
 def test_shadow_credit_reaches_relevant_challenger():
     cfg = Cfg(tension_delay=10)
     emb, world, eng = make(cfg=cfg)
-    incumbent = world._spawn("like", 0, 0, entity=100, scope="work")
-    challenger = world._spawn("dislike", 0, 0, entity=100, scope="casual", birth=1)
+    incumbent = world.spawn("like", entity=100, scope="work")
+    challenger = world.spawn("dislike", entity=100, scope="casual", birth=1)
     eng.observe([Event(incumbent.id, incumbent.value,
                        incumbent.phrasings[incumbent.value][0])], 0)
     eng.observe([Event(challenger.id, challenger.value,
@@ -351,9 +348,9 @@ def test_drift_supersedes_old_value_after_delay():
 
 
 def test_noise_burst_never_promotes_and_expires():
-    emb, world, eng = make(t_noise=0, noise_end=1, noise_rate=20.0)
-    events, _ = world.step(0)
-    eng.observe(events, 0)
+    emb, world, eng = make()
+    burst = [world.spawn(f"noise{i}", death=1, noise=True) for i in range(20)]
+    eng.observe([world.event(b.id) for b in burst], 0)
     eng.step(0)
     noise = [m for m in eng.mems.values() if world.beliefs[m.belief_id].noise]
     assert noise
@@ -366,7 +363,7 @@ def test_deferred_credit_only_rewards_recognized():
     cfg = Cfg(suppression_on=False, defer_credit=True)
     emb, world, eng = make(cfg=cfg)
     target = world.beliefs[0]
-    other = world._spawn("other", 0, 0, entity=target.entity, scope="o")
+    other = world.spawn("other", entity=target.entity, scope="o")
     eng.observe([
         Event(target.id, target.value, target.phrasings[target.value][0]),
         Event(other.id, other.value, other.phrasings[other.value][0]),
@@ -530,8 +527,8 @@ def test_feedback_on_provisional_does_not_change_confidence():
 def test_contradiction_scoped_no_negative_evidence():
     cfg = Cfg(confidence_on=True, tension_delay=0)
     emb, world, eng = make(cfg=cfg)
-    left = world._spawn("like", 0, 0, entity=100, scope="work")
-    right = world._spawn("dislike", 0, 0, entity=100, scope="casual")
+    left = world.spawn("like", entity=100, scope="work")
+    right = world.spawn("dislike", entity=100, scope="casual")
     eng.observe([
         Event(left.id, left.value, left.phrasings[left.value][0]),
         Event(right.id, right.value, right.phrasings[right.value][0]),
@@ -550,7 +547,7 @@ def test_contradiction_scoped_no_negative_evidence():
 def test_contradiction_unscoped_adds_negative_evidence():
     cfg = Cfg(confidence_on=True, tension_delay=0)
     emb = SyntheticEmbedder(seed=0)
-    world = StreamGen(emb, seed=0)
+    world = FakeWorld()
 
     class Unscoped:
         def __getattr__(self, name):
@@ -563,8 +560,8 @@ def test_contradiction_unscoped_adds_negative_evidence():
             return ""
 
     eng = MemoryEngine(cfg, emb, Unscoped())
-    left = world._spawn("like", 0, 0, entity=100, scope="work")
-    right = world._spawn("dislike", 0, 0, entity=100, scope="casual")
+    left = world.spawn("like", entity=100, scope="work")
+    right = world.spawn("dislike", entity=100, scope="casual")
     eng.observe([
         Event(left.id, left.value, left.phrasings[left.value][0]),
         Event(right.id, right.value, right.phrasings[right.value][0]),
@@ -608,19 +605,6 @@ def test_salience_on_exponential_decay():
     eng.step(1)
     assert abs(a.v - cfg.v_init * math.exp(-cfg.lam)) < 1e-9
     assert abs(b.v - cfg.v_init * math.exp(-cfg.lam / 4.0)) < 1e-9
-
-
-def test_salience_on_linear_decay():
-    cfg = Cfg(salience_on=True, salience_retention_weight=3.0,
-              decay_mode="linear")
-    emb, world, eng = make(cfg=cfg)
-    a = Memory(0, 0, "x", "a", np.array([1.0, 0.0]), salience=0.0)
-    b = Memory(1, 0, "x", "b", np.array([0.0, 1.0]), salience=1.0)
-    eng.mems[0] = a
-    eng.mems[1] = b
-    eng.step(1)
-    assert abs(a.v - (cfg.v_init - cfg.lam)) < 1e-9
-    assert abs(b.v - (cfg.v_init - cfg.lam / 4.0)) < 1e-9
 
 
 def test_retention_scale_floor():
@@ -715,8 +699,8 @@ def test_salience_propagates_on_merge_update_aggregate():
     assert m4.salience == 0.9
     assert m4.novelty == 0.1
     # contradiction aggregate → max
-    left = world._spawn("like", 0, 0, entity=200, scope="work")
-    right = world._spawn("dislike", 0, 0, entity=200, scope="casual")
+    left = world.spawn("like", entity=200, scope="work")
+    right = world.spawn("dislike", entity=200, scope="casual")
     m5 = Memory(20, left.id, left.value, "e", np.array([1.0, 1.0]),
                 salience=0.3, novelty=0.3, scene="s1")
     m6 = Memory(21, right.id, right.value, "f", np.array([1.0, 1.0]),
@@ -809,8 +793,8 @@ def test_novelty_bonus_alone_never_promotes_and_decays():
 def test_aggregate_novelty_max_without_extra_v_bonus():
     cfg = Cfg(novelty_on=True, tension_delay=0)
     emb, world, eng = make(cfg=cfg)
-    left = world._spawn("like", 0, 0, entity=200, scope="work")
-    right = world._spawn("dislike", 0, 0, entity=200, scope="casual")
+    left = world.spawn("like", entity=200, scope="work")
+    right = world.spawn("dislike", entity=200, scope="casual")
     a = Memory(0, left.id, left.value, "a", np.array([1.0, 0.0]), novelty=0.2)
     b = Memory(1, right.id, right.value, "b", np.array([1.0, 0.0]),
                novelty=0.8)
@@ -846,7 +830,7 @@ def test_consolidation_threshold_creates_reflection_once():
               consolidation_min_items=3, consolidation_max_items=3,
               confidence_on=True, salience_on=True)
     emb, world, eng = make(cfg=cfg)
-    rb = world._spawn("state", 0, 0)
+    rb = world.spawn("state")
     out = Event(rb.id, rb.value, "当前状态：A完成B进行中",
                 salience=0.7, kind="reflection",
                 conf_pos=2.0, conf_neg=1.0)
@@ -965,7 +949,7 @@ def test_consolidation_reflection_gets_no_write_evidence():
               consolidation_min_items=1, confidence_on=True,
               salience_on=True)   # 预算按入库 salience 计，off 时全落 default
     emb, world, eng = make(cfg=cfg)
-    rb = world._spawn("state", 0, 0)
+    rb = world.spawn("state")
     out = Event(rb.id, rb.value, "状态反射", kind="reflection")
     sem = _Consolidatable(world, out)
     eng.semantics = sem
@@ -1085,7 +1069,7 @@ def test_consolidation_ready_scene_only():
     cfg = Cfg(consolidation_on=True, consolidation_salience_budget=2.5,
               consolidation_min_items=2, salience_on=True)
     emb, world, eng = make(cfg=cfg)
-    rb = world._spawn("state", 0, 0)
+    rb = world.spawn("state")
     out = Event(rb.id, rb.value, "A组状态", kind="reflection", scene="A")
     sem = _Consolidatable(world, out)
     eng.semantics = sem
@@ -1107,7 +1091,7 @@ def test_consolidation_picks_most_recent_scene_first():
     cfg = Cfg(consolidation_on=True, consolidation_salience_budget=2.5,
               consolidation_min_items=2, salience_on=True)
     emb, world, eng = make(cfg=cfg)
-    rb = world._spawn("state", 0, 0)
+    rb = world.spawn("state")
     out = Event(rb.id, rb.value, "状态", kind="reflection", scene="B")
     sem = _Consolidatable(world, out)
     eng.semantics = sem
@@ -1132,7 +1116,7 @@ def test_consolidation_none_defers_signature_no_starvation():
     cfg = Cfg(consolidation_on=True, consolidation_salience_budget=2.5,
               consolidation_min_items=2, salience_on=True)
     emb, world, eng = make(cfg=cfg)
-    rb = world._spawn("state", 0, 0)
+    rb = world.spawn("state")
     good = Event(rb.id, rb.value, "A状态", kind="reflection", scene="A")
     # B 永远 None、A 成功
     sem = _Consolidatable(
@@ -1197,7 +1181,7 @@ def test_consolidation_novelty_ignores_hidden_members():
     # 与 reflection 同向量的隐藏成员（被收编）不得参与 novelty 近邻
     eng.mems[1] = Memory(1, b.id, "old", "hidden", np.array([1.0, 0.0]),
                          aggregated_into=99)
-    rb = world._spawn("state", 0, 0)
+    rb = world.spawn("state")
     out = Event(rb.id, rb.value, "refl text", kind="reflection")
     sem = _Consolidatable(world, out)
     eng.semantics = sem

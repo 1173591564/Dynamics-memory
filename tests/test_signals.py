@@ -16,19 +16,19 @@ from hybrid_memory.config import Cfg
 from hybrid_memory.core.engine import MemoryEngine
 from hybrid_memory.core.signals import SignalQueue
 from hybrid_memory.core.types import Event, Memory, Pool, Query
-from sim_embed import SyntheticEmbedder
-from sim_world import StreamGen
+from fakes import SyntheticEmbedder
+from fakes import FakeWorld
 from hybrid_memory.worker import SignalWorker
 
 
 def make(seed=0, cfg=None):
     emb = SyntheticEmbedder(seed=seed)
-    world = StreamGen(emb, seed=seed)
+    world = FakeWorld()
     return emb, world, MemoryEngine(cfg or Cfg(), emb, world)
 
 
 class _Judge:
-    """judge 固定 verdict（或 fail=True 被调即炸），其余委托 StreamGen。"""
+    """judge 固定 verdict（或 fail=True 被调即炸），其余委托 FakeWorld。"""
 
     def __init__(self, inner, verdict="synonym", fail=False):
         self._inner = inner
@@ -216,7 +216,7 @@ def test_maintenance_due_emitted_without_callback():
                              np.array([1.0, 0.0]), salience=0.8, scene="s1")
     eng._next_id = 2
     eng._consolidation_pending = {0, 1}
-    eng.step(0)   # StreamGen 无 consolidate 回调，信号仍应发射
+    eng.step(0)   # FakeWorld 无 consolidate 回调，信号仍应发射
     sigs = eng.drain_signals()
     assert [s.kind for s in sigs] == ["maintenance_due"]
     assert sigs[0].payload["scene"] == "s1"

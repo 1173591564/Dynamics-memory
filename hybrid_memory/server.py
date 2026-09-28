@@ -6,8 +6,10 @@ token 持久化在 state_dir/.memory-token，插件侧同路径读取或经环�
 
   读记忆
   GET  /health              → 状态（池规模/时间步/信号/agent），免鉴权
-  GET  /recall?q=..&k=..    → {retrieval_id, context, selected}
-  POST /search              → {query, k} 同 /recall（CJK 长查询走 body）
+  GET  /recall?q=..&k=..    → {retrieval_id, context, tokens, selected}
+                              可选 budget_tokens=N（按 approx_tokens 截断整行）、
+                              passive=1（引擎副本检索，不改状态，评测探针用）
+  POST /search              → {query, k, budget_tokens?, passive?} 同 /recall
   GET  /conflicts           → 未决 tension 列表
   GET  /signals             → 信号队列与 agent worker 遥测
 
@@ -33,8 +35,8 @@ token 持久化在 state_dir/.memory-token，插件侧同路径读取或经环�
   POST /diagnose            → {miss_type, note?}
   POST /save                → 落盘状态快照
 
-请求头 X-Signal-Id（调查员插件自动附带）：按信号计量工具调用次数与回展
-字符预算，并对该信号统一施加因果上界 before——不靠 LLM 自觉。
+HTTP 面只服务主 agent（不计量）。进程内调查员直接调服务方法并带 signal_id：
+按信号计量工具调用次数与回展字符预算，统一施加因果上界 before——不靠 LLM 自觉。
 
 状态：内存引擎 + <project>/.opencode/memory/state.pkl 快照（启动加载、
 /save 与退出时保存）+ log.sqlite（L0，追加写）。pickle 反序列化走白名单
@@ -140,8 +142,8 @@ class _RestrictedUnpickler(pickle.Unpickler):
 
 
 class SignalClosed(Exception):
-    """带了 X-Signal-Id 但该调查已结束/不存在（不用 KeyError：它是
-    LookupError 子类，会把别处的 bug 误报成 403）。"""
+    """signal_id 对应的调查已结束/不存在（不用 KeyError：它是 LookupError
+    子类，会把别处的 bug 混进来）。只有进程内调查员会带 signal_id。"""
 
 
 class ProposalRejected(ValueError):
@@ -503,7 +505,7 @@ class MemoryService:
                     window_chars: int, before: int | None,
                     origin: str | None = None) -> None:
         """为一次调查开预算。origin 记下这次调查产出该打的来源标签：带
-        X-Signal-Id 的 /propose 不信任请求体里的 origin，一律用它。"""
+        signal_id 的 propose 不信任调用方给的 origin，一律用它。"""
         with self._lock:
             self._budgets[signal_id] = {"tool_calls": int(tool_calls),
                                         "window_chars": int(window_chars),
@@ -768,7 +770,6 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _dispatch(self, path: str, q: dict, body: dict) -> None:
         svc = self.service
-        sid = (self.headers.get("X-Signal-Id") or "").strip() or None
         if path == "/health":
             with svc._lock:   # pool_sizes 迭代 mems，与 observe 并发会炸
                 self._reply(200, {"ok": True, "t": svc._t,
@@ -857,21 +858,19 @@ class _Handler(BaseHTTPRequestHandler):
             self._reply(200, svc.log_search(
                 query, before=_opt_int(body, "before"),
                 scene=scene if isinstance(scene, str) else None,
-                k=_opt_int(body, "k", positive=True) or 8, signal_id=sid))
+                k=_opt_int(body, "k", positive=True) or 8))
         elif path == "/log/timeline":
             entity = _req_str(body, "entity")
             self._reply(200, svc.log_timeline(
                 entity, before=_opt_int(body, "before"),
-                limit=_opt_int(body, "limit", positive=True) or 30,
-                signal_id=sid))
+                limit=_opt_int(body, "limit", positive=True) or 30))
         elif path == "/log/stats":
             gb = body.get("group_by", "scene")
             if gb not in ("scene", "entity", "week"):
                 raise _HttpError(400, "group_by must be scene | entity | week")
             self._reply(200, svc.log_stats(
                 gb, before=_opt_int(body, "before"),
-                limit=_opt_int(body, "limit", positive=True) or 30,
-                signal_id=sid))
+                limit=_opt_int(body, "limit", positive=True) or 30))
         elif path == "/log/window":
             ids = body.get("unit_ids")
             if (not isinstance(ids, list) or not ids or len(ids) > 20
@@ -879,8 +878,7 @@ class _Handler(BaseHTTPRequestHandler):
                                for i in ids)):
                 raise _HttpError(400, "unit_ids must be a non-empty int list (≤20)")
             self._reply(200, svc.log_window(
-                ids, max_chars=_opt_int(body, "max_chars", positive=True),
-                signal_id=sid))
+                ids, max_chars=_opt_int(body, "max_chars", positive=True)))
         elif path == "/propose":
             props = body.get("proposals")
             if not isinstance(props, list):
@@ -888,13 +886,13 @@ class _Handler(BaseHTTPRequestHandler):
             origin = body.get("origin", "agent")
             self._reply(200, svc.propose(
                 props, origin=origin if isinstance(origin, str) else "agent",
-                signal_id=sid, before=_opt_int(body, "before")))
+                before=_opt_int(body, "before")))
         elif path == "/diagnose":
             mt = _req_str(body, "miss_type")
             note = body.get("note", "")
             try:
                 self._reply(200, svc.diagnose(
-                    mt, note if isinstance(note, str) else "", signal_id=sid,
+                    mt, note if isinstance(note, str) else "",
                     kind=str(body.get("kind", ""))))
             except ValueError as exc:
                 raise _HttpError(400, str(exc))
@@ -908,10 +906,6 @@ class _Handler(BaseHTTPRequestHandler):
             self._dispatch(path, q, body)
         except _HttpError as exc:
             self._reply(exc.code, {"error": str(exc)})
-        except PermissionError as exc:          # 预算用尽
-            self._reply(429, {"error": str(exc)})
-        except SignalClosed as exc:             # 信号号无效/已关闭
-            self._reply(403, {"error": str(exc)})
         except ValueError as exc:
             self._reply(400, {"error": str(exc)})
         except Exception as exc:  # noqa: BLE001
@@ -1044,7 +1038,7 @@ def main() -> None:
             print("[memory-sidecar] 调查员未启动: ZAI_API_KEY 未设置",
                   file=sys.stderr, flush=True)
         else:
-            # 进程内 function-calling 循环：不拉起 opencode 子进程，不经 HTTP
+            # 进程内 function-calling 循环，不经 HTTP
             inv = InlineInvestigator(service, model=args.agent_model, api_key=key)
             agent = AgentWorker(service, inv, daily_cap=args.agent_daily_cap,
                                 budget=Budget(tool_calls=args.agent_tool_calls,

@@ -1,1 +1,1 @@
-"""agent 运行时适配层：把 LLM 问答交给外部 agent 壳（opencode）执行。"""
+"""调查员：契约（investigator）、进程内工具循环（inline）、信号调度（loop）。"""

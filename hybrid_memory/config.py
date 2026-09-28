@@ -20,7 +20,6 @@ class Cfg:
 
     # ---- 动力学 ----
     lam: float = 0.02            # 衰减率/步
-    decay_mode: str = "exponential"
     eta: float = 0.30            # useful-hit 强化
     eta_shadow: float = 0.10     # shadow-hit 部分增益
     v_init: float = 0.50         # 新候选初始 V
@@ -31,17 +30,11 @@ class Cfg:
     eta_c: float = 0.60          # merge 继承折损
     tension_delay: int = 20
 
-    # ---- SF-AMS 式冗余门（Ψ_div，可选） ----
-    div_gate: bool = False
-    alpha_div: float = 0.5
-    beta_div: float = 8.0
-    tau_div: float = 0.70
-
-    # ---- 消融开关 ----
+    # ---- 机制开关（评测消融用） ----
     two_pool: bool = True        # False → 单层：全在 M，无 π 差无滞回
     shadow_credit: bool = True   # False → shadow 不计增益
     ingest_dedup: bool = True    # False → 新候选全部独立成条
-    useful_hit: bool = True      # False → 入选即强化（SF-AMS 语义）
+    useful_hit: bool = True      # False → 入选即强化（无相关性判据时如实记账）
     defer_credit: bool = False   # True → 检索不结清，等 feedback(answer) 后
                                  # recognizer 判定哪些记忆真被用上才发 d_hit
     confidence_on: bool = False

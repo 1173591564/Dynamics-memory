@@ -9,7 +9,7 @@
                               形状不对的条目丢弃而不是让整批失败
 
 传输（谁来跑这个 agent）在 agent/inline.py：sidecar 进程内的
-function-calling 循环，直接调服务层——不再拉起 opencode 子进程。
+function-calling 循环，直接调服务层。
 调查员看不到引擎内部，只经只读工具（log_* / memory_search / memory_conflicts）
 取证；写入（提议/裁决/诊断）只经最终 JSON，由 AgentWorker 走服务端校验。
 """

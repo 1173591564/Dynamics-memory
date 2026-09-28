@@ -1,8 +1,5 @@
 """进程内调查员：sidecar 自己跑 function-calling 循环，直接调服务层。
 
-取代原先"每个信号拉起一次 `opencode run --agent investigator`"的做法：
-- 不再需要 opencode 子进程（每次冷启动 4–8s）、插件 worker 角色、
-  MEMORY_BRIDGE_TOKEN / X-Signal-Id 透传；
 - 火墙天然成立：这个循环从不调用 observe，调查过程不可能被捕获成记忆；
 - 预算/因果上界仍由服务端按 signal_id 计量（log_* 每次调用都记账，
   超限抛 PermissionError → 作为工具结果回给模型，让它收尾），
@@ -10,8 +7,8 @@
 
 工具面只读：log_search / log_timeline / log_stats / log_window /
 memory_search / memory_conflicts。写入（proposals / verdicts / diagnosis）
-只走最终 JSON，由 AgentWorker 经 service.propose 等做溯源/因果/脱敏校验——
-与原 opencode 版的输出契约完全一致（parse_investigation 不变）。
+只走最终 JSON（parse_investigation），由 AgentWorker 经 service.propose 等做
+溯源/因果/脱敏校验。
 """
 from __future__ import annotations
 
@@ -69,8 +66,7 @@ def _hits(hits: list) -> str:
 
 
 class InlineInvestigator:
-    """可调用对象：payload dict → Investigation | None（失败）。
-    与 AgentWorker 的接口和原 OpencodeInvestigator 相同。"""
+    """可调用对象：payload dict → Investigation | None（失败），供 AgentWorker 调用。"""
 
     def __init__(self, service, *, model: str = "glm-5.3-flash",
                  api_key: str | None = None,

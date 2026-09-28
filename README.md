@@ -23,7 +23,7 @@
 pip install numpy pytest
 cp .env.example .env          # ZAI_API_KEY=...
 
-python -m pytest tests/                          # 205 passed
+python -m pytest tests/                          # 188 passed
 python -m hybrid_memory.server --project <dir>   # 或被 opencode 插件自动拉起
 ```
 
@@ -171,11 +171,10 @@ hybrid_memory/
   triggers.py    确定性触发扫描（零 LLM）
   worker.py      judge / recognizer / consolidator 两阶段锁调度
   agent/         调查员：investigator（契约）/ inline（进程内工具循环）/ loop（AgentWorker）
-                 / opencode（OpencodeRunner：可选 CLI 后端，默认路径不使用）
   candgen/       被动蒸馏器
   interaction.py 对话单元 / 窗口类型
   server.py      sidecar HTTP 面
-.opencode/       plugin/memory-bridge.ts（主 agent 桥）+ agent/*.md（OpencodeRunner 用的 judge 等角色壳）
+.opencode/       plugin/memory-bridge.ts（主 agent 桥）
 docs/            ouroboros.md（pull 回路设计）+ benchmark-design.md（TIDE 评测设计）+ opencode-learning/
 tests/           pytest（sim_world.py / sim_embed.py 是引擎单测夹具，不是评测）
 ```

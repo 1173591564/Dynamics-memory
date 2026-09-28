@@ -11,11 +11,9 @@
  *   日志，就说明注入的记忆没接住——插件顺手 POST /miss，后台调查员拿大预算
  *   系统性修复。这是衔尾蛇的一半：消费者的行为反过来驱动生产。
  *
- * 后台调查员跑在 sidecar 进程内（hybrid_memory/agent/inline.py），不经过
- * opencode，也就不需要 worker 角色 / 令牌环境变量 / X-Signal-Id 透传。
+ * 后台调查员跑在 sidecar 进程内（hybrid_memory/agent/inline.py），不经过 opencode。
  *
- * sidecar 端口默认 17872，可用 MEMORY_BRIDGE_PORT 覆盖；实验用的 judge 类
- * opencode 壳走 --pure（插件不加载）。
+ * sidecar 端口默认 17872，可用 MEMORY_BRIDGE_PORT 覆盖。
  */
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
