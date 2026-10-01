@@ -7,11 +7,11 @@
 把连续、嘈杂、前后矛盾的项目交互，蒸馏成一个不会堆成"史山"的记忆库。<br/>
 新会话里一句"接着搞"，agent 就知道进行到哪、上次卡在哪。
 
-![tests](https://img.shields.io/badge/tests-211%20passed-brightgreen?style=flat-square)
+![tests](https://img.shields.io/badge/tests-273%20passed-brightgreen?style=flat-square)
 ![engine](https://img.shields.io/badge/engine-LLM--free-blue?style=flat-square)
 ![status](https://img.shields.io/badge/status-research%20preview-orange?style=flat-square)
 
-[架构](#架构推式捕获--拉式修复) · [动力学](#记忆动力学) · [验证状态](#验证状态) · [运行](#运行) · [设计文档](docs/ouroboros.md)
+[架构](#架构推式捕获--拉式修复) · [动力学](#记忆动力学) · [验证状态](#验证状态) · [运行](#运行) · [持久化与恢复](docs/persistence.md) · [调查预算](docs/investigation-context.md) · [设计文档](docs/ouroboros.md)
 
 </div>
 
@@ -23,7 +23,7 @@
 pip install numpy pytest
 cp .env.example .env          # ZAI_API_KEY=...
 
-python -m pytest tests/                          # 211 passed
+python -m pytest tests/                          # 273 passed
 python -m hybrid_memory.server --project <dir>   # 或被 opencode 插件自动拉起
 ```
 
@@ -87,8 +87,9 @@ flowchart LR
 - **拉·补漏**——`recall_miss`（用户纠正 / agent 用了 log_*）与 `extract_due`
   （决策·数字·新实体触发）驱动后台调查员翻日志、核实、`/propose` 写回——
   **走同一条 ingest，无任何特权**
-- **闸在服务端**——log_* 只给片段与统计，原文按字符预算回展；
-  按 `X-Signal-Id` 计量（超限 429）；`before=t` 因果上界物理上锁死未来
+- **闸在服务端**——带 `X-Signal-Id` 的日志、记忆和写回工具统一计量
+  （超限 429、关闭后 403）；回展先预留字符额度，读取和写回使用固定 `before`。
+  记忆采用保守的当前版本筛选，不冒充历史快照；[边界说明](docs/investigation-context.md)
 - **火墙**——调查员跑 `MEMORY_BRIDGE_ROLE=worker`，插件只注册工具不挂
   捕获钩子，它的工作永远不会被 observe
 
@@ -131,7 +132,7 @@ flowchart LR
 
 | 已验证 | 未验证 |
 |---|---|
-| `pytest` 211 通过 | 调查员端到端真跑（opencode + API） |
+| `pytest` 273 通过 | 调查员端到端真跑（opencode + API） |
 | 因果回放评测（106 单元真实日志） | 真实会话的 miss 分布与记忆质量 |
 | 三臂对照：memory / flat / none | 有害命中率（旧事实推翻后不再注入） |
 

@@ -32,6 +32,9 @@ INVESTIGATOR_SYS = """\
 你是项目长期记忆的调查员。附件是引擎发来的一个信号，不是日志。
 日志只能通过工具接触：先 log_search / log_timeline 定位，需要原文再 log_window
 回展；回展总量不得超过附件 budget.window_chars，工具调用不超过 budget.tool_calls。
+memory_search / memory_conflicts / memory_propose / memory_resolve / memory_diagnose
+也计入同一份工具次数。收到 429 后不要重试工具，把尚未提交的产物放在最终 JSON；
+最终 JSON 不额外消耗工具次数，但仍受原因果上界限制。工具已成功提交的条目不要重复提交。
 
 任务按信号种类：
 - recall_miss：记忆没接住问题 q。在 before=t 之前的日志里找能回答 q 的证据；

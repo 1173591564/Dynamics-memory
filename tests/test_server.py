@@ -363,9 +363,10 @@ def _http(svc):
                      "Authorization": f"Bearer {svc.token}", **(extra or {})},
             method="POST"))
 
-    def get(path):
+    def get(path, extra=None):
         return call(urllib.request.Request(
-            base + path, headers={"Authorization": f"Bearer {svc.token}"}))
+            base + path, headers={"Authorization": f"Bearer {svc.token}",
+                                  **(extra or {})}))
 
     def shutdown():
         httpd.shutdown()
@@ -560,3 +561,179 @@ def test_old_state_without_origin_and_entity_migrates(tmp_path):
     assert m.origin == "passive" and m.entity == ""
     assert svc2.miss_counts == {} and svc2.n_missed == 0
     assert svc2.recall("部署在哪")["selected"][0]["origin"] == "passive"
+
+
+# ---------------------------------------------------------------- 重启时保护 L0
+
+def test_restart_with_missing_stale_or_corrupt_snapshot_preserves_l0(tmp_path):
+    for mode in ("missing", "stale", "corrupt"):
+        directory = tmp_path / mode
+        svc = _service(directory, texts=())
+        if mode == "stale":
+            svc.save()  # 快照落后于随后提交的日志
+        svc.observe("old_module.py 的历史证据", "original")
+        original = svc.log.get(0)
+        svc.log.close()  # 模拟未保存新快照就结束
+        if mode == "corrupt":
+            (directory / "state.pkl").write_bytes(b"broken snapshot")
+        restored = _service(directory, texts=())
+        try:
+            assert restored._unit_id == 1 and restored._t == 1
+            result = restored.observe("new_module.py 的新交互", "new answer")
+            assert result["unit_id"] == 1
+            assert restored.log.count() == 2
+            assert restored.log.get(0) == original
+            assert restored.log.get(1)["t"] == 1
+            assert [h["unit_id"] for h in restored.log.timeline("old_module.py")] == [0]
+            assert [h["unit_id"] for h in restored.log.search("new_module.py")] == [1]
+        finally:
+            restored.log.close()
+
+
+def test_stale_snapshot_keeps_memory_sources_and_advances_from_log(tmp_path):
+    svc = _service(tmp_path)
+    svc.observe("old_module.py", "old evidence")
+    rid = svc.recall("部署在哪")["retrieval_id"]
+    svc.save()
+    original = svc.log.get(0)
+    svc.observe("uncheckpointed.py", "evidence after snapshot")
+    svc.log.close()
+    restored = _service(tmp_path, texts=())
+    try:
+        assert restored._unit_id == 2 and restored._t == 2
+        mem = next(iter(restored.engine.mems.values()))
+        assert mem.src == {0}
+        assert restored._retrievals[rid].selected[0] is mem
+        assert restored.observe("next.py", "answer")["unit_id"] == 2
+        assert restored.log.get(0) == original
+        assert restored.log.get(1)["user_text"] == "uncheckpointed.py"
+        assert restored.log.count() == 3
+    finally:
+        restored.log.close()
+
+
+def test_snapshot_cursors_ahead_of_log_are_not_rewound(tmp_path):
+    svc = _service(tmp_path, texts=())
+    svc.observe("old", "answer")
+    svc._unit_id, svc._t = 20, 100
+    svc.save()
+    svc.log.close()
+    restored = _service(tmp_path, texts=())
+    try:
+        assert (restored._unit_id, restored._t) == (20, 100)
+        assert restored.observe("new", "answer")["unit_id"] == 20
+        assert restored.log.get(20)["t"] == 100
+    finally:
+        restored.log.close()
+
+
+def test_observe_refreshes_cursors_even_when_log_advances_after_startup(tmp_path):
+    from hybrid_memory.logstore import LogStore
+
+    svc = _service(tmp_path, texts=())
+    other = LogStore(tmp_path / "log.sqlite")
+    try:
+        other.add_unit(40, 80, user_text="external.py", assistant_text="old evidence")
+        assert svc.observe("new.py", "answer")["unit_id"] == 41
+        assert svc.log.get(41)["t"] == 81
+        assert svc._t == 82
+        assert svc.log.get(40)["user_text"] == "external.py"
+    finally:
+        other.close()
+        svc.log.close()
+
+
+def test_l0_is_committed_before_candgen_even_with_allocated_ids(tmp_path):
+    import sqlite3
+
+    svc = _service(tmp_path, texts=())
+
+    committed = []
+
+    class CheckGenerator:
+        def generate(self, window, prev_scene=""):
+            with sqlite3.connect(tmp_path / "log.sqlite") as conn:
+                row = conn.execute("SELECT id, t, user_text FROM units").fetchone()
+            assert row == (window.units[0].id, window.start_time, "hello")
+            committed.append(row)  # observe 会吞 generator 的异常；在调用后验证到达此处
+            raise RuntimeError("expected candgen outage")
+
+    svc.generator = CheckGenerator()
+    try:
+        result = svc.observe("hello", "world")
+        assert committed == [(0, 0, "hello")]
+        assert result["unit_id"] == 0
+        assert svc.log.count() == 1
+        assert svc.engine.signals.peek_kinds() == {"extract_due": 1}
+    finally:
+        svc.log.close()
+
+
+def test_invalid_snapshot_does_not_publish_partially_loaded_memory(tmp_path):
+    import pickle
+
+    svc = _service(tmp_path)
+    svc.observe("old_module.py", "evidence")
+    svc.save()
+    svc.log.close()
+    path = tmp_path / "state.pkl"
+    with path.open("rb") as f:
+        state = pickle.load(f)
+    # 这个字段在老加载流程的最后才消费，不能让前面恢复的 mems 泄漏出来。
+    state["service_counters"] = []
+    with path.open("wb") as f:
+        pickle.dump(state, f, protocol=4)
+    restored = _service(tmp_path, texts=())
+    try:
+        assert not restored.engine.mems
+        assert not restored._retrievals
+        assert (restored._unit_id, restored._t) == (1, 1)
+        assert restored.observe("new_module.py", "answer")["unit_id"] == 1
+        assert restored.log.get(0)["user_text"] == "old_module.py"
+    finally:
+        restored.log.close()
+
+
+def test_snapshot_counters_cannot_replace_service_internals(tmp_path):
+    import pickle
+
+    svc = _service(tmp_path, texts=())
+    svc.save()
+    svc.log.close()
+    path = tmp_path / "state.pkl"
+    with path.open("rb") as f:
+        state = pickle.load(f)
+    state["service_counters"] = {"_lock": 0}
+    with path.open("wb") as f:
+        pickle.dump(state, f, protocol=4)
+    restored = _service(tmp_path, texts=())
+    try:
+        assert (tmp_path / "state.corrupt").exists()
+        assert restored.observe("hello", "world")["unit_id"] == 0
+    finally:
+        restored.log.close()
+
+
+def test_complete_legacy_name_encoded_snapshot_restores(tmp_path, monkeypatch):
+    from hybrid_memory.core.types import Pool
+
+    svc = _service(tmp_path)
+    svc.observe("legacy.py", "original evidence")
+    rid = svc.recall("部署在哪")["retrieval_id"]
+    with monkeypatch.context() as patch:
+        patch.setattr(Pool, "__reduce_ex__",
+                      lambda self, protocol: (getattr, (Pool, self.name)))
+        svc.save()
+    svc.log.close()
+    assert b"getattr" in (tmp_path / "state.pkl").read_bytes()
+    restored = _service(tmp_path, texts=())
+    try:
+        assert not (tmp_path / "state.corrupt").exists()
+        mem = next(iter(restored.engine.mems.values()))
+        assert mem.pool is Pool.CANDIDATE
+        assert restored._retrievals[rid].selected[0] is mem
+        assert restored.observe("next.py", "answer")["unit_id"] == 1
+        restored.save()  # 旧编码恢复后再保存会变成稳定值编码
+        assert b"getattr" not in (tmp_path / "state.pkl").read_bytes()
+    finally:
+        restored.log.close()

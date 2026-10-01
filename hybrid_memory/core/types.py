@@ -13,6 +13,10 @@ class Pool(Enum):
     MEMORY = "M"
     ARCHIVE = "A"
 
+    def __reduce_ex__(self, protocol):
+        # 固定按值编码；不依赖宿主 Enum 是否用 getattr(cls, name) 序列化。
+        return Pool, (self.value,)
+
 
 def is_visible(m: "Memory") -> bool:
     """可出场的活跃记忆：未归档、未被取代、未被聚合收编。

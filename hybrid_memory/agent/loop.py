@@ -12,17 +12,22 @@
 - 每日调用上限：到顶后信号留在有界队列里，次日恢复（不静默丢）；
 - 幂等：同 key 的 recall_miss 在 TTL 内只调查一次；extract_due 每 unit 一次；
 - 失败重试有限次，超过即放弃并计数外显；
-- 因果：before = 信号所在步 + 1（含该步）——服务端对该 signal_id 的全部日志
-  读取与提议校验统一施加这个上界。回放驱动可用 before_for 覆盖。
+- 因果：before = 信号所在步 + 1（含该步）——日志、记忆工具和写回共用
+  此上界；记忆只提供保守筛选后的当前版本，不重建历史状态。
+  回放驱动可用 before_for 覆盖。
+- 工具结束后关闭预算；正常最终 JSON 使用进程内保留的上下文提交，不把
+  已关闭信号重新开放给 HTTP。每轮随机后缀防旧调用在重试/重启后借壳。
 """
 from __future__ import annotations
 
 import datetime as _dt
+import secrets
 import sys
 import threading
 import time
 from typing import Callable
 
+from ..investigation_context import CausalViolation
 from .investigator import Budget, Investigation, build_payload
 
 ORIGIN_BY_KIND = {"recall_miss": "repair", "extract_due": "extract",
@@ -163,7 +168,7 @@ class AgentWorker:
 
     def _run_one(self, sig, stats: dict) -> bool:
         before = int(self.before_for(sig))
-        signal_id = f"{sig.kind}-{sig.id}-{sig.t}"
+        signal_id = f"{sig.kind}-{sig.id}-{sig.t}-{secrets.token_hex(12)}"
         with self.svc.lock:
             t_now, scene = self.svc.current()
             ents = []
@@ -174,10 +179,10 @@ class AgentWorker:
                                     scene=scene, budget=self.budget,
                                     entity_hints=hints)
             payload["before"] = before
-            self.svc.open_budget(signal_id, tool_calls=self.budget.tool_calls,
-                                 window_chars=self.budget.window_chars,
-                                 before=before,
-                                 origin=ORIGIN_BY_KIND.get(sig.kind, "agent"))
+            context = self.svc.open_budget(
+                signal_id, tool_calls=self.budget.tool_calls,
+                window_chars=self.budget.window_chars, before=before,
+                origin=ORIGIN_BY_KIND.get(sig.kind, "agent"))
         self._runs_today += 1
         self.n_runs += 1
         stats["run"] += 1
@@ -193,22 +198,27 @@ class AgentWorker:
             self.n_failed += 1
             stats["failed"] += 1
             return False
-        origin = ORIGIN_BY_KIND.get(sig.kind, "agent")
+        # 工具已关闭，但正常最终 JSON 仍能提交；仅进程内持有此上下文，
+        # 不重新开放 signal_id，也不丢弃原来的因果界/来源标签。
         if inv.proposals:
             self.n_proposed += len(inv.proposals)
-            res = self.svc.propose(inv.proposals, origin=origin,
-                                   signal_id=signal_id, before=before)
+            res = self.svc.propose(inv.proposals, _context=context)
             self.n_accepted += res["accepted"]
             stats["accepted"] += res["accepted"]
         for left, right, verdict in inv.verdicts:
-            out = self.svc.resolve(left, right, verdict, ensure_tension=True)
+            try:
+                out = self.svc.resolve(left, right, verdict, ensure_tension=True,
+                                       _context=context)
+            except CausalViolation:
+                # 一条越界裁决不阻断同份 JSON 的合法诊断/提议；也不做任何写入。
+                print(f"[agent] 拒绝越界裁决 {left}/{right}", file=sys.stderr, flush=True)
+                continue
             self.n_verdicts += out.get("resolved", 0)
             stats["verdicts"] += out.get("resolved", 0)
         if inv.diagnosis is not None:
             self.svc.diagnose(inv.diagnosis["miss_type"],
                               inv.diagnosis.get("note", ""),
-                              signal_id=signal_id, kind=sig.kind,
-                              usage=usage)
+                              kind=sig.kind, usage=usage, _context=context)
             self.n_diagnosed += 1
             stats["diagnosed"] += 1
         return True

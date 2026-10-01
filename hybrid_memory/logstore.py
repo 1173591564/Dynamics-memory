@@ -167,32 +167,78 @@ class LogStore:
         self.n_embed_fail = 0
 
     # ---- 写 ----
-    def add_unit(self, unit_id: int, t: int, *, user_text: str,
+    def next_position(self) -> tuple[int, int]:
+        """L0 的下一编号/逻辑时间；启动对齐用，写入时仍需在事务内重新读取。"""
+        with self._lock:
+            # 两个独立 MAX 各走对应索引，避免每轮扫描整张日志表。
+            uid, t = self._conn.execute(
+                "SELECT COALESCE((SELECT MAX(id) FROM units), -1) + 1,"
+                " COALESCE((SELECT MAX(t) FROM units), -1) + 1").fetchone()
+        return max(0, uid), max(0, t)
+
+    def append_unit(self, t: int, *, user_text: str, assistant_text: str,
+                    scene: str = "", assistant_turns: int = 1,
+                    ts: float | None = None, min_unit_id: int = 0) -> dict:
+        """在线追加：数据库在写事务内分配 id/t，快照只提供不能回退的下界。
+        返回 unit_id/t/entities/new_entities。原文和确定性索引一起提交，
+        可选 embedding 在提交后执行。不同连接追加也不会复用已提交编号。
+        """
+        return self.add_unit(None, t, user_text=user_text,
+                             assistant_text=assistant_text, scene=scene,
+                             assistant_turns=assistant_turns, ts=ts,
+                             min_unit_id=min_unit_id)
+
+    def add_unit(self, unit_id: int | None, t: int, *, user_text: str,
                  assistant_text: str, scene: str = "",
-                 assistant_turns: int = 1, ts: float | None = None) -> dict:
-        """写入一个交互单元并建索引。返回 {entities, new_entities}——
-        new_entities 是此前从未在日志里出现过的实体（触发扫描用）。"""
+                 assistant_turns: int = 1, ts: float | None = None,
+                 min_unit_id: int = 0) -> dict:
+        """导入指定 id/t；unit_id=None 时为在线追加分配 id/t。
+
+        证据不可覆盖：同 id 同内容的重放为 no-op，不重建索引/向量、不重发
+        new_entities；同 id 不同内容（含 t/scene/显式 ts）抛 ValueError。
+        未显式给 ts 的重放保留首次提交时间，不把重试时刻当成新证据。
+        """
+        t, assistant_turns = int(t), int(assistant_turns)
+        user_text, assistant_text, scene = user_text or "", assistant_text or "", scene or ""
         ents = entities_in(user_text + "\n" + assistant_text)
         with self._lock, self._conn:
+            # RLock 只保护本连接；BEGIN IMMEDIATE 同时串行化跨连接的
+            # 读游标/查重/插入，不能先在事务外取 MAX 再 INSERT。
+            self._conn.execute("BEGIN IMMEDIATE")
+            if unit_id is None:
+                next_id, next_t = self.next_position()
+                unit_id = max(next_id, int(min_unit_id))
+                t = max(t, next_t)
+            else:
+                unit_id = int(unit_id)
+                existing = self._conn.execute(
+                    "SELECT t, scene, user_text, assistant_text, assistant_turns, ts"
+                    " FROM units WHERE id=?", (unit_id,)).fetchone()
+                if existing is not None:
+                    if (existing[:5] != (t, scene, user_text, assistant_text, assistant_turns)
+                            or (ts is not None and existing[5] != float(ts))):
+                        raise ValueError(f"unit {unit_id} already exists with different evidence")
+                    return {"unit_id": unit_id, "t": t,
+                            "entities": [e for e, _ in ents], "new_entities": []}
             self._conn.execute(
-                "INSERT OR REPLACE INTO units"
+                "INSERT INTO units"
                 " (id, t, ts, scene, user_text, assistant_text, assistant_turns)"
                 " VALUES (?,?,?,?,?,?,?)",
-                (int(unit_id), int(t), float(ts if ts is not None else time.time()),
-                 scene or "", user_text or "", assistant_text or "",
-                 int(assistant_turns)))
+                (unit_id, t, float(ts if ts is not None else time.time()),
+                 scene, user_text, assistant_text, assistant_turns))
             new = []
             for ent, kind in ents:
                 seen = self._conn.execute(
-                    "SELECT 1 FROM mentions WHERE entity=? AND unit_id<>? LIMIT 1",
-                    (ent, int(unit_id))).fetchone()
+                    "SELECT 1 FROM mentions WHERE entity=? LIMIT 1",
+                    (ent,)).fetchone()
                 if seen is None:
                     new.append(ent)
                 self._conn.execute(
-                    "INSERT OR IGNORE INTO mentions(entity, kind, unit_id)"
-                    " VALUES (?,?,?)", (ent, kind, int(unit_id)))
+                    "INSERT INTO mentions(entity, kind, unit_id)"
+                    " VALUES (?,?,?)", (ent, kind, unit_id))
         self._embed(unit_id, user_text, assistant_text)
-        return {"entities": [e for e, _ in ents], "new_entities": new}
+        return {"unit_id": unit_id, "t": t,
+                "entities": [e for e, _ in ents], "new_entities": new}
 
     def add_units(self, units: Iterable, scene: str = "") -> int:
         """批量预灌（回放评测）：InteractionUnit → units。t 取 unit.id

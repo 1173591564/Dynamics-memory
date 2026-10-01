@@ -227,6 +227,8 @@ def test_max_signals_defers_rest():
 
 def test_verdicts_from_investigator_are_applied():
     svc = _svc()
+    # 裁决双方的来源也必须是因果界内的真实证据，不能使用悬空 src=(0,)。
+    svc.log.add_unit(0, 0, user_text="部署变更", assistant_text="从 A 到 B")
     a = svc.engine.propose([_ev("部署在 A 服务器", origin="extract")], 0)[0]
     b = svc.engine.propose([_ev("部署在 B 服务器", origin="extract")], 0)[0]
     svc.report_miss("部署在哪", source="external")

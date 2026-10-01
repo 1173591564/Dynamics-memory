@@ -43,6 +43,7 @@ Unpickler。依赖注入（cfg/emb/semantics/generator/logstore）便于测试�
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import pickle
@@ -62,10 +63,12 @@ from .candgen.chat import ChatGenerator
 from .candgen.prompt import redact_secrets
 from .config import Cfg
 from .core.engine import MemoryEngine
-from .core.types import Event, Query, Retrieval
+from .core.types import Event, Memory, Pool, Query, Retrieval, Tension
 from .datasets.real_chat import InteractionUnit, InteractionWindow
 from .embed.base import Embedder
 from .llm import chat
+from .investigation_context import (CausalViolation, InvestigationContext,
+                                    SignalClosed)
 from .logstore import LogStore, entities_in
 from .semantics import normalize
 from .semantics.llm import LLMSemantics
@@ -103,6 +106,8 @@ _COUNTERS = ("n_promote", "n_demote", "n_evict", "n_archive", "n_revive",
              "n_merge", "n_collision", "n_tension", "n_resolve", "n_agg",
              "n_consolidate", "n_shadow_dropped", "n_chain_broken")
 
+_SERVICE_COUNTERS = ("n_candgen_fail", "n_missed", "n_proposals", "n_rejected")
+
 _STATE_KEYS = {"mems", "tensions", "next_id", "consolidation_pending",
                "consolidation_deferred", "counters", "t", "unit_id", "scene"}
 
@@ -130,17 +135,21 @@ _PICKLE_SAFE = {
 }
 
 
+def _legacy_pool_member(cls, name):
+    """只兼容旧 Enum 的 getattr(Pool, 成员名)，绝不开放通用 getattr。"""
+    if cls is Pool and type(name) is str and name in Pool.__members__:
+        return Pool.__members__[name]
+    raise pickle.UnpicklingError("state.pkl 含非法的 Pool 成员访问")
+
+
 class _RestrictedUnpickler(pickle.Unpickler):
     def find_class(self, module: str, name: str):
+        if module in ("builtins", "__builtin__") and name == "getattr":
+            return _legacy_pool_member
         if (module, name) in _PICKLE_SAFE:
             return super().find_class(module, name)
         raise pickle.UnpicklingError(
             f"state.pkl 含未授权 global: {module}.{name}")
-
-
-class SignalClosed(Exception):
-    """带了 X-Signal-Id 但该调查已结束/不存在（不用 KeyError：它是
-    LookupError 子类，会把别处的 bug 误报成 403）。"""
 
 
 class ProposalRejected(ValueError):
@@ -191,6 +200,11 @@ class MemoryService:
                 print(f"[memory-sidecar] state.pkl 损坏已隔离为 "
                       f"{corrupt.name}（{exc}）——空启动",
                       file=sys.stderr, flush=True)
+        # L0 每轮提交，快照只在 save/退出时更新：正常旧快照、缺快照或坏
+        # 快照都可能落后于日志。快照提供下界，绝不能让已提交证据复用 id/t。
+        next_id, next_t = self.log.next_position()
+        self._unit_id = max(self._unit_id, next_id)
+        self._t = max(self._t, next_t)
 
     # 供 AgentWorker 使用的最小接口
     @property
@@ -229,13 +243,14 @@ class MemoryService:
 
     # ================================================== 主回路
     def observe(self, user_text: str, assistant_text: str) -> dict:
-        # 1) 锁内：分配 unit/t，落 L0 并建索引（确定性、毫秒级），触发扫描
+        # 1) 锁内：L0 在数据库事务内分配 unit/t 并提交，再做扫描和抽取。
         with self._lock:
-            uid = self._unit_id
-            self._unit_id += 1
-            t, scene = self._t, self._scene
-            idx = self.log.add_unit(uid, t, user_text=user_text,
-                                    assistant_text=assistant_text, scene=scene)
+            scene = self._scene
+            idx = self.log.append_unit(self._t, min_unit_id=self._unit_id,
+                                       user_text=user_text,
+                                       assistant_text=assistant_text, scene=scene)
+            uid, t = idx["unit_id"], idx["t"]
+            self._unit_id, self._t = uid + 1, t
             reasons = triggers.scan_unit(user_text, assistant_text,
                                          idx["new_entities"])
             prev = self._last_turn
@@ -305,7 +320,53 @@ class MemoryService:
                          f"（与 t={m.birth} 条目冲突）")
         return "\n".join(lines)
 
-    def recall(self, q: str, k: int | None = None) -> dict:
+    def _causal_memory_ids(self, before: int | None) -> set[int]:
+        """保守的当前版本过滤，不冒充历史版本重建；调用方持 service lock。
+        birth 不够：旧记忆也可能在未来被确认/合并，或携带未来来源。
+        """
+        if before is None:
+            return set(self.engine.mems)
+        candidates = [m for m in self.engine.mems.values()
+                      if m.birth < before and m.last_seen < before]
+        src = {uid for m in candidates for uid in m.src}
+        known = set(self.log.exists(src, before=before)) if src else set()
+        eligible = {m.id for m in candidates if set(m.src) <= known}
+        # submit_verdicts 会沿替代/聚合链找当前代表，不能借旧 id 写到未来。
+        while True:
+            blocked = {mid for mid in eligible
+                       if any(ref is not None and ref not in eligible
+                              for ref in (self.engine.mems[mid].superseded_by,
+                                          self.engine.mems[mid].aggregated_into))}
+            if not blocked:
+                return eligible
+            eligible -= blocked
+
+    def _causal_tensions(self, ids: set[int], before: int | None) -> dict:
+        return {pair: tension for pair, tension in self.engine.tensions.items()
+                if all(mid in ids for mid in pair)
+                and (before is None or tension.last_seen < before)}
+
+    def recall(self, q: str, k: int | None = None, *,
+               signal_id: str | None = None) -> dict:
+        ctx, _, _ = self._admit(signal_id)
+        if signal_id is None:
+            return self._recall_main(q, k)
+        qv = self.emb.embed([q])[0]  # 未准入的请求不会触发 embedding
+        with self._lock:
+            ids = self._causal_memory_ids(ctx.before)
+            cfg = copy.copy(self.cfg)
+            if k is not None:
+                cfg.k = k
+            cfg.defer_credit, cfg.shadow_credit = True, False
+            view = MemoryEngine(cfg, self.emb, self.semantics)
+            view.mems = copy.deepcopy({i: self.engine.mems[i] for i in ids})
+            view.tensions = copy.deepcopy(self._causal_tensions(ids, ctx.before))
+            # 沿用原排序/压制算法，但在筛选后的副本中运行；不改原记忆、
+            # 不复活/记信用、不发主引擎信号，也不登记可被 feedback 的 rid。
+            ret = view.retrieve(qv, Query(-1, q), min(self._t, ctx.before - 1))
+            return self._recall_result(ret, None)
+
+    def _recall_main(self, q: str, k: int | None = None) -> dict:
         qv = self.emb.embed([q])[0]
         with self._lock:
             if k is not None:
@@ -323,13 +384,15 @@ class MemoryService:
                 self._retrievals.pop(min(self._retrievals))
             # 不在这里把 retrieval 关联到 _last_turn：/search 发生在回答
             # 之前，此刻 _last_turn 还是上一轮；关联由 /feedback 完成
-            return {"retrieval_id": rid, "context": self._format_context(ret),
-                    "n": len(ret.selected),
-                    "selected": [{"id": m.id, "text": m.text,
-                                  "birth": m.birth, "kind": m.kind,
-                                  "origin": m.origin,
-                                  "src": sorted(m.src)}
-                                 for m in ret.selected]}
+            return self._recall_result(ret, rid)
+
+    def _recall_result(self, ret: Retrieval, rid: int | None) -> dict:
+        return {"retrieval_id": rid, "context": self._format_context(ret),
+                "n": len(ret.selected),
+                "selected": [{"id": m.id, "text": m.text,
+                              "birth": m.birth, "kind": m.kind,
+                              "origin": m.origin, "src": sorted(m.src)}
+                             for m in ret.selected]}
 
     def feedback(self, retrieval_id: int, question: str, answer: str) -> dict:
         with self._lock:
@@ -372,10 +435,15 @@ class MemoryService:
         self._kick()
         return {"queued": n, "t": self._t}
 
-    def conflicts(self) -> dict:
+    def conflicts(self, *, signal_id: str | None = None) -> dict:
         with self._lock:
+            ctx, _, _ = self._admit(signal_id)
+            tensions = self.engine.tensions
+            if signal_id is not None:
+                tensions = self._causal_tensions(self._causal_memory_ids(ctx.before),
+                                                 ctx.before)
             out = []
-            for (left, right), tension in self.engine.tensions.items():
+            for (left, right), tension in tensions.items():
                 a, b = self.engine.mems.get(left), self.engine.mems.get(right)
                 out.append({
                     "left": left, "right": right,
@@ -386,12 +454,19 @@ class MemoryService:
             return {"conflicts": out, "t": self._t}
 
     def resolve(self, left: int, right: int, verdict: str,
-                entity_key: str = "", ensure_tension: bool = False) -> dict:
+                entity_key: str = "", ensure_tension: bool = False, *,
+                signal_id: str | None = None,
+                _context: InvestigationContext | None = None) -> dict:
         """裁决回报。ensure_tension=True（调查员/主 agent 主动裁决两条此前
         没被判为张力的记忆）时先登记 tension 再消解；entity_key 回填到双方。"""
         if verdict not in _VERDICTS:
             raise ValueError(f"verdict must be one of {sorted(_VERDICTS)}")
         with self._lock:
+            ctx = _context if _context is not None else self._admit(signal_id)[0]
+            if ctx.before is not None:
+                eligible = self._causal_memory_ids(ctx.before)
+                if left not in eligible or right not in eligible:
+                    raise CausalViolation("unknown_or_future_memory")
             a, b = self.engine.mems.get(left), self.engine.mems.get(right)
             if ensure_tension and a is not None and b is not None:
                 self.engine.add_tension(left, right, self._t)
@@ -403,92 +478,115 @@ class MemoryService:
             return {"resolved": n, "t": self._t}
 
     # ================================================== 日志工具面
-    def _bound(self, signal_id: str | None, before) -> int | None:
-        """请求给的 before 与信号因果上界取更严者。"""
-        b = None if before is None else int(before)
-        sb = self._budgets.get(signal_id or "", {}).get("before")
-        if sb is not None:
-            b = sb if b is None else min(b, sb)
-        return b
+    def _admit(self, signal_id: str | None, before: int | None = None, *,
+               window: bool = False, max_chars: int | None = None
+               ) -> tuple[InvestigationContext, dict | None, int]:
+        """同一临界区内校验存活、计调用、固定因果界，并预留回展额度。
 
-    def _charge_call(self, signal_id: str | None) -> None:
-        if not signal_id:
-            return
+        返回不可变上下文、该次预算对象和预留量。I/O 后只用这些对象，
+        不再按 signal_id 二次查找，避免 close/reopen 丢失边界或串账。
+        calls 统计尝试次数（含 429），window_used 只统计成功返回的原文字数。
+        """
+        if before is not None and (type(before) is not int or before < 0):
+            raise ValueError("before must be a non-negative int")
+        if max_chars is not None and (type(max_chars) is not int or max_chars <= 0):
+            raise ValueError("max_chars must be a positive int")
         with self._lock:
-            bud = self._budgets.get(signal_id)
-            if bud is None:
-                # 调查已结束（超时/放弃）后迟到的工具调用，或伪造的信号号
-                raise SignalClosed(f"signal {signal_id} 已关闭或不存在")
-            bud["calls"] += 1
-            if bud["calls"] > bud["tool_calls"]:
-                raise PermissionError(
-                    f"该信号工具调用预算 {bud['tool_calls']} 已用尽，请立即汇总输出")
+            bud = None
+            ctx = InvestigationContext(None, before)
+            if signal_id is not None:
+                bud = self._budgets.get(signal_id)
+                if bud is None:
+                    raise SignalClosed(f"signal {signal_id} 已关闭或不存在")
+                bud["calls"] += 1
+                if bud["calls"] > bud["tool_calls"]:
+                    raise PermissionError(
+                        f"该信号工具调用预算 {bud['tool_calls']} 已用尽，请立即汇总输出")
+                base = bud["context"]
+                bound = base.before if before is None else min(before, base.before)
+                ctx = InvestigationContext(signal_id, bound, base.origin)
+            cap = 0
+            if window:
+                remaining = (bud["window_chars"] - bud["window_used"]
+                             - bud["window_reserved"] if bud is not None
+                             else _MAIN_WINDOW_CAP)
+                if remaining <= 0:
+                    raise PermissionError("该信号回展预算已用尽（含在途预留）")
+                cap = min(remaining, max_chars) if max_chars is not None else remaining
+                if bud is not None:
+                    bud["window_reserved"] += cap
+            return ctx, bud, cap
 
     def log_search(self, query: str, *, before=None, scene=None, k=8,
                    signal_id: str | None = None) -> dict:
-        self._charge_call(signal_id)
-        hits = self.log.search(query, before=self._bound(signal_id, before),
+        ctx, _, _ = self._admit(signal_id, before)
+        hits = self.log.search(query, before=ctx.before,
                                scene=scene or None, k=min(int(k), 20))
         return {"hits": hits, "n": len(hits)}
 
     def log_timeline(self, entity: str, *, before=None, limit=30,
                      signal_id: str | None = None) -> dict:
-        self._charge_call(signal_id)
-        rows = self.log.timeline(entity, before=self._bound(signal_id, before),
+        ctx, _, _ = self._admit(signal_id, before)
+        rows = self.log.timeline(entity, before=ctx.before,
                                  limit=min(int(limit), 100))
         return {"entity": entity, "timeline": rows, "n": len(rows)}
 
     def log_stats(self, group_by: str = "scene", *, before=None, limit=30,
                   signal_id: str | None = None) -> dict:
-        self._charge_call(signal_id)
-        rows = self.log.stats(group_by, before=self._bound(signal_id, before),
-                              limit=min(int(limit), 200))
+        ctx, _, _ = self._admit(signal_id, before)
+        rows = self.log.stats(group_by, before=ctx.before, limit=min(int(limit), 200))
         return {"group_by": group_by, "rows": rows, "n": len(rows),
-                "units_total": self.log.count(self._bound(signal_id, before))}
+                "units_total": self.log.count(ctx.before)}
 
     def log_window(self, unit_ids, *, max_chars=None,
                    signal_id: str | None = None) -> dict:
-        self._charge_call(signal_id)
-        with self._lock:
-            bud = self._budgets.get(signal_id or "")
+        ctx, bud, cap = self._admit(signal_id, window=True, max_chars=max_chars)
+        out = None
+        try:
+            out = self.log.window(unit_ids, max_chars=cap, before=ctx.before)
+            return out
+        finally:
             if bud is not None:
-                cap = bud["window_chars"] - bud["window_used"]
-                if cap <= 0:
-                    raise PermissionError(
-                        f"该信号回展预算 {bud['window_chars']} 字已用尽")
-                req = int(max_chars) if max_chars else cap
-                cap = min(cap, req)
-            else:
-                cap = min(int(max_chars) if max_chars else _MAIN_WINDOW_CAP,
-                          _MAIN_WINDOW_CAP)
-            before = self._bound(signal_id, None)
-        out = self.log.window(unit_ids, max_chars=cap, before=before)
-        with self._lock:
-            bud = self._budgets.get(signal_id or "")
-            if bud is not None:
-                bud["window_used"] += out["chars"]
-                out["budget_left"] = bud["window_chars"] - bud["window_used"]
-        return out
+                with self._lock:
+                    bud["window_reserved"] -= cap
+                    # 失败退还整笔预留；成功只结算实际字数，未使用部分可继续使用。
+                    if out is not None:
+                        bud["window_used"] += out["chars"]
+                        out["budget_left"] = (bud["window_chars"] - bud["window_used"]
+                                              - bud["window_reserved"])
 
     def open_budget(self, signal_id: str, *, tool_calls: int,
-                    window_chars: int, before: int | None,
-                    origin: str | None = None) -> None:
-        """为一次调查开预算。origin 记下这次调查产出该打的来源标签：带
-        X-Signal-Id 的 /propose 不信任请求体里的 origin，一律用它。"""
+                    window_chars: int, before: int,
+                    origin: str | None = None) -> InvestigationContext:
+        """打开一次调查并返回仅供进程内最终 JSON 使用的不可变上下文。
+        HTTP 工具必须使用活跃 signal_id；不能提供此对象跳过计量。
+        """
+        if not isinstance(signal_id, str) or not signal_id.strip():
+            raise ValueError("signal_id required")
+        for name, value in (("tool_calls", tool_calls), ("window_chars", window_chars),
+                            ("before", before)):
+            if type(value) is not int or value < 0:
+                raise ValueError(f"{name} must be a non-negative int")
+        ctx = InvestigationContext(signal_id, before,
+                                   origin if origin in _ORIGINS else "agent")
         with self._lock:
-            self._budgets[signal_id] = {"tool_calls": int(tool_calls),
-                                        "window_chars": int(window_chars),
+            if signal_id in self._budgets:
+                raise ValueError(f"signal {signal_id} already open")
+            self._budgets[signal_id] = {"tool_calls": tool_calls,
+                                        "window_chars": window_chars,
                                         "calls": 0, "window_used": 0,
-                                        "before": before, "origin": origin,
+                                        "window_reserved": 0, "context": ctx,
                                         "opened": time.time()}
+        return ctx
 
     def close_budget(self, signal_id: str) -> dict:
         with self._lock:
             bud = self._budgets.pop(signal_id, None)
-        if bud is None:
-            return {}
-        return {"calls": bud["calls"], "window_used": bud["window_used"],
-                "elapsed_s": round(time.time() - bud["opened"], 1)}
+            if bud is None:
+                return {}
+            return {"calls": bud["calls"], "window_used": bud["window_used"],
+                    "window_reserved": bud["window_reserved"],
+                    "elapsed_s": round(time.time() - bud["opened"], 1)}
 
     # ================================================== 操作面
     def _validate_proposal(self, p: dict, before: int | None) -> tuple[Event, list[int]]:
@@ -527,7 +625,8 @@ class MemoryService:
         return ev, sup
 
     def propose(self, proposals: list, *, origin: str = "agent",
-                signal_id: str | None = None, before: int | None = None) -> dict:
+                signal_id: str | None = None, before: int | None = None,
+                _context: InvestigationContext | None = None) -> dict:
         """agent 提议入库。逐条校验（溯源非空且存在、因果、脱敏、自指、长度），
         通过的走引擎同一条 ingest 回路；supersedes 经 update 裁决把旧条目
         取代。返回逐条结果。"""
@@ -535,13 +634,11 @@ class MemoryService:
             raise ValueError("proposals must be a list")
         accepted, new_ids, rejected = 0, [], []
         with self._lock:
-            bud = self._budgets.get(signal_id or "", {})
-            bound = before
-            sb = bud.get("before")
-            if sb is not None:
-                bound = sb if bound is None else min(bound, sb)
-            if bud.get("origin"):
-                origin = bud["origin"]        # 信号上下文说了算
+            ctx = (_context if _context is not None
+                   else self._admit(signal_id, before)[0])
+            bound = ctx.before
+            if ctx.signal_id is not None:
+                origin = ctx.origin
             if origin not in _ORIGINS:
                 origin = "agent"
             t = self._t
@@ -551,6 +648,10 @@ class MemoryService:
                     continue
                 try:
                     ev, sup = self._validate_proposal(p, bound)
+                    if bound is not None and sup:
+                        eligible = self._causal_memory_ids(bound)
+                        if any(mid not in eligible for mid in sup):
+                            raise ProposalRejected("unknown_or_future_supersedes")
                 except ProposalRejected as exc:
                     rejected.append({"index": i, "reason": str(exc)})
                     self.n_rejected += 1
@@ -573,11 +674,14 @@ class MemoryService:
 
     def diagnose(self, miss_type: str, note: str = "", *,
                  signal_id: str | None = None, kind: str = "",
-                 usage: dict | None = None) -> dict:
+                 usage: dict | None = None,
+                 _context: InvestigationContext | None = None) -> dict:
         from .agent.investigator import MISS_TYPES
         if miss_type not in MISS_TYPES:
             raise ValueError(f"miss_type must be one of {MISS_TYPES}")
         with self._lock:
+            ctx = _context if _context is not None else self._admit(signal_id)[0]
+            signal_id = ctx.signal_id
             self.miss_counts[miss_type] = self.miss_counts.get(miss_type, 0) + 1
             counts = dict(self.miss_counts)
         if self.state_path is not None:
@@ -621,14 +725,12 @@ class MemoryService:
                 "retrievals": self._retrievals,
                 "next_retrieval": self._next_retrieval,
                 "miss_counts": dict(self.miss_counts),
-                "service_counters": {"n_candgen_fail": self.n_candgen_fail,
-                                     "n_missed": self.n_missed,
-                                     "n_proposals": self.n_proposals,
-                                     "n_rejected": self.n_rejected},
+                "service_counters": {k: getattr(self, k) for k in _SERVICE_COUNTERS},
                 "t": self._t, "unit_id": self._unit_id, "scene": self._scene}
             tmp = self.state_path.with_suffix(".tmp")
             with open(tmp, "wb") as f:
-                pickle.dump(state, f)
+                # 固定协议，避免 Python 默认协议变化引入新的 numpy 重建 global。
+                pickle.dump(state, f, protocol=4)
             os.replace(tmp, self.state_path)
         return {"saved": True, "mems": len(self.engine.mems)}
 
@@ -640,23 +742,69 @@ class MemoryService:
         missing = _STATE_KEYS - state.keys()
         if missing:
             raise ValueError(f"state.pkl 缺字段: {sorted(missing)}")
+        # 先校验容器/对象类型及游标、计数器，再发布到服务；否则末尾字段损坏会留下
+        # mems 已恢复、next_id/t 尚未恢复的半个引擎。兼容旧档缺少可选字段。
+        state.setdefault("retrievals", {})
+        state.setdefault("next_retrieval", 0)
+        state.setdefault("miss_counts", {})
+        state.setdefault("service_counters", {})
+
+        def nonnegative_int(value):
+            return type(value) is int and value >= 0
+
+        for key in ("next_id", "next_retrieval", "t", "unit_id"):
+            if not nonnegative_int(state[key]):
+                raise ValueError(f"state.pkl 的 {key} 必须是非负整数")
+        for key in ("mems", "tensions", "consolidation_deferred", "counters",
+                    "retrievals", "miss_counts", "service_counters"):
+            if not isinstance(state[key], dict):
+                raise ValueError(f"state.pkl 的 {key} 必须是 dict")
+        if not isinstance(state["scene"], str):
+            raise ValueError("state.pkl 的 scene 必须是字符串")
+        if (not isinstance(state["consolidation_pending"], set)
+                or not all(nonnegative_int(i) for i in state["consolidation_pending"])):
+            raise ValueError("state.pkl 的 consolidation_pending 必须是 id 集合")
+        if any(not isinstance(k, str) or not isinstance(v, frozenset)
+               or not all(nonnegative_int(i) for i in v)
+               for k, v in state["consolidation_deferred"].items()):
+            raise ValueError("state.pkl 的 consolidation_deferred 格式异常")
+        if any(not nonnegative_int(i) or not isinstance(m, Memory)
+               or m.id != i or not isinstance(m.pool, Pool)
+               for i, m in state["mems"].items()):
+            raise ValueError("state.pkl 的 mems 格式异常")
+        if any(not isinstance(k, tuple) or len(k) != 2
+               or not all(nonnegative_int(i) for i in k) or not isinstance(v, Tension)
+               for k, v in state["tensions"].items()):
+            raise ValueError("state.pkl 的 tensions 格式异常")
+        if any(not nonnegative_int(i) or not isinstance(r, Retrieval)
+               for i, r in state["retrievals"].items()):
+            raise ValueError("state.pkl 的 retrievals 格式异常")
+        for key, allowed in (("counters", _COUNTERS),
+                             ("service_counters", _SERVICE_COUNTERS)):
+            if any(k not in allowed or not nonnegative_int(v)
+                   for k, v in state[key].items()):
+                raise ValueError(f"state.pkl 的 {key} 含未知或非法计数器")
+        if any(not isinstance(k, str) or not nonnegative_int(v)
+               for k, v in state["miss_counts"].items()):
+            raise ValueError("state.pkl 的 miss_counts 格式异常")
+        for m in state["mems"].values():
+            for k, v in _MEMORY_FIELD_DEFAULTS.items():
+                if k not in m.__dict__:
+                    setattr(m, k, v)
+
         eng = self.engine
         eng.mems = state["mems"]
-        for m in eng.mems.values():
-            for k, v in _MEMORY_FIELD_DEFAULTS.items():
-                if not hasattr(m, k):
-                    setattr(m, k, v)
         eng.tensions = state["tensions"]
-        eng._next_id = state["next_id"]
+        eng._next_id = max(state["next_id"], max(eng.mems, default=-1) + 1)
         eng._consolidation_pending = state["consolidation_pending"]
         eng._consolidation_deferred = state["consolidation_deferred"]
         for k, v in state["counters"].items():
             setattr(eng, k, v)
-        # 后加字段：旧存档没有，.get 兼容
-        self._retrievals = state.get("retrievals", {})
-        self._next_retrieval = state.get("next_retrieval", 0)
-        self.miss_counts = dict(state.get("miss_counts", {}))
-        for k, v in state.get("service_counters", {}).items():
+        self._retrievals = state["retrievals"]
+        self._next_retrieval = max(state["next_retrieval"],
+                                   max(self._retrievals, default=-1) + 1)
+        self.miss_counts = state["miss_counts"]
+        for k, v in state["service_counters"].items():
             setattr(self, k, v)
         self._t = state["t"]
         self._unit_id = state["unit_id"]
@@ -664,6 +812,9 @@ class MemoryService:
 
 
 # ============================ HTTP ============================
+
+_SIGNAL_PATHS = {"/recall", "/search", "/conflicts", "/resolve", "/propose",
+                 "/diagnose", "/log/search", "/log/timeline", "/log/stats", "/log/window"}
 
 _MAX_BODY = 4 * 1024 * 1024          # 请求体上限 4MiB
 _GET_PATHS = {"/recall", "/conflicts", "/signals"}   # /health 单列免鉴权
@@ -739,7 +890,11 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _dispatch(self, path: str, q: dict, body: dict) -> None:
         svc = self.service
-        sid = (self.headers.get("X-Signal-Id") or "").strip() or None
+        raw_sid = self.headers.get("X-Signal-Id")
+        sid = raw_sid.strip() if raw_sid is not None else None
+        # /health 是插件启动时使用的公开探针，不计工具预算，也不返回原文。
+        if sid is not None and path != "/health" and path not in _SIGNAL_PATHS:
+            raise SignalClosed(f"调查员不允许访问 {path}")
         if path == "/health":
             with svc._lock:   # pool_sizes 迭代 mems，与 observe 并发会炸
                 self._reply(200, {"ok": True, "t": svc._t,
@@ -758,9 +913,9 @@ class _Handler(BaseHTTPRequestHandler):
             query = q.get("q", "")
             if not query:
                 raise _HttpError(400, "q required")
-            self._reply(200, svc.recall(query, k))
+            self._reply(200, svc.recall(query, k, signal_id=sid))
         elif path == "/conflicts":
-            self._reply(200, svc.conflicts())
+            self._reply(200, svc.conflicts(signal_id=sid))
         elif path == "/signals":
             self._reply(200, svc.signals())
         elif path == "/observe":
@@ -796,13 +951,13 @@ class _Handler(BaseHTTPRequestHandler):
             self._reply(200, svc.resolve(
                 left, right, verdict,
                 entity_key=ek if isinstance(ek, str) else "",
-                ensure_tension=bool(body.get("ensure_tension", False))))
+                ensure_tension=bool(body.get("ensure_tension", False)), signal_id=sid))
         elif path == "/search":
             k = _opt_int(body, "k", positive=True)
             query = body.get("query", "")
             if not isinstance(query, str) or not query:
                 raise _HttpError(400, "query required")
-            self._reply(200, svc.recall(query, k))
+            self._reply(200, svc.recall(query, k, signal_id=sid))
         elif path == "/miss":
             query = _req_str(body, "query")
             hint = body.get("hint", "")
@@ -869,7 +1024,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._reply(exc.code, {"error": str(exc)})
         except PermissionError as exc:          # 预算用尽
             self._reply(429, {"error": str(exc)})
-        except SignalClosed as exc:             # 信号号无效/已关闭
+        except (SignalClosed, CausalViolation) as exc:             # 信号号无效/已关闭
             self._reply(403, {"error": str(exc)})
         except ValueError as exc:
             self._reply(400, {"error": str(exc)})
