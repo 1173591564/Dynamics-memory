@@ -7,7 +7,6 @@
 把连续、嘈杂、前后矛盾的项目交互，蒸馏成一个不会堆成"史山"的记忆库。<br/>
 新会话里一句"接着搞"，agent 就知道进行到哪、上次卡在哪。
 
-![tests](https://img.shields.io/badge/tests-302%20passed-brightgreen?style=flat-square)
 ![engine](https://img.shields.io/badge/engine-LLM--free-blue?style=flat-square)
 ![status](https://img.shields.io/badge/status-research%20preview-orange?style=flat-square)
 
@@ -23,7 +22,7 @@
 pip install numpy pytest
 cp .env.example .env          # ZAI_API_KEY=...
 
-python -m pytest tests/                          # 302 passed
+python -m pytest tests/                          # 本地测试；不是远程验证
 python -m hybrid_memory.server --project <dir>   # 或被 opencode 插件自动拉起
 ```
 
@@ -164,6 +163,18 @@ sidecar 为评测提供的两个能力：
 
 <sub>调查员默认启用：有 API key 就自动消费信号（不依赖 opencode）。
 `GET /signals` 看队列、预算用量与 miss_type 分布；诊断落 `diagnoses.jsonl`。</sub>
+
+## 验证状态
+
+本地 pytest、TIDE 和插件测试证明的是 sidecar 与 mock HTTP 的不变量，不是远程模型，也不是接上 OpenCode 的 L3。未做 L3。`GET /health` 的 `validation` 固定为 `unverified`：进程在听，不等于已经验证。
+
+`ok: true` 只表示没有 checkpoint fault，插件可以复用这个进程。它不表示快照干净，也不表示逐单元效果已经补齐。看 `snapshot` 和 `units_pending`。`snapshot=quarantined` 表示坏快照已被隔离成 `state.corrupt`，服务空启动，记忆没有从那份快照恢复。
+
+## 运行
+
+停机后再备份整个状态目录：`log.sqlite`、`tasks.sqlite`、它们的 WAL、`state.pkl`，以及同目录的 `bridge-outbox.json`。不要只回滚其中一个库。本批没有检测这种不配套，也不能靠旧副本找回备份之后的新数据。回滚要插件和 sidecar 一起回到旧版本。
+
+坏的 `state.pkl` 会被隔离，服务仍会起来。这是为了不让桥瘫痪，不是数据还在。`state.corrupt` 留在目录里，启动声明不会把它说成合法空库。
 
 <details>
 <summary><b>目录结构</b></summary>

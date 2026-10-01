@@ -5,7 +5,8 @@
 token 持久化在 state_dir/.memory-token，插件侧同路径读取或经环境变量注入）：
 
   读记忆
-  GET  /health              → 状态（池规模/时间步/信号/agent），免鉴权
+  GET  /health              → 状态。ok 只表示没有 checkpoint fault；
+                              snapshot/units_pending/validation 分开报告，免鉴权
   GET  /recall?q=..&k=..    → {retrieval_id, context, selected}
   POST /search              → {query, k} 同 /recall（CJK 长查询走 body）
   GET  /conflicts           → 未决 tension 列表
@@ -190,6 +191,8 @@ class MemoryService:
                                capacity=task_capacity)
         self._checkpoint_revision = 0
         self._checkpoint_fault = False
+        self._snapshot_status = "absent"
+        self._snapshot_quarantined = False
         self.token = self._load_or_create_token()
         self.agent = None                 # AgentWorker，attach_agent 挂上
         self._t = 0
@@ -220,6 +223,7 @@ class MemoryService:
             try:
                 self._load(checkpoint)
                 self._checkpoint_revision = revision
+                self._snapshot_status = "loaded"
             except Exception as exc:
                 self.tasks.close()
                 self.log.close()
@@ -227,9 +231,13 @@ class MemoryService:
         elif self.state_path and self.state_path.exists():
             try:
                 self._load()
+                self._snapshot_status = "loaded"
             except Exception as exc:  # noqa: BLE001
                 # 损坏/恶意 state 不能让 sidecar 启动即死（桥会整体瘫痪）：
-                # 隔离坏文件后空启动，损失状态好过丢记忆服务
+                # 隔离坏文件后空启动，损失状态好过丢记忆服务。
+                # 隔离标记在本进程内保持，随后的 save 不能把它洗成干净加载。
+                self._snapshot_quarantined = True
+                self._snapshot_status = "quarantined"
                 corrupt = self.state_path.with_suffix(".corrupt")
                 try:
                     os.replace(self.state_path, corrupt)
@@ -238,6 +246,10 @@ class MemoryService:
                 print(f"[memory-sidecar] state.pkl 损坏已隔离为 "
                       f"{corrupt.name}（{exc}）——空启动",
                       file=sys.stderr, flush=True)
+        elif self._corrupt_file_exists():
+            # 上次隔离后没有留下可加载快照。重启不能把丢失显示成合法空目录。
+            self._snapshot_quarantined = True
+            self._snapshot_status = "quarantined"
         # L0 每轮提交，快照只在 save/退出时更新：正常旧快照、缺快照或坏
         # 快照都可能落后于日志。快照提供下界，绝不能让已提交证据复用 id/t。
         next_id, next_t = self.log.next_position()
@@ -245,6 +257,33 @@ class MemoryService:
         self._t = max(self._t, next_t)
         self.engine._next_id = max(self.engine._next_id, self.tasks.memory_next_id())
         self.engine.signals.on_emit = self._journal_signal
+
+    def _corrupt_file_exists(self) -> bool:
+        return bool(self.state_path and self.state_path.with_suffix(".corrupt").exists())
+
+    def health_view(self) -> dict:
+        """进程在不在，和数据有没有干净恢复，是两件事。
+
+        `ok` 只表示没有 checkpoint fault，插件据此复用进程。
+        `validation` 固定为 unverified：本进程不能自称远程或 L3 已验证。
+        """
+        with self._lock:
+            if self._snapshot_quarantined:
+                snapshot = "quarantined"
+            else:
+                snapshot = self._snapshot_status
+            return {"ok": not self._checkpoint_fault,
+                    "checkpoint_fault": self._checkpoint_fault,
+                    "snapshot": snapshot,
+                    "corrupt_file": self._corrupt_file_exists(),
+                    "units_pending": self.log.work_stats()["pending"],
+                    "validation": "unverified",
+                    "t": self._t,
+                    "mems": self.engine.pool_sizes(),
+                    "tensions": len(self.engine.tensions),
+                    "signals": sum(self.tasks.queued_counts().values()) + len(self.engine.signals),
+                    "log_units": self.log.count(),
+                    "agent": bool(self.agent)}
 
     def _ensure_healthy(self):
         if self._checkpoint_fault:
@@ -1349,6 +1388,8 @@ class MemoryService:
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, self.state_path)
+            if not self._snapshot_quarantined:
+                self._snapshot_status = "loaded"
         return {"saved": True, "mems": len(self.engine.mems)}
 
     def _load(self, checkpoint: bytes | None = None) -> None:
@@ -1602,15 +1643,8 @@ class _Handler(BaseHTTPRequestHandler):
         if sid is not None and path != "/health" and path not in _SIGNAL_PATHS:
             raise SignalClosed(f"调查员不允许访问 {path}")
         if path == "/health":
-            with svc._lock:   # pool_sizes 迭代 mems，与 observe 并发会炸
-                self._reply(503 if svc._checkpoint_fault else 200,
-                            {"ok": not svc._checkpoint_fault,
-                             "checkpoint_fault": svc._checkpoint_fault, "t": svc._t,
-                                  "mems": svc.engine.pool_sizes(),
-                                  "tensions": len(svc.engine.tensions),
-                                  "signals": sum(svc.tasks.queued_counts().values()) + len(svc.engine.signals),
-                                  "log_units": svc.log.count(),
-                                  "agent": bool(svc.agent)})
+            body = svc.health_view()
+            self._reply(503 if not body["ok"] else 200, body)
         elif path == "/recall":
             try:
                 k = int(q["k"]) if q.get("k") else None
@@ -1928,9 +1962,12 @@ def main() -> None:
             service.attach_agent(agent)
             agent.start()
 
+    view = service.health_view()
     print(f"[memory-sidecar] http://127.0.0.1:{port} "
           f"project={Path(args.project).resolve()} "
           f"mems={len(service.engine.mems)} log_units={service.log.count()} "
+          f"snapshot={view['snapshot']} units_pending={view['units_pending']} "
+          f"validation={view['validation']} "
           f"agent={'on' if agent else 'off'}", flush=True)
 
     def _term(*_):          # 插件 kill 发 SIGTERM：走 finally 存盘
