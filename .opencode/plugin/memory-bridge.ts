@@ -2,17 +2,12 @@
  * memory-bridge：opencode ↔ 记忆引擎 sidecar 的桥（只服务主 agent 会话）：
  *
  * - 生命周期：启动时拉起 `python -m hybrid_memory.server`，退出时 /save + kill
- * - 捕获：chat.message 记用户输入；session.idle 时先把 (user, assistant) 写入
- *   outbox，再用同一 request-id POST /observe（sidecar 先落 L0 日志、触发扫描，
- *   再 candgen 蒸馏）。超时、连接失败或进程退出后不换 id。
- * - 注入：experimental.chat.system.transform 时按当前用户输入 /search，
- *   结果以 <relevant-memories> 块注入（明确标注"不代表当前任务进程"）
- * - 记账：注入时记下 retrieval_id，回答完成后 POST /feedback 走 recognizer
- * - 工具：memory_* + log_*（主 agent 主动通道）。主 agent 一旦用 log_* 去翻
- *   日志，就说明注入的记忆没接住——插件顺手 POST /miss，后台调查员拿大预算
- *   系统性修复。这是衔尾蛇的一半：消费者的行为反过来驱动生产。
- *
- * 后台调查员跑在 sidecar 进程内（hybrid_memory/agent/inline.py），不经过 opencode。
+ * - 捕获：chat.message 与 session.idle 经稳定 request-id 把交互写入 L0；
+ *   默认由持久的 Hauler → Selector 协议蒸馏，legacy 模式才使用单轮 candgen。
+ * - 注入：按用户输入 /search，将候选记忆作为参考上下文注入。
+ * - 默认主会话仅保留只读检索与日志工具，不开放直写/自动裁决入口；
+ *   用户不满进入 Reviewer，冲突由独立的人审能力令牌批准。
+ * - 内部 OpenCode worker 会话由 DYNAMICS_MEMORY_INTERNAL_AGENT 隔离。
  *
  * sidecar 端口默认 17872，可用 MEMORY_BRIDGE_PORT 覆盖。
  */
@@ -40,6 +35,9 @@ type Proposal = {
 }
 
 export default (async ({ directory }) => {
+  // Worker OpenCode sessions are internal protocol participants, not user turns.
+  if (process.env.DYNAMICS_MEMORY_INTERNAL_AGENT === "1") return {} as any
+  const trioMode = (process.env.MEMORY_PIPELINE ?? "opencode").toLowerCase() !== "legacy"
   const log = (msg: string) => console.error(`[memory-bridge] ${msg}`)
 
   // 鉴权令牌：每次现读 <project>/.opencode/memory/.memory-token
@@ -137,7 +135,7 @@ export default (async ({ directory }) => {
   // 主 agent 用了日志工具 = 记忆没接住这个需求
   let lastMiss = ""
   const reportMiss = (query: string, hint: string) => {
-    if (!query || query === lastMiss) return
+    if (trioMode || !query || query === lastMiss) return
     void call("POST", "/miss", { query, hint, source: "agent_tool" }).then((r) => {
       if (r.ok) lastMiss = query
       else log(`缺失上报失败 ${errText(r)}`)
@@ -279,7 +277,7 @@ export default (async ({ directory }) => {
           .describe("提议列表"),
       },
       execute: async (args) => {
-        const r = await call("POST", "/propose", { proposals: args.proposals as Proposal[], origin: ROLE === "worker" ? "repair" : "agent" })
+        const r = await call("POST", "/propose", { proposals: args.proposals as Proposal[], origin: "agent" })
         if (!r.ok) return `写入失败 ${errText(r)}`
         const rej = (r.data.rejected ?? []) as { index: number; reason: string }[]
         return (
@@ -498,7 +496,9 @@ export default (async ({ directory }) => {
       output.system.push(
         memo +
           "\n若上述记忆不足以回答且问题涉及项目历史（之前的决定、改过什么、某个值是多少），" +
-          "先用 log_search / log_timeline 查证再作答；查到的事实用 memory_propose 存下来。",
+          (trioMode
+            ? "先用 log_search / log_timeline 查证再作答；不要直接写入长期记忆，后台 Hauler 和 Selector 会处理已保存的交互。"
+            : "先用 log_search / log_timeline 查证再作答；查到的事实用 memory_propose 存下来。"),
       )
     },
 
@@ -557,7 +557,11 @@ export default (async ({ directory }) => {
       }
     },
 
-    tool: tools,
+    tool: trioMode
+      ? { memory_search: tools.memory_search, memory_conflicts: tools.memory_conflicts,
+          log_search: tools.log_search, log_timeline: tools.log_timeline,
+          log_stats: tools.log_stats, log_window: tools.log_window }
+      : tools,
 
     dispose: async () => {
       closing = true

@@ -85,7 +85,7 @@ from .semantics import normalize
 from .semantics.llm import LLMSemantics
 from .core import maintenance
 from .core.types import FeedbackSemantics, ConsolidationSemantics, is_visible
-from .taskstore import SEMANTIC_KINDS, TaskLeaseLost
+from .taskstore import SEMANTIC_KINDS, WORKFLOW_KINDS, TaskLeaseLost
 from .taskstore import TaskStore, TaskQueueFull, CheckpointConflict, CaptureConflict, encode
 
 _RETRIEVAL_KEEP = 512   # retrieval 注册表上限（feedback 用，防无界增长）
@@ -194,7 +194,10 @@ class MemoryService:
         self._snapshot_status = "absent"
         self._snapshot_quarantined = False
         self.token = self._load_or_create_token()
-        self.agent = None                 # AgentWorker，attach_agent 挂上
+        self.human_review_token = self._review_token()
+        self.agent = None                 # legacy AgentWorker，attach_agent 挂上
+        self.trio_worker = None           # OpenCode protocol worker
+        self.trio_mode = False             # OpenCode 三 agent 工作协议；测试可显式注入
         self._t = 0
         self._unit_id = 0
         self._scene = ""
@@ -258,6 +261,70 @@ class MemoryService:
         self.engine._next_id = max(self.engine._next_id, self.tasks.memory_next_id())
         self.engine.signals.on_emit = self._journal_signal
 
+    def _review_token(self) -> str:
+        """Separate capability: ordinary plugin and agent bearer cannot approve conflicts."""
+        if not self.state_path:
+            return secrets.token_hex(24)
+        p = self.state_path.parent / ".human-review-token"
+        if not p.exists():
+            p.write_text(secrets.token_hex(24), encoding="utf-8")
+            os.chmod(p, 0o600)
+        token = p.read_text(encoding="utf-8").strip()
+        if not token:
+            raise RuntimeError("human-review-token is empty")
+        return token
+
+    def human_reviews(self) -> list[dict]:
+        # The reviewer must see both sides and their provenance before choosing.
+        with self._lock:
+            reviews = self.tasks.pending_reviews()
+            for review in reviews:
+                old = self.engine.mems.get(review["target_id"])
+                review["existing"] = ({"text": old.text, "source_unit_ids": sorted(old.src),
+                                       "pool": old.pool.value} if old else None)
+            return reviews
+
+    def decide_human_review(self, review_id: int, decision: str, capability: str) -> dict:
+        """An explicitly authenticated human decision, effect and receipt in one DB commit."""
+        if not secrets.compare_digest(capability, self.human_review_token):
+            raise PermissionError("human review capability required")
+        if decision not in ("accept_new", "keep_old"):
+            raise ValueError("decision must be accept_new or keep_old")
+        with self._lock, self._rollback_effect():
+            with self.tasks.transaction() as conn:
+                row = conn.execute("SELECT * FROM human_reviews WHERE id=?", (review_id,)).fetchone()
+                if row is None:
+                    raise ValueError("review not found")
+                if row["status"] != "pending":
+                    if row["decision"] != decision:
+                        raise ValueError("conflicting review decision")
+                    return {"review_id": review_id, "decision": decision, "replayed": True}
+                old = self.engine.mems.get(row["target_id"])
+                if old is None or old.superseded_by is not None:
+                    raise ValueError("review target changed; submit a fresh review")
+                ids = []
+                if decision == "accept_new":
+                    ev, _ = self._validate_proposal(json.loads(row["candidate"]), None)
+                    ev.origin = "user_confirmed"
+                    ids = self.engine.propose([ev], self._t)
+                    if not ids:
+                        raise ValueError("accepted candidate did not create a distinct version")
+                    self.engine.add_tension(ids[-1], old.id, self._t)
+                    self.engine.submit_verdicts([(ids[-1], old.id, "update")], self._t)
+                if decision == "accept_new":
+                    # Other proposals against this now-retired version must be
+                    # reconsidered against the new version, never left actionable.
+                    conn.execute("UPDATE human_reviews SET status='stale' WHERE target_id=? "
+                                 "AND id<>? AND status='pending'", (old.id, review_id))
+                remaining = conn.execute("SELECT COUNT(*) FROM human_reviews WHERE target_id=? "
+                    "AND id<>? AND status='pending'", (old.id, review_id)).fetchone()[0]
+                old.pending_review = bool(remaining)
+                conn.execute("UPDATE human_reviews SET status='done',decision=? WHERE id=?",
+                             (decision, review_id))
+                revision = self.tasks._write_checkpoint(conn, self._dump_state(), self._checkpoint_revision)
+            self._checkpoint_revision = revision
+            return {"review_id": review_id, "decision": decision, "new_ids": ids}
+
     def _corrupt_file_exists(self) -> bool:
         return bool(self.state_path and self.state_path.with_suffix(".corrupt").exists())
 
@@ -283,7 +350,7 @@ class MemoryService:
                     "tensions": len(self.engine.tensions),
                     "signals": sum(self.tasks.queued_counts().values()) + len(self.engine.signals),
                     "log_units": self.log.count(),
-                    "agent": bool(self.agent)}
+                    "agent": bool(self.agent or self.trio_worker)}
 
     def _ensure_healthy(self):
         if self._checkpoint_fault:
@@ -336,7 +403,7 @@ class MemoryService:
                     old_emit = q.on_emit
 
                     def collect(kind, payload, t, key, merge):
-                        if kind in SEMANTIC_KINDS or kind in ("recall_miss", "extract_due"):
+                        if kind in SEMANTIC_KINDS | WORKFLOW_KINDS or kind in ("recall_miss", "extract_due"):
                             return self.tasks._enqueue(
                                 conn, kind, self._signal_payload(kind, payload), t,
                                 key=key, merge=merge,
@@ -482,7 +549,7 @@ class MemoryService:
             self._ensure_healthy()
             prev = self._last_turn
             context = {}
-            if triggers.is_correction(user_text) and prev:
+            if triggers.is_dissatisfaction(user_text) and prev:
                 ret = self._retrievals.get(prev.get("retrieval_id", -1))
                 context = {"previous_user": prev["user"],
                            "retrieved": [{"id": m.id, "t": m.birth, "text": m.text}
@@ -552,8 +619,11 @@ class MemoryService:
                                 unit["assistant_turns"])
             window = InteractionWindow(uid, uid, uid, t, t, (u,))
             try:
-                gen = self.generator.generate(window, unit["scene"])
-                cands, scene, failure = [asdict(c) for c in gen.candidates], gen.scene_name, ""
+                if self.trio_mode:
+                    cands, scene, failure = [], unit["scene"], ""
+                else:
+                    gen = self.generator.generate(window, unit["scene"])
+                    cands, scene, failure = [asdict(c) for c in gen.candidates], gen.scene_name, ""
             except Exception as exc:  # noqa: BLE001  可恢复补抽，而非伪装合法空候选
                 cands, scene = [], ""
                 failure = f"{type(exc).__name__}: {exc}"[:500]
@@ -571,7 +641,7 @@ class MemoryService:
                 old_emit = self.engine.signals.on_emit
 
                 def collect(kind, payload, at, key, merge):
-                    if kind in SEMANTIC_KINDS or kind in ("recall_miss", "extract_due"):
+                    if kind in SEMANTIC_KINDS | WORKFLOW_KINDS or kind in ("recall_miss", "extract_due"):
                         handoffs.append((kind, self._signal_payload(kind, payload), at, key, merge))
                         return -1  # 同任务库事务交接，不进易失队列
                     return old_emit(kind, payload, at, key, merge)
@@ -584,14 +654,20 @@ class MemoryService:
                     if t >= self._scene_t:
                         self._scene, self._scene_t = scene, t
                     previous = work["context"].get("previous_user") or ctx["previous_user"]
-                    if triggers.is_correction(unit["user_text"]) and previous:
+                    if not self.trio_mode and triggers.is_correction(unit["user_text"]) and previous:
                         self.engine.report_miss(
                             previous, t, hint=unit["user_text"][:300], source="correction",
                             retrieved=work["context"].get("retrieved", []),
                             entities=tuple(e for e, _ in entities_in(previous)))
                         self.n_missed += 1
                     reasons = result["reasons"] if result else []
-                    if reasons:
+                    if self.trio_mode:
+                        self.engine.signals.emit("hauler_due", {"unit_id": uid}, t,
+                                                 key=f"hauler:{uid}")
+                        if triggers.is_dissatisfaction(unit["user_text"]):
+                            self.engine.signals.emit("reviewer_due", {"unit_id": uid}, t,
+                                                     key=f"reviewer:{uid}")
+                    elif reasons:
                         self.engine.report_unit(uid, t, scene=self._scene,
                                                 reasons=tuple(reasons),
                                                 entities=tuple(ctx["entities"][:12]))
@@ -692,7 +768,7 @@ class MemoryService:
                     old_emit = q.on_emit
 
                     def collect(kind, payload, t, key, merge):
-                        if kind in SEMANTIC_KINDS or kind in ("recall_miss", "extract_due"):
+                        if kind in SEMANTIC_KINDS | WORKFLOW_KINDS or kind in ("recall_miss", "extract_due"):
                             return self.tasks._enqueue(
                                 conn, kind, self._signal_payload(kind, payload), t,
                                 key=key, merge=merge, memory_next_id=self.engine._next_id)
@@ -852,6 +928,7 @@ class MemoryService:
         for m in ret.selected:
             lines.append((
                 f"- {'[未确认] ' if m.id in prov_ids else ''}"
+                f"{'[待人审冲突，不可断言为当前事实] ' if m.pending_review else ''}"
                 f"{'[项目状态汇总] ' if m.kind == 'reflection' else ''}"
                 f"[t={m.birth}] {_safe_mem_text(m.text)}", m))
         for m, rival in ret.contested:
@@ -1487,7 +1564,7 @@ _SIGNAL_PATHS = {"/recall", "/search", "/conflicts", "/resolve", "/propose",
 
 _MAX_BODY = 4 * 1024 * 1024          # 请求体上限 4MiB
 _GET_PATHS = {"/recall", "/conflicts", "/signals"}   # /health 单列免鉴权
-_POST_PATHS = {"/observe", "/feedback", "/resolve", "/search", "/save",
+_POST_PATHS = {"/observe", "/feedback", "/resolve", "/human-reviews", "/human-review", "/search", "/save",
                "/miss", "/log/search", "/log/timeline", "/log/stats",
                "/log/window", "/propose", "/diagnose"}
 
@@ -1690,7 +1767,18 @@ class _Handler(BaseHTTPRequestHandler):
                     return
                 raise _HttpError(404, out["error"])
             self._reply(200, out)
+        elif path == "/human-reviews":
+            self._reply(200, {"reviews": svc.human_reviews()})
+        elif path == "/human-review":
+            rid = _opt_int(body, "review_id")
+            if rid is None:
+                raise _HttpError(400, "review_id required")
+            self._reply(200, svc.decide_human_review(
+                rid, str(body.get("decision", "")),
+                self.headers.get("X-Human-Review-Token", "")))
         elif path == "/resolve":
+            if svc.trio_mode:
+                raise _HttpError(403, "direct resolution disabled; human review is required")
             left, right = _opt_int(body, "left"), _opt_int(body, "right")
             if left is None or right is None:
                 raise _HttpError(400, "left/right required")
@@ -1751,6 +1839,8 @@ class _Handler(BaseHTTPRequestHandler):
                 ids, max_chars=_opt_int(body, "max_chars", positive=True),
                 signal_id=sid))
         elif path == "/propose":
+            if svc.trio_mode:
+                raise _HttpError(403, "direct proposals disabled; use Hauler and Selector")
             props = body.get("proposals")
             if not isinstance(props, list):
                 raise _HttpError(400, "proposals must be a list")
@@ -1759,6 +1849,8 @@ class _Handler(BaseHTTPRequestHandler):
                 props, origin=origin if isinstance(origin, str) else "agent",
                 signal_id=sid, before=_opt_int(body, "before")))
         elif path == "/diagnose":
+            if svc.trio_mode:
+                raise _HttpError(403, "direct diagnosis disabled; Reviewer owns this work")
             mt = _req_str(body, "miss_type")
             note = body.get("note", "")
             try:
@@ -1922,8 +2014,7 @@ def main() -> None:
     ap.add_argument("--no-agent", action="store_true",
                     default=os.environ.get("MEMORY_AGENT", "").lower()
                     in ("off", "0", "false"),
-                    help="不启动调查员（仅被动 candgen；调查任务留在 SQLite）；"
-                         "环境变量 MEMORY_AGENT=off 等价")
+                    help="不启动后台 agent（任务留在 SQLite）；环境变量 MEMORY_AGENT=off 等价")
     ap.add_argument("--agent-daily-cap", type=int,
                     default=int(os.environ.get("MEMORY_AGENT_DAILY_CAP", "200")))
     ap.add_argument("--agent-tool-calls", type=int, default=8)
@@ -1939,12 +2030,13 @@ def main() -> None:
         ap.error("--agent-retry-delay must be finite and non-negative")
 
     service = build_default_service(args.project, model=args.model, task_capacity=args.task_queue_cap)
+    service.trio_mode = os.environ.get("MEMORY_PIPELINE", "opencode").lower() != "legacy"
     service.start_unit_recovery()  # 即使 --no-agent，已提交 L0 也必须能恢复
     httpd = serve(service, args.port)
     port = httpd.server_address[1]
 
     agent = None
-    if not args.no_agent:
+    if not args.no_agent and not service.trio_mode:
         from .agent.inline import InlineInvestigator
         from .agent.investigator import Budget
         from .agent.loop import AgentWorker
@@ -1962,13 +2054,20 @@ def main() -> None:
             service.attach_agent(agent)
             agent.start()
 
+    trio = None
+    if service.trio_mode and not args.no_agent:
+        from .agent.trio import TrioWorker, OpenCodeRunner
+        trio = TrioWorker(service, OpenCodeRunner(Path(args.project)))
+        service.trio_worker = trio
+        trio.start()
+
     view = service.health_view()
     print(f"[memory-sidecar] http://127.0.0.1:{port} "
           f"project={Path(args.project).resolve()} "
           f"mems={len(service.engine.mems)} log_units={service.log.count()} "
           f"snapshot={view['snapshot']} units_pending={view['units_pending']} "
           f"validation={view['validation']} "
-          f"agent={'on' if agent else 'off'}", flush=True)
+          f"agent={'on' if agent or trio else 'off'}", flush=True)
 
     def _term(*_):          # 插件 kill 发 SIGTERM：走 finally 存盘
         raise SystemExit(0)
@@ -1982,6 +2081,8 @@ def main() -> None:
         service.stop_unit_recovery()
         if agent is not None:
             agent.stop()
+        if trio is not None:
+            trio.stop()
         service.save()
         httpd.server_close()
 

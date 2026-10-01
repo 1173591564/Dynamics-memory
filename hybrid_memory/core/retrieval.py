@@ -74,6 +74,9 @@ def run_retrieve(eng, q_emb: np.ndarray, q: Query, t: int) -> Retrieval:
                                    if is_visible(m)}) if cfg.lex_weight > 0 else {})
     scored = []
     for m in eng.mems.values():
+        # Cold but still valid may reappear; retired versions never serve as facts.
+        if m.superseded_by is not None or m.aggregated_into is not None:
+            continue
         if (not is_visible(m)
                 and not (cfg.archive_retrieval and m.pool is Pool.ARCHIVE)):
             continue

@@ -313,6 +313,17 @@ class LogStore:
         return {"request_id": row[0], "unit_id": row[1], "fingerprint": row[2],
                 "created_at": row[3]}
 
+    def recent_ids(self, unit_id: int, *, limit: int = 6) -> list[int]:
+        """Contiguous preceding units, bounded at the triggering unit's logical time."""
+        with self._lock:
+            row = self._conn.execute("SELECT t FROM units WHERE id=?", (unit_id,)).fetchone()
+            if row is None:
+                return []
+            ids = [r[0] for r in self._conn.execute(
+                "SELECT id FROM units WHERE t<=? ORDER BY t DESC,id DESC LIMIT ?",
+                (row[0], limit))]
+        return list(reversed(ids))
+
     def work(self, unit_id: int) -> dict | None:
         with self._lock:
             row = self._conn.execute(

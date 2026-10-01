@@ -10,7 +10,7 @@
 ![engine](https://img.shields.io/badge/engine-LLM--free-blue?style=flat-square)
 ![status](https://img.shields.io/badge/status-research%20preview-orange?style=flat-square)
 
-[架构](#架构推式捕获--拉式修复) · [动力学](#记忆动力学) · [验证状态](#验证状态) · [运行](#运行) · [设计文档](docs/ouroboros.md)
+[架构](#架构默认-opencode-三-agent-工作协议) · [动力学](#记忆动力学) · [验证状态](#验证状态) · [运行](#运行) · [设计文档](docs/ouroboros.md)
 
 </div>
 
@@ -38,9 +38,10 @@ cd <本仓库> && opencode        # .opencode/plugin/memory-bridge.ts 自动加�
 （或 `cd .opencode && npm i @opencode-ai/plugin`）让依赖装好。</sub>
 
 ```text
-交互回合 ──observe──→ L0 日志 + candgen 蒸馏 → 记忆池
+交互回合 ──observe──→ L0 持久日志 → hauler_due → OpenCode Hauler
+候选批次 ──selector_due──→ OpenCode Selector → 五路分流 → 记忆／人审
+用户不满 ──reviewer_due──→ OpenCode Reviewer → 诊断／版本化规则
 问答     ──search───→ top-k 记忆注入（<relevant-memories> 块）
-miss    ──信号──────→ 后台调查员翻日志 → propose 写回
 ```
 
 ## 为什么不用现成的两条路
@@ -53,58 +54,29 @@ miss    ──信号──────→ 后台调查员翻日志 → propose �
 **log 不是记忆，log 是证据。** 记忆是蒸馏产物，进池要过动力学与置信门控；
 日志留在 L0 冷层，只在需要时按计量回展——永不整段进 prompt。
 
-## 架构：推式捕获 + 拉式修复
+## 架构：默认 OpenCode 三 Agent 工作协议
 
 ```mermaid
 flowchart LR
-    subgraph PUSH["推 · 被动捕获（每轮自动）"]
-        direction TB
-        U["交互回合"] --> L0[("L0 日志库<br/>SQLite · FTS5")]
-        L0 --> CG["candgen<br/>LLM 蒸馏"]
-    end
-
-    CG --> CP[("候选池")]
-    CP -->|"V &gt; θp"| MP[("记忆池<br/>容量封顶")]
-    MP --> INJ["top-k 注入<br/>agent context"]
-
-    subgraph PULL["拉 · 信号驱动修复"]
-        direction TB
-        SIG["recall_miss<br/>extract_due"] --> AW["AgentWorker<br/>预算 · 日限额"]
-        AW --> INV["调查员 agent"]
-    end
-
-    INV -->|"log_* 工具<br/>before=t 因果上界"| L0
-    INV -->|"propose"| CP
-    INJ -. "用户纠正 / agent 翻日志" .-> SIG
-    L0 --> TR["触发扫描<br/>零 LLM"] --> SIG
-
-    classDef store fill:#E8F4FD,stroke:#2B8CBF,color:#0B4F6C
-    classDef llm fill:#FFF3E0,stroke:#E8963C,color:#7A4A00
-    classDef signal fill:#FDECEF,stroke:#D65F7F,color:#8A2444
-    classDef agent fill:#EFE9FB,stroke:#8B6FDB,color:#4A3791
-    classDef io fill:#E9F7EF,stroke:#3E9B6A,color:#1E5E3C
-    class L0,CP,MP store
-    class CG,TR llm
-    class SIG signal
-    class AW,INV agent
-    class U,INJ io
+  U[主会话] --> L0[(L0 原始交互)]
+  L0 -->|hauler_due · 六单元滑窗| H[OpenCode Hauler]
+  H -->|selector_due · 候选与来源| S[OpenCode Selector]
+  S -->|CREATE / EXIST / UPDATE| M[(记忆引擎)]
+  S -->|CONFLICT| R[(待人工审核)]
+  S -->|REJECT| X[不入库]
+  U -->|不满 / 纠正| V[OpenCode Reviewer]
+  V -->|持久规则与效果审查| H
+  V -->|规则与修复候选| S
+  M -->|检索| U
 ```
 
-两条回路共享同一个 L0 与 ingest 通道：
+信号只负责持久交接、租约和幂等；三份 `.opencode/agent/*.md` 定义
+负责语义判断。重叠滑窗按 L0 来源单元去重，冲突须人审。默认模式下主 agent
+不能绕过 Selector 直接调用 `/propose` 或 `/resolve`。
+完整协议、审核入口、恢复及已知边界见 [OpenCode 三 Agent 文档](docs/opencode-trio.md)。
 
-- **推·保覆盖**——每轮先落 L0 再蒸馏，不靠 agent 自觉；candgen 失败不丢
-  单元，转 `extract_due` 交修复回路
-- **拉·补漏**——`recall_miss`（用户纠正 / agent 用了 log_*）与 `extract_due`
-  （决策·数字·新实体触发）驱动后台调查员翻日志、核实、`/propose` 写回——
-  **走同一条 ingest，无任何特权**
-- **闸在服务端**——log_* 只给片段与统计，原文按字符预算回展；
-  按信号计量工具调用（超限拒绝）；`before=t` 因果上界物理上锁死未来
-- **火墙**——调查员是 sidecar 进程内的 function-calling 循环
-  （`agent/inline.py`），只有 6 个只读工具，不经过 opencode、不调 observe，
-  它的工作天然不会被记成记忆；写入只走最终 JSON → 服务端校验
-
-调查任务、重试和幂等写回使用 SQLite；恢复契约见 [持久任务说明](docs/durable-tasks.md)，
-因果与预算边界见 [调查上下文](docs/investigation-context.md)。
+旧的单轮 candgen 和 sidecar 内调查员仅在 `MEMORY_PIPELINE=legacy` 时使用。
+其设计记录见 [衔尾蛇说明](docs/ouroboros.md)，不能把旧记录当作默认模式的验证。
 
 ## 记忆动力学
 
@@ -154,19 +126,21 @@ sidecar 为评测提供的两个能力：
 
 | 环境变量 | 默认 | 作用 |
 |---|---|---|
-| `MEMORY_AGENT` | on | `off` 只跑被动链路 |
-| `MEMORY_AGENT_DAILY_CAP` | 200 | 调查员日调用上限 |
-| `MEMORY_AGENT_MODEL` | glm-5.3-flash | 调查员模型（旧 `provider/model` 写法兼容） |
+| `MEMORY_PIPELINE` | opencode | `legacy` 启用旧单轮 candgen 和进程内调查员 |
+| `MEMORY_AGENT` | on | `off` 暂停后台 agent，任务仍持久等待 |
+| `MEMORY_AGENT_DAILY_CAP` | 200 | 仅 legacy 调查员的日调用上限 |
+| `MEMORY_AGENT_MODEL` | glm-5.3-flash | 仅 legacy 调查员模型 |
+| `MEMORY_OPENCODE_BIN` | opencode | OpenCode CLI 路径（需配置自己的模型 provider） |
 | `MEMORY_BRIDGE_PORT` | 17872 | sidecar 端口 |
-| `ZAI_API_KEY` | — | LLM 凭证（candgen / judge / recognizer / 调查员） |
+| `ZAI_API_KEY` | — | 原引擎向量编码等依赖；三 Agent 使用 OpenCode 自身 provider 配置 |
 | `ZAI_BASE_URL` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI 兼容端点（chat / embeddings），可换代理或本地 mock |
 
-<sub>调查员默认启用：有 API key 就自动消费信号（不依赖 opencode）。
-`GET /signals` 看队列、预算用量与 miss_type 分布；诊断落 `diagnoses.jsonl`。</sub>
+<sub>`MEMORY_PIPELINE=legacy` 下，旧调查员才在有 API key 时自动消费旧信号；
+trio 队列、结果及 Reviewer 规则保存在 `tasks.sqlite`。</sub>
 
 ## 验证状态
 
-本地 pytest、TIDE 和插件测试证明的是 sidecar 与 mock HTTP 的不变量，不是远程模型，也不是接上 OpenCode 的 L3。未做 L3。`GET /health` 的 `validation` 固定为 `unverified`：进程在听，不等于已经验证。
+Python 与 Bun 测试覆盖服务端、插件和 mock HTTP 不变量；手工 smoke 用真实 OpenCode CLI + 本地假模型完成三 Agent 任务交接。尚未验证真实模型语义质量或接入生产 provider，也未做 L3。`GET /health` 的 `validation` 固定为 `unverified`：进程在听，不等于已经验证。
 
 `ok: true` 只表示没有 checkpoint fault，插件可以复用这个进程。它不表示快照干净，也不表示逐单元效果已经补齐。看 `snapshot` 和 `units_pending`。`snapshot=quarantined` 表示坏快照已被隔离成 `state.corrupt`，服务空启动，记忆没有从那份快照恢复。
 
@@ -194,3 +168,8 @@ docs/            ouroboros.md（pull 回路设计）+ benchmark-design.md（TIDE
 tests/           pytest（sim_world.py / sim_embed.py 是引擎单测夹具，不是评测）
 ```
 </details>
+
+
+## OpenCode 三 Agent 协议
+
+默认的 Hauler → Selector / 不满触发 Reviewer 协议、人工冲突审核、部署与恢复边界见 [docs/opencode-trio.md](docs/opencode-trio.md)。

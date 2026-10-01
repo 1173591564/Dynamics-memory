@@ -41,6 +41,24 @@ QUANT_RE = re.compile(
 
 LONG_TURN_CHARS = 2500
 
+# Reviewer routing is broader than the strict correction test used to authorize
+# UPDATE. This only schedules an agent; it does not decide a fact.
+DISSATISFACTION_RE = re.compile(
+    r"(?:我之前|我早就|我明明|之前我).{0,50}(?:说过|讲过|告诉过|提过|强调过)|"
+    r"(?:你又|你怎么|你是不是).{0,35}(?:忘了|记错|漏掉|没记住)|"
+    r"(?:这|你).{0,35}(?:不对|错了|没按我说的|不是我说的)|"
+    r"(?:记忆|记住|漏记|召回|检索).{0,35}(?:不满意|没用|不好|失败|错误|漏了|忘了)|"
+    r"(?:不满意|很失望).{0,35}(?:记忆|记住|漏记|召回|检索)|"
+    r"(?:I (?:already|previously) (?:said|told|explained)|"
+    r"you (?:forgot|missed|misremembered) (?:what|that|my))",
+    re.IGNORECASE)
+
+
+def is_dissatisfaction(user_text: str) -> bool:
+    """A scheduling hint, never evidence that the old memory is incorrect."""
+    return bool(user_text) and (is_correction(user_text) or
+        DISSATISFACTION_RE.search(user_text[:500]) is not None)
+
 
 def is_correction(user_text: str) -> bool:
     return bool(user_text) and CORRECTION_RE.search(user_text[:80]) is not None

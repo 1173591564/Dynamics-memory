@@ -18,6 +18,7 @@ from .investigation_context import SignalClosed
 
 
 SEMANTIC_KINDS = frozenset({"conflict_pending", "feedback_pending", "maintenance_due"})
+WORKFLOW_KINDS = frozenset({"hauler_due", "selector_due", "reviewer_due"})
 
 
 class TaskLeaseLost(SignalClosed):
@@ -69,6 +70,28 @@ CREATE TABLE IF NOT EXISTS operations (
 CREATE TABLE IF NOT EXISTS unit_receipts (
  unit_id INTEGER PRIMARY KEY, response TEXT NOT NULL, created_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS agent_rules (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, source_task INTEGER NOT NULL, target TEXT NOT NULL,
+ instruction TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at REAL NOT NULL,
+ scope TEXT NOT NULL DEFAULT 'project',
+ UNIQUE(source_task,target,instruction)
+);
+CREATE TABLE IF NOT EXISTS agent_rule_uses (
+ task_id INTEGER NOT NULL, rule_id INTEGER NOT NULL, PRIMARY KEY(task_id,rule_id)
+);
+CREATE TABLE IF NOT EXISTS agent_rule_audit (
+ id INTEGER PRIMARY KEY, rule_id INTEGER NOT NULL, action TEXT NOT NULL,
+ actor TEXT NOT NULL, at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS agent_rule_feedback (
+ reviewer_task INTEGER NOT NULL, rule_id INTEGER NOT NULL, assessment TEXT NOT NULL,
+ reason TEXT NOT NULL, at REAL NOT NULL, PRIMARY KEY(reviewer_task,rule_id)
+);
+CREATE TABLE IF NOT EXISTS human_reviews (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, source_task INTEGER NOT NULL, target_id INTEGER NOT NULL,
+ candidate TEXT NOT NULL, reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+ decision TEXT, created_at REAL NOT NULL, UNIQUE(source_task,target_id,candidate)
+);
 CREATE TABLE IF NOT EXISTS capture_receipts (
  request_id TEXT PRIMARY KEY, kind TEXT NOT NULL, fingerprint TEXT NOT NULL,
  response TEXT NOT NULL, created_at REAL NOT NULL
@@ -95,6 +118,9 @@ class TaskStore:
         for name, definition in (("version", "INTEGER NOT NULL DEFAULT 0"), ("dedupe_id", "INTEGER")):
             if name not in columns:
                 self._conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {definition}")
+        rule_columns = {r[1] for r in self._conn.execute("PRAGMA table_info(agent_rules)")}
+        if "scope" not in rule_columns:
+            self._conn.execute("ALTER TABLE agent_rules ADD COLUMN scope TEXT NOT NULL DEFAULT 'project'")
 
     @contextmanager
     def transaction(self):
@@ -381,14 +407,14 @@ class TaskStore:
         with self.transaction() as conn:
             conn.execute("UPDATE tasks SET state=CASE WHEN state='running' THEN 'pending' ELSE 'ready' END, "
                          "token=NULL,lease_until=NULL,last_error='lease expired',next_run_at=?,updated_at=? "
-                         "WHERE kind IN ('conflict_pending','feedback_pending','maintenance_due') "
+                         "WHERE kind IN ('conflict_pending','feedback_pending','maintenance_due','hauler_due','selector_due','reviewer_due') "
                          "AND state IN ('running','applying') AND lease_until<=?", (now, now, now))
 
     def claim_semantic(self, task_id, version, lease_s=120):
         now = self.clock()
         with self.transaction() as conn:
             row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
-            if (not row or row["kind"] not in SEMANTIC_KINDS
+            if (not row or row["kind"] not in SEMANTIC_KINDS | WORKFLOW_KINDS
                     or row["state"] not in ("pending", "ready")
                     or row["version"] != version or row["next_run_at"] > now):
                 return None
@@ -399,20 +425,23 @@ class TaskStore:
                          "updated_at=? WHERE id=?", (state, token, now + lease_s, now, task_id))
             return self._decode(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone())
 
-    def store_semantic_result(self, task_id, token, result):
+    def store_semantic_result(self, task_id, token, result, *, rule_ids=()):
         with self.transaction() as conn:
             row = self._owned(conn, task_id, token, ("running",))
-            if row["kind"] not in SEMANTIC_KINDS:
+            if row["kind"] not in SEMANTIC_KINDS | WORKFLOW_KINDS:
                 raise TaskLeaseLost("非语义任务")
             conn.execute("UPDATE tasks SET result=?,state='ready',token=NULL,lease_until=NULL,"
                          "next_run_at=0,updated_at=? WHERE id=?",
                          (encode(result), self.clock(), task_id))
+            for rule_id in rule_ids:
+                conn.execute("INSERT OR IGNORE INTO agent_rule_uses(task_id,rule_id) VALUES(?,?)",
+                             (task_id, rule_id))
 
     def complete_semantic(self, task_id, token, mutate, dump_state, expected_revision):
         """效果/checkpoint/回执/完成状态同事务，不存在效果提交后未 ack 窗口。"""
         with self.transaction() as conn:
             row = self._owned(conn, task_id, token, ("applying",))
-            if row["kind"] not in SEMANTIC_KINDS or row["result"] is None:
+            if row["kind"] not in SEMANTIC_KINDS | WORKFLOW_KINDS or row["result"] is None:
                 raise TaskLeaseLost("非语义任务或产物缺失")
             result = json.loads(row["result"])
             current = conn.execute("SELECT revision FROM checkpoint WHERE id=1").fetchone()
@@ -433,17 +462,22 @@ class TaskStore:
                          "VALUES (?,'semantic',?,?,?)", (task_id, row["result"], encode(out), self.clock()))
         return out, revision
 
-    def retry_semantic(self, task_id, token, error):
+    def retry_semantic(self, task_id, token, error, *, retry_model=False, max_attempts=None):
         with self.transaction() as conn:
             row = self._owned(conn, task_id, token)
-            if row["kind"] not in SEMANTIC_KINDS:
+            if row["kind"] not in SEMANTIC_KINDS | WORKFLOW_KINDS:
                 raise TaskLeaseLost("非语义任务")
-            state = "ready" if row["state"] == "applying" else "pending"
-            attempts = row["apply_attempts"] if state == "ready" else row["attempts"]
+            state = "pending" if retry_model else ("ready" if row["state"] == "applying" else "pending")
+            attempts = (row["apply_attempts"] if row["state"] == "applying"
+                        else row["attempts"])
+            if max_attempts is not None and attempts >= max_attempts:
+                state = "dead"  # explicit failure, not a silently accepted empty result
             delay = min(300, 2 ** min(8, attempts))
             conn.execute("UPDATE tasks SET state=?,token=NULL,lease_until=NULL,last_error=?,"
+                         "result=CASE WHEN ? THEN NULL ELSE result END,"
                          "next_run_at=?,updated_at=? WHERE id=?",
-                         (state, str(error)[:1000], self.clock() + delay, self.clock(), task_id))
+                         (state, str(error)[:1000], int(retry_model and state != "dead"),
+                          self.clock() + delay, self.clock(), task_id))
 
     def apply_operation(self, task_id, token, request, mutate, dump_state, expected_revision):
         request_json = encode(request)
@@ -464,6 +498,87 @@ class TaskStore:
                          (task_id, key, request_json, encode(response), self.clock()))
         return response, revision, False
 
+    def rule_snapshot(self, target, context):
+        """Versioned and scoped prompt guidance, with a literal scope guard."""
+        text = context.casefold()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id,target,scope,instruction FROM agent_rules "
+                "WHERE target=? AND enabled=1 ORDER BY id", (target,)).fetchall()
+        return [dict(row) for row in rows if row["scope"] == "project" or
+                (row["scope"].startswith("entity:") and
+                 row["scope"][7:].casefold() in text)]
+
+    def rule_report(self):
+        with self._lock:
+            return [dict(r) for r in self._conn.execute(
+                "SELECT r.id,r.target,r.scope,r.instruction,r.enabled,r.source_task,"
+                "COUNT(u.task_id) AS uses FROM agent_rules r "
+                "LEFT JOIN agent_rule_uses u ON u.rule_id=r.id GROUP BY r.id ORDER BY r.id")]
+
+    def disable_rule(self, rule_id):
+        """Human/offline rollback; history and usage remain inspectable."""
+        with self.transaction() as conn:
+            cur = conn.execute("UPDATE agent_rules SET enabled=0 WHERE id=? AND enabled=1",
+                               (rule_id,))
+            if cur.rowcount:
+                conn.execute("INSERT INTO agent_rule_audit(rule_id,action,actor,at) "
+                             "VALUES(?,'disable','local_human',?)", (rule_id, self.clock()))
+            return bool(cur.rowcount)
+
+    def rules_for(self, target):
+        with self._lock:
+            return [r[0] for r in self._conn.execute(
+                "SELECT instruction FROM agent_rules WHERE target=? AND enabled=1 ORDER BY id",
+                (target,)).fetchall()]
+
+    def workflow_trace(self, unit_ids, *, before_task_id):
+        """Bounded persisted handoff evidence that existed before review routing.
+
+        A pending task is not presented as an accepted candidate or decision.
+        """
+        ids = set(unit_ids)
+        trace = []
+        with self._lock:
+            trigger = self._conn.execute("SELECT created_at FROM tasks WHERE id=?",
+                                         (before_task_id,)).fetchone()
+            if trigger is None:
+                raise ValueError("review trigger task missing")
+            rows = self._conn.execute(
+                "SELECT t.id,t.kind,t.payload,t.result,t.state,t.updated_at,o.response "
+                "FROM tasks t LEFT JOIN operations o ON o.task_id=t.id "
+                "AND o.op_key='semantic' WHERE t.id<? "
+                "AND t.kind IN ('hauler_due','selector_due') ORDER BY t.id",
+                (before_task_id,)).fetchall()
+            for row in rows:
+                payload = json.loads(row["payload"])
+                if payload.get("unit_id") not in ids:
+                    continue
+                entry = {"task_id": row["id"], "kind": row["kind"],
+                         "unit_id": payload["unit_id"],
+                         "state": ("done" if row["state"] == "done" and
+                                   row["updated_at"] <= trigger[0] else
+                                   "pending_at_complaint")}
+                if row["kind"] == "selector_due":
+                    entry["parent_task"] = payload.get("parent_task")
+                    entry["candidates"] = payload.get("candidates", [])
+                if entry["state"] == "done":
+                    entry["rule_ids"] = [r[0] for r in self._conn.execute(
+                        "SELECT rule_id FROM agent_rule_uses WHERE task_id=? ORDER BY rule_id",
+                        (row["id"],))]
+                    entry["agent_output"] = json.loads(row["result"])
+                    entry["committed_effect"] = (json.loads(row["response"])
+                                                if row["response"] else None)
+                trace.append(entry)
+        if len(trace) > 18 or len(encode(trace)) > 24000:
+            raise ValueError("review trace exceeds bounded context; manual investigation required")
+        return trace
+
+    def pending_reviews(self):
+        with self._lock:
+            return [dict(r) for r in self._conn.execute(
+                "SELECT * FROM human_reviews WHERE status='pending' ORDER BY id")]
+
     def queued_counts(self):
         with self._lock:
             return dict(self._conn.execute(
@@ -476,7 +591,7 @@ class TaskStore:
                 "('conflict_pending','feedback_pending','maintenance_due') GROUP BY state"))
             errors = [dict(r) for r in self._conn.execute(
                 "SELECT id,kind,attempts,apply_attempts,last_error,next_run_at FROM tasks "
-                "WHERE kind IN ('conflict_pending','feedback_pending','maintenance_due') "
+                "WHERE kind IN ('conflict_pending','feedback_pending','maintenance_due','hauler_due','selector_due','reviewer_due') "
                 "AND last_error<>'' ORDER BY updated_at DESC LIMIT 5")]
             retrying = self._conn.execute(
                 "SELECT COUNT(*) FROM tasks WHERE kind IN "

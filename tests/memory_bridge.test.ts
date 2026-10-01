@@ -25,6 +25,7 @@ beforeEach(() => {
   process.env.MEMORY_BRIDGE_BACKOFF_MS = "0"
   process.env.MEMORY_BRIDGE_ATTEMPTS = "3"
   delete process.env.MEMORY_BRIDGE_TIMEOUT_MS
+  delete process.env.MEMORY_PIPELINE
   replies = new Map([
     ["/health", { status: 200, data: { ok: true } }],
     ["/search", { status: 200, data: { context: "", retrieval_id: 0 } }],
@@ -129,6 +130,7 @@ test("401 stops subsequent data transmission", async () => {
 })
 
 test("failed miss reports do not mark the query as successfully reported", async () => {
+  process.env.MEMORY_PIPELINE = "legacy"
   const plugin = await hooks()
   replies.set("/miss", { status: 503, data: { error: "queue full" } })
   await plugin.tool.log_search.execute({ query: "q" })
@@ -318,3 +320,25 @@ for (const role of ["assistant", "user", "unknown"]) {
     }
   })
 }
+
+test("internal OpenCode agent sessions do not initialize the memory bridge", async () => {
+  process.env.DYNAMICS_MEMORY_INTERNAL_AGENT = "1"
+  try {
+    const plugin = await hooks()
+    expect(plugin).toEqual({})
+    expect(requests).toEqual([])
+    expect(spawn).not.toHaveBeenCalled()
+  } finally {
+    delete process.env.DYNAMICS_MEMORY_INTERNAL_AGENT
+  }
+})
+
+
+test("trio main-session tools cannot bypass Selector or human review", async () => {
+  const plugin = await hooks()
+  expect(plugin.tool.memory_propose).toBeUndefined()
+  expect(plugin.tool.memory_resolve).toBeUndefined()
+  expect(plugin.tool.memory_diagnose).toBeUndefined()
+  await plugin.tool.log_search.execute({ query: "port" })
+  expect(requests.some((r) => r.path === "/miss")).toBe(false)
+})
