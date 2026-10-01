@@ -50,7 +50,7 @@ def test_capture_receipt_rolls_back_with_the_unit(tmp_path):
 
 
 def test_http_capacity_503_is_accepted_and_retry_does_not_append(tmp_path):
-    svc = _svc(tmp_path, generator=Generator(("容量后的事实",)))
+    svc = _svc(tmp_path, generator=Generator(("好的",)))
     try:
         svc.tasks.capacity = 1
         svc.report_miss("occupy")
@@ -106,7 +106,7 @@ import os, sys
 sys.path.insert(0, "tests")
 from test_observe_recovery import Generator
 from test_ouroboros import _svc
-svc = _svc(sys.argv[1], generator=Generator(("事实不可重复",)))
+svc = _svc(sys.argv[1], generator=Generator(("好的",)))
 svc.generator.generate = lambda *args, **kwargs: os._exit(17)
 svc.observe("以后统一用 bun", "好的", request_id="observe-exit-01")
 '''
@@ -114,7 +114,7 @@ svc.observe("以后统一用 bun", "好的", request_id="observe-exit-01")
                          cwd=Path(__file__).resolve().parents[1],
                          capture_output=True, timeout=20, check=False)
     assert out.returncode == 17, out.stderr.decode()
-    svc = _svc(tmp_path, generator=Generator(("事实不可重复",)))
+    svc = _svc(tmp_path, generator=Generator(("好的",)))
     try:
         replay = svc.observe("以后统一用 bun", "好的", request_id="observe-exit-01")
         assert replay["unit_id"] == 0 and replay["replayed"] is True and replay["accepted"] is True

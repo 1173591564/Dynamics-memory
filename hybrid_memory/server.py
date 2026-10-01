@@ -119,7 +119,8 @@ _COUNTERS = ("n_promote", "n_demote", "n_evict", "n_archive", "n_revive",
              "n_merge", "n_collision", "n_tension", "n_resolve", "n_agg",
              "n_consolidate", "n_shadow_dropped", "n_chain_broken")
 
-_SERVICE_COUNTERS = ("n_candgen_fail", "n_missed", "n_proposals", "n_rejected")
+_SERVICE_COUNTERS = ("n_candgen_fail", "n_missed", "n_proposals", "n_rejected",
+                     "n_ungrounded")
 
 _STATE_KEYS = {"mems", "tensions", "next_id", "consolidation_pending",
                "consolidation_deferred", "counters", "t", "unit_id", "scene"}
@@ -208,6 +209,7 @@ class MemoryService:
         self.n_missed = 0
         self.n_proposals = 0
         self.n_rejected = 0
+        self.n_ungrounded = 0
         try:
             revision, checkpoint = self.tasks.checkpoint()
         except Exception as exc:
@@ -554,10 +556,17 @@ class MemoryService:
                         self.engine.report_unit(uid, t, scene=self._scene,
                                                 reasons=tuple(reasons),
                                                 entities=tuple(ctx["entities"][:12]))
+                    blob = f"{unit['user_text']}\n{unit['assistant_text']}"
+                    grounded = []
+                    for cand in (result["candidates"] if result else []):
+                        if _content_grounded(cand.get("text", ""), blob):
+                            grounded.append(cand)
+                        else:
+                            self.n_ungrounded += 1
                     evs = [Event(self.semantics.fingerprint(normalize(c["text"])),
                                  normalize(c["text"]), c["text"], (uid,),
                                  salience=c["salience"], scene=self._scene)
-                           for c in (result["candidates"] if result else [])]
+                           for c in grounded]
                     if evs:
                         self.engine.observe(evs, t)
                     self.engine.step(t)
@@ -1161,6 +1170,16 @@ class MemoryService:
                     "elapsed_s": round(time.time() - bud["opened"], 1)}
 
     # ================================================== 操作面
+    def _cited_text(self, unit_ids) -> str:
+        parts = []
+        for uid in unit_ids:
+            row = self.log.get(uid)
+            if row is None:
+                continue
+            parts.append(row["user_text"])
+            parts.append(row["assistant_text"])
+        return "\n".join(parts)
+
     def _validate_proposal(self, p: dict, before: int | None) -> tuple[Event, list[int]]:
         text = p.get("text")
         if not isinstance(text, str) or not text.strip():
@@ -1178,6 +1197,8 @@ class MemoryService:
         bad = sorted(set(src) - set(known))
         if bad:
             raise ProposalRejected(f"unknown_or_future_source:{bad}")
+        if not _content_grounded(text, self._cited_text(src)):
+            raise ProposalRejected("ungrounded_content")
         ek = p.get("entity_key")
         sup = p.get("supersedes")
         if sup is None:
@@ -1451,6 +1472,34 @@ def _capture_fingerprint(fields: dict) -> str:
     raw = json.dumps(fields, ensure_ascii=False, sort_keys=True,
                      separators=(",", ":"), allow_nan=False)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _content_grounded(proposal, source: str) -> bool:
+    """正文至少有一个可核对片段出现在所引原文中。
+
+    可核对片段是连续两个汉字，或长度 ≥ 4 的 ASCII/数字串。长度 ≥ 8 的标识
+    （脱敏占位 REDACTED 除外）必须全部出现，不能靠一个真片段夹带假标识。
+    没有任何可核对片段时拒绝：无法区分空话和编造。
+    """
+    if not isinstance(proposal, str) or not isinstance(source, str):
+        return False
+    prop = "".join(proposal.split())
+    src = "".join(source.split())
+    src_l = src.lower()
+    matched = False
+    for i in range(len(prop) - 1):
+        a, b = prop[i], prop[i + 1]
+        if "\u4e00" <= a <= "\u9fff" and "\u4e00" <= b <= "\u9fff" and prop[i:i + 2] in src:
+            matched = True
+            break
+    # 标识按原文切分。先去空白会把 “handler.ts cannot” 粘成一个假长标识。
+    tokens = re.findall(r"[A-Za-z0-9_]{4,}", proposal)
+    long = [tok for tok in tokens if len(tok) >= 8 and tok.lower() != "redacted"]
+    if any(tok.lower() not in src_l for tok in long):
+        return False
+    if any(tok.lower() in src_l for tok in tokens if tok.lower() != "redacted"):
+        matched = True
+    return matched
 
 
 def _valid_shadow_pending(pending) -> bool:
