@@ -1,6 +1,9 @@
 /** Run: bun test tests/memory_bridge.test.ts
  * Real plugin hooks/HTTP adapter; only tool registration and external I/O are mocked.
  */
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test"
 
 const schema: any = new Proxy(() => schema, { get: () => schema })
@@ -11,11 +14,17 @@ const { default: bridge } = await import("../.opencode/plugin/memory-bridge.ts")
 
 type Reply = { status: number; data?: unknown; raw?: string }
 let replies: Map<string, Reply>
-let requests: { path: string; body: any }[]
+let requests: { path: string; body: any; requestId?: string }[]
 let spawn: ReturnType<typeof spyOn>
-const hooks = () => bridge({ directory: "/unused-test-project" } as any) as Promise<any>
+let dir: string
+const hooks = () => bridge({ directory: dir } as any) as Promise<any>
+const ID = /^[A-Za-z0-9._:-]{8,80}$/
 
 beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "bridge-"))
+  process.env.MEMORY_BRIDGE_BACKOFF_MS = "0"
+  process.env.MEMORY_BRIDGE_ATTEMPTS = "3"
+  delete process.env.MEMORY_BRIDGE_TIMEOUT_MS
   replies = new Map([
     ["/health", { status: 200, data: { ok: true } }],
     ["/search", { status: 200, data: { context: "", retrieval_id: 0 } }],
@@ -33,7 +42,12 @@ beforeEach(() => {
   }) as any)
   spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const path = new URL(String(input)).pathname
-    requests.push({ path, body: init?.body ? JSON.parse(String(init.body)) : undefined })
+    const headers = new Headers(init?.headers)
+    requests.push({
+      path,
+      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+      requestId: headers.get("X-Request-Id") ?? undefined,
+    })
     const reply = replies.get(path)
     if (!reply) throw new Error(`unexpected request: ${path}`)
     return new Response(reply.raw ?? JSON.stringify(reply.data), { status: reply.status })
@@ -143,13 +157,132 @@ for (const status of [200, 503]) {
     } } })
     await plugin.event({ event: { type: "session.idle", properties: { sessionID: "s" } } })
     await plugin.dispose()
-    expect(requests.filter((r) => r.path === "/observe").map((r) => r.body)).toEqual([
-      { user_text: "q", assistant_text: "answer" },
-    ])
-    expect(requests.filter((r) => r.path === "/feedback")).toHaveLength(status === 200 ? 1 : 0)
+    const observed = requests.filter((r) => r.path === "/observe")
+    if (status === 200) {
+      expect(observed).toHaveLength(1)
+      expect(observed[0].body.user_text).toBe("q")
+      expect(observed[0].body.assistant_text).toBe("answer")
+      expect(observed[0].body.request_id).toMatch(ID)
+      expect(observed[0].requestId).toBe(observed[0].body.request_id)
+      expect(requests.filter((r) => r.path === "/feedback")).toHaveLength(1)
+      expect(requests.filter((r) => r.path === "/feedback")[0].body.request_id).toMatch(ID)
+    } else {
+      expect(observed.length).toBeGreaterThan(1)
+      expect(new Set(observed.map((r) => r.body.request_id)).size).toBe(1)
+      expect(observed.every((r) => r.body.user_text === "q" && r.body.assistant_text === "answer")).toBe(true)
+      expect(requests.filter((r) => r.path === "/feedback")).toHaveLength(0)
+    }
     expect(requests.at(-1)?.path).toBe("/save")
   })
 }
+
+test("accepted 503 is delivery, not a second observe, and still sends feedback", async () => {
+  const plugin = await hooks()
+  replies.set("/observe", { status: 503, data: { error: "容量", accepted: true, unit_id: 4, pending: true } })
+  replies.set("/search", { status: 200, data: { context: "fact", retrieval_id: 9 } })
+  await plugin["chat.message"]({ sessionID: "s" }, { parts: [{ type: "text", text: "q" }] })
+  await plugin["experimental.chat.system.transform"]({ sessionID: "s" }, { system: [] })
+  await plugin.event({ event: { type: "message.updated", properties: {
+    info: { id: "m", role: "assistant", sessionID: "s" },
+  } } })
+  await plugin.event({ event: { type: "message.part.updated", properties: {
+    part: { id: "p", type: "text", text: "answer", sessionID: "s", messageID: "m" },
+  } } })
+  await plugin.event({ event: { type: "session.idle", properties: { sessionID: "s" } } })
+  await plugin.dispose()
+  const observed = requests.filter((r) => r.path === "/observe")
+  expect(observed).toHaveLength(1)
+  expect(observed[0].body.request_id).toMatch(ID)
+  const feedback = requests.filter((r) => r.path === "/feedback")
+  expect(feedback).toHaveLength(1)
+  expect(feedback[0].body).toMatchObject({ retrieval_id: 9, question: "q", answer: "answer" })
+  expect(feedback[0].body.request_id).toMatch(ID)
+  expect(feedback[0].requestId).toBe(feedback[0].body.request_id)
+})
+
+test("timeout retries the same observe id and does not mint another", async () => {
+  process.env.MEMORY_BRIDGE_TIMEOUT_MS = "30"
+  process.env.MEMORY_BRIDGE_ATTEMPTS = "2"
+  let observes = 0
+  spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const path = new URL(String(input)).pathname
+    const headers = new Headers(init?.headers)
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined
+    requests.push({ path, body, requestId: headers.get("X-Request-Id") ?? undefined })
+    if (path === "/health") return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    if (path === "/observe" && observes++ === 0) {
+      await new Promise((_resolve, reject) => {
+        const signal = init?.signal as AbortSignal | undefined
+        if (signal?.aborted) reject(signal.reason ?? new Error("aborted"))
+        else signal?.addEventListener("abort", () => reject(signal.reason ?? new Error("aborted")), { once: true })
+      })
+    }
+    if (path === "/save") return new Response(JSON.stringify({ saved: true }), { status: 200 })
+    return new Response(JSON.stringify({ accepted: true, unit_id: 1, pending: true }), { status: 200 })
+  })
+  const plugin = await hooks()
+  await plugin["chat.message"]({ sessionID: "s" }, { parts: [{ type: "text", text: "q" }] })
+  await plugin.event({ event: { type: "message.updated", properties: {
+    info: { id: "m", role: "assistant", sessionID: "s" },
+  } } })
+  await plugin.event({ event: { type: "message.part.updated", properties: {
+    part: { id: "p", type: "text", text: "answer", sessionID: "s", messageID: "m" },
+  } } })
+  await plugin.event({ event: { type: "session.idle", properties: { sessionID: "s" } } })
+  await plugin.dispose()
+  const observed = requests.filter((r) => r.path === "/observe")
+  expect(observed).toHaveLength(2)
+  expect(observed[0].body.request_id).toBe(observed[1].body.request_id)
+  expect(observed[0].requestId).toBe(observed[0].body.request_id)
+})
+
+test("fingerprint 409 does not mint another observe id or send feedback", async () => {
+  process.env.MEMORY_BRIDGE_ATTEMPTS = "2"
+  replies.set("/observe", { status: 409, data: { error: "request_id already bound" } })
+  const plugin = await hooks()
+  await plugin["chat.message"]({ sessionID: "s" }, { parts: [{ type: "text", text: "q" }] })
+  await plugin.event({ event: { type: "message.updated", properties: {
+    info: { id: "m", role: "assistant", sessionID: "s" },
+  } } })
+  await plugin.event({ event: { type: "message.part.updated", properties: {
+    part: { id: "p", type: "text", text: "answer", sessionID: "s", messageID: "m" },
+  } } })
+  await plugin.event({ event: { type: "session.idle", properties: { sessionID: "s" } } })
+  await plugin.dispose()
+  const observed = requests.filter((r) => r.path === "/observe")
+  expect(observed).toHaveLength(1)
+  expect(observed[0].body.request_id).toMatch(ID)
+  expect(requests.filter((r) => r.path === "/feedback")).toHaveLength(0)
+  const second = await hooks()
+  await second.dispose()
+  expect(requests.filter((r) => r.path === "/observe")).toHaveLength(1)
+})
+
+test("a new plugin instance replays an unacked outbox id instead of creating another", async () => {
+  process.env.MEMORY_BRIDGE_ATTEMPTS = "1"
+  replies.set("/observe", { status: 0, data: { error: "down" } })
+  const first = await hooks()
+  await first["chat.message"]({ sessionID: "s" }, { parts: [{ type: "text", text: "q" }] })
+  await first.event({ event: { type: "message.updated", properties: {
+    info: { id: "m", role: "assistant", sessionID: "s" },
+  } } })
+  await first.event({ event: { type: "message.part.updated", properties: {
+    part: { id: "p", type: "text", text: "answer", sessionID: "s", messageID: "m" },
+  } } })
+  await first.event({ event: { type: "session.idle", properties: { sessionID: "s" } } })
+  await first.dispose()
+  const firstIds = requests.filter((r) => r.path === "/observe").map((r) => r.body.request_id)
+  expect(new Set(firstIds).size).toBe(1)
+  const firstId = firstIds[0]
+  const before = requests.length
+  replies.set("/observe", { status: 200, data: { accepted: true, unit_id: 3, pending: true } })
+  const second = await hooks()
+  await second.dispose()
+  const replayed = requests.slice(before).filter((r) => r.path === "/observe")
+  expect(replayed.length).toBeGreaterThan(0)
+  expect(replayed.every((r) => r.body.request_id === firstId)).toBe(true)
+  expect(replayed[0].body).toMatchObject({ user_text: "q", assistant_text: "answer" })
+})
 
 for (const role of ["assistant", "user", "unknown"]) {
   test(`capture keeps latest parts but only confirmed assistant text (${role})`, async () => {
@@ -174,8 +307,14 @@ for (const role of ["assistant", "user", "unknown"]) {
     await plugin["chat.message"]({ sessionID: "s" }, { parts: [{ type: "text", text: "next" }] })
     await plugin.event({ event: { type: "session.idle", properties: { sessionID: "s" } } })
     await plugin.dispose()
-    expect(requests.filter((r) => r.path === "/observe").map((r) => r.body)).toEqual(
-      role === "assistant" ? [{ user_text: "q", assistant_text: "first\n\nsecond" }] : [],
-    )
+    const observed = requests.filter((r) => r.path === "/observe")
+    if (role === "assistant") {
+      expect(observed).toHaveLength(1)
+      expect(observed[0].body.user_text).toBe("q")
+      expect(observed[0].body.assistant_text).toBe("first\n\nsecond")
+      expect(observed[0].body.request_id).toMatch(ID)
+    } else {
+      expect(observed).toHaveLength(0)
+    }
   })
 }

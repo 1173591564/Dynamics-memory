@@ -12,10 +12,13 @@ token 持久化在 state_dir/.memory-token，插件侧同路径读取或经环�
   GET  /signals             → 调查/语义任务及 L0 单元积压与 worker 遥测
 
   写记忆（主回路）
-  POST /observe             → {user_text, assistant_text}：先落 L0 并建索引，
+  POST /observe             → {user_text, assistant_text, request_id?}：先落 L0 并建索引，
                               触发扫描 → extract_due / recall_miss；再 candgen
-                              蒸馏（失败不丢单元）；蒸馏产物进池
-  POST /feedback            → {retrieval_id, question, answer} 延迟记账
+                              蒸馏（失败不丢单元）；蒸馏产物进池。
+                              可选 request_id 与 L0 同事务绑定；已接受但效果未完成时
+                              仍返回 accepted/unit_id（容量不足为 503），不能无 id 重投。
+  POST /feedback            → {retrieval_id, question, answer, request_id?} 延迟记账。
+                              request_id 与效果同事务；响应丢失后重投返回原回执。
   POST /resolve             → {left, right, verdict, entity_key?} 裁决回报
   POST /miss                → {query, hint?, source?} 上报一次记忆缺失
                               （主 agent 用了 log_* 工具 = 记忆没接住）
@@ -48,6 +51,7 @@ import argparse
 from contextlib import contextmanager
 import copy
 from dataclasses import asdict, replace
+import hashlib
 import io
 import json
 import math
@@ -81,7 +85,7 @@ from .semantics.llm import LLMSemantics
 from .core import maintenance
 from .core.types import FeedbackSemantics, ConsolidationSemantics, is_visible
 from .taskstore import SEMANTIC_KINDS, TaskLeaseLost
-from .taskstore import TaskStore, TaskQueueFull, CheckpointConflict, encode
+from .taskstore import TaskStore, TaskQueueFull, CheckpointConflict, CaptureConflict, encode
 
 _RETRIEVAL_KEEP = 512   # retrieval 注册表上限（feedback 用，防无界增长）
 # [^>]* 单趟即可：匹配内部不含 '>'，嵌套 payload 被整体吃掉，
@@ -275,8 +279,12 @@ class MemoryService:
                 "texts": list(texts),
                 "question": payload["question"], "answer": payload["answer"]}
 
-    def _commit_sidecar_effect(self, mutate):
-        """sidecar 检索/反馈的记忆变更、语义信号及 checkpoint 同事务。"""
+    def _commit_sidecar_effect(self, mutate, *, capture=None):
+        """sidecar 检索/反馈的记忆变更、语义信号及 checkpoint 同事务。
+
+        capture 给出时，request-id 回执与效果同一事务。已有回执不执行 mutate，
+        返回值带 replayed，调用方不得再跑模型。
+        """
         with self._rollback_effect():
             old_registry = dict(self._retrievals)
             old_next = self._next_retrieval
@@ -300,9 +308,16 @@ class MemoryService:
                     finally:
                         q.on_emit = old_emit
 
-                result, revision = self.tasks.apply_effect(
-                    run, self._dump_state, self._checkpoint_revision)
+                if capture is None:
+                    result, revision = self.tasks.apply_effect(
+                        run, self._dump_state, self._checkpoint_revision)
+                    replayed = False
+                else:
+                    result, revision, replayed = self.tasks.apply_captured_effect(
+                        run, self._dump_state, self._checkpoint_revision, capture)
                 self._checkpoint_revision = revision
+                if replayed and isinstance(result, dict):
+                    result = dict(result, replayed=True, accepted=True)
                 return result
             except BaseException:
                 self._retrievals = old_registry
@@ -417,7 +432,11 @@ class MemoryService:
         return tok
 
     # ================================================== 主回路
-    def observe(self, user_text: str, assistant_text: str) -> dict:
+    def observe(self, user_text: str, assistant_text: str,
+                request_id: str | None = None) -> dict:
+        request_id = _validate_request_id(request_id)
+        fingerprint = _capture_fingerprint(
+            {"user_text": user_text, "assistant_text": assistant_text})
         with self._lock:
             self._ensure_healthy()
             prev = self._last_turn
@@ -428,21 +447,37 @@ class MemoryService:
                            "retrieved": [{"id": m.id, "t": m.birth, "text": m.text}
                                          for m in (ret.selected if ret else [])]}
             scene = self._scene
-            idx = self.log.append_unit(self._t, min_unit_id=self._unit_id,
-                                       user_text=user_text, assistant_text=assistant_text,
-                                       scene=scene, work_context=context)
+            idx = self.log.append_unit(
+                self._t, min_unit_id=self._unit_id, user_text=user_text,
+                assistant_text=assistant_text, scene=scene, work_context=context,
+                capture_id=request_id, capture_fingerprint=fingerprint)
             uid, t = idx["unit_id"], idx["t"]
-            self._unit_id, self._t = uid + 1, t
-            self._last_turn = {"user": user_text, "retrieval_id": None}
+            replayed = bool(idx.get("replayed"))
+            # 重放不得推进时钟或覆盖更新一轮的 last_turn。
+            if not replayed:
+                self._unit_id, self._t = uid + 1, t
+                self._last_turn = {"user": user_text, "retrieval_id": None}
         # 新单元已与 L0 待办同事务接受；即使其他处理器忙，也不会消失。
         self._unit_wake.set()
-        completed = self.process_pending_units()
+        try:
+            completed = self.process_pending_units()
+        except (TaskQueueFull, CheckpointConflict) as exc:
+            # L0 已提交。保留原异常类型，让直接调用方的既有 except 仍能匹配，
+            # HTTP 层据此附上 accepted/unit_id，避免客户端换成新请求再投一条。
+            exc.accepted = True
+            exc.unit_id = uid
+            exc.request_id = request_id
+            raise
         if uid in completed:
-            return completed[uid]
-        with self._lock:
-            return {"unit_id": uid, "pending": True, "candidates": 0,
-                    "scene": scene, "reasons": [],
-                    "pool": self.engine.pool_sizes(), "t": self._t, "worker": {}}
+            body = completed[uid]
+        elif (receipt := self.tasks.unit_receipt(uid)) is not None:
+            body = receipt
+        else:
+            with self._lock:
+                body = {"unit_id": uid, "pending": True, "candidates": 0,
+                        "scene": scene, "reasons": [],
+                        "pool": self.engine.pool_sizes(), "t": self._t, "worker": {}}
+        return _annotate_observe(body, uid, replayed=replayed, request_id=request_id)
 
     def process_pending_units(self, limit: int = 8) -> dict[int, dict]:
         """按原 L0 顺序处理；同服务仅一个处理器。不得越过退避中的旧单元。"""
@@ -873,31 +908,64 @@ class MemoryService:
                               "origin": m.origin, "src": sorted(m.src)}
                              for m in ret.selected]}
 
-    def feedback(self, retrieval_id: int, question: str, answer: str) -> dict:
+    def feedback(self, retrieval_id: int, question: str, answer: str,
+                 request_id: str | None = None) -> dict:
+        request_id = _validate_request_id(request_id)
+        fingerprint = _capture_fingerprint({
+            "retrieval_id": retrieval_id, "question": question, "answer": answer})
         with self._lock:
             self._ensure_healthy()
             ret = self._retrievals.get(retrieval_id)
+            if request_id:
+                old = self.tasks.read_capture(request_id)
+                if old is not None:
+                    if old["fingerprint"] != fingerprint:
+                        raise CaptureConflict(f"request_id {request_id} 已绑定不同请求")
+                    # 回执已存在就不再跑模型；检索对象后来被挤出也不影响这次回放。
+                    return dict(old["response"], replayed=True, accepted=True,
+                                request_id=request_id)
             if ret is None:
                 return {"error": f"unknown retrieval_id {retrieval_id}"}
             if not ret.selected:
-                return {"n_useful": 0, "pending": False, "worker": {}}
+                response = {"n_useful": 0, "pending": False, "worker": {},
+                            "accepted": True, "retrieval_id": retrieval_id}
+                if request_id:
+                    stored, replayed = self.tasks.remember_capture(
+                        request_id, "feedback", fingerprint, response)
+                    response = dict(stored, accepted=True, request_id=request_id)
+                    if replayed:
+                        response["replayed"] = True
+                return response
             if ret.credited or ret.feedback_sent:
                 # 同一次检索重复反馈（插件重试/多会话共用）：幂等拒绝，
-                # 不让引擎的 RuntimeError 变成 500
+                # 不让引擎的 RuntimeError 变成 500。accepted 表示效果已存在，
+                # 不是邀请客户端换一个 request-id 再投。
                 return {"error": f"retrieval_id {retrieval_id} already "
                                  f"credited", "n_useful": ret.n_useful,
-                        "pending": ret.feedback_sent and not ret.credited}
+                        "pending": ret.feedback_sent and not ret.credited,
+                        "accepted": True}
             def mutate():
                 self.engine.feedback(ret, question, answer, self._t)
                 if self._last_turn is not None:
                     self._last_turn = {"user": question, "retrieval_id": retrieval_id}
-            self._commit_sidecar_effect(mutate)
+                return {"n_useful": 0, "pending": True, "accepted": True,
+                        "retrieval_id": retrieval_id,
+                        **({"request_id": request_id} if request_id else {})}
+            capture = ({"request_id": request_id, "kind": "feedback",
+                        "fingerprint": fingerprint} if request_id else None)
+            result = self._commit_sidecar_effect(mutate, capture=capture)
+            if isinstance(result, dict) and result.get("replayed"):
+                return result
+            base = result if isinstance(result, dict) else {}
         self._unit_wake.set()
-        wstats = self.process_semantic_tasks()  # 模型调用在服务锁外
+        try:
+            wstats = self.process_semantic_tasks()  # 模型调用在服务锁外
+        except Exception as exc:  # noqa: BLE001  效果已提交，不能把交付回执变成未接受
+            wstats = {"error": f"{type(exc).__name__}: {exc}"}
         with self._lock:
-            self._ensure_healthy()
-            return {"n_useful": ret.n_useful, "pending": not ret.credited,
-                    "worker": wstats}
+            return {**base, "n_useful": ret.n_useful, "pending": not ret.credited,
+                    "worker": wstats, "accepted": True,
+                    **({"request_id": request_id} if request_id else {})}
 
     def report_miss(self, query: str, hint: str = "",
                     source: str = "agent_tool") -> dict:
@@ -1348,6 +1416,35 @@ class _HttpError(Exception):
         self.code = code
 
 
+_REQUEST_ID_RE = re.compile(r"[A-Za-z0-9._:-]{8,80}")
+
+
+def _validate_request_id(value):
+    if value is None:
+        return None
+    if not isinstance(value, str) or _REQUEST_ID_RE.fullmatch(value) is None:
+        raise ValueError("request_id must be 8–80 characters of [A-Za-z0-9._:-]")
+    return value
+
+
+def _capture_fingerprint(fields: dict) -> str:
+    raw = json.dumps(fields, ensure_ascii=False, sort_keys=True,
+                     separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _annotate_observe(body: dict, unit_id: int, *, replayed: bool,
+                      request_id: str | None) -> dict:
+    out = {k: v for k, v in body.items() if k != "next_memory_id"}
+    out["accepted"] = True
+    out["unit_id"] = unit_id
+    if replayed:
+        out["replayed"] = True
+    if request_id:
+        out["request_id"] = request_id
+    return out
+
+
 def _opt_int(body: dict, key: str, *, positive: bool = False):
     v = body.get(key)
     if v is None:
@@ -1454,7 +1551,7 @@ class _Handler(BaseHTTPRequestHandler):
                 raise _HttpError(400, "user_text/assistant_text must be strings")
             if not user.strip() and not assistant.strip():
                 raise _HttpError(400, "empty turn")
-            self._reply(200, svc.observe(user, assistant))
+            self._reply(200, svc.observe(user, assistant, request_id=self._capture_id(body)))
         elif path == "/feedback":
             rid = _opt_int(body, "retrieval_id")
             if rid is None:
@@ -1462,10 +1559,12 @@ class _Handler(BaseHTTPRequestHandler):
             question, answer = body.get("question", ""), body.get("answer", "")
             if not isinstance(question, str) or not isinstance(answer, str):
                 raise _HttpError(400, "question/answer must be strings")
-            out = svc.feedback(rid, question, answer)
+            out = svc.feedback(rid, question, answer, request_id=self._capture_id(body))
             if "error" in out:
-                code = 409 if "already" in out["error"] else 404
-                raise _HttpError(code, out["error"])
+                if "already" in out["error"]:
+                    self._reply(409, out)
+                    return
+                raise _HttpError(404, out["error"])
             self._reply(200, out)
         elif path == "/resolve":
             left, right = _opt_int(body, "left"), _opt_int(body, "right")
@@ -1549,13 +1648,41 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._reply(404, {"error": f"no such path: {path}"})
 
+    def _capture_id(self, body: dict) -> str | None:
+        header = self.headers.get("X-Request-Id")
+        if header is not None:
+            header = header.strip()
+        if header == "":
+            raise _HttpError(400, "X-Request-Id must not be empty")
+        if "request_id" in body and not isinstance(body.get("request_id"), str):
+            raise _HttpError(400, "request_id must be a string")
+        body_id = body.get("request_id")
+        if body_id == "":
+            raise _HttpError(400, "request_id must not be empty")
+        if header and body_id and header != body_id:
+            raise _HttpError(400, "X-Request-Id and request_id disagree")
+        chosen = body_id or header or None
+        if chosen is None:
+            return None
+        try:
+            return _validate_request_id(chosen)
+        except ValueError as exc:
+            raise _HttpError(400, str(exc)) from exc
+
     def _run(self, path: str, q: dict, body: dict) -> None:
         try:
             self._dispatch(path, q, body)
         except _HttpError as exc:
             self._reply(exc.code, {"error": str(exc)})
+        except CaptureConflict as exc:
+            self._reply(409, {"error": str(exc)})
         except (TaskQueueFull, CheckpointConflict) as exc:
-            self._reply(503, {"error": str(exc)})
+            payload = {"error": str(exc)}
+            if getattr(exc, "accepted", False):
+                payload.update(accepted=True, pending=True, unit_id=exc.unit_id)
+                if getattr(exc, "request_id", None):
+                    payload["request_id"] = exc.request_id
+            self._reply(503, payload)
         except PermissionError as exc:          # 预算用尽
             self._reply(429, {"error": str(exc)})
         except (SignalClosed, CausalViolation) as exc:             # 信号号无效/已关闭
