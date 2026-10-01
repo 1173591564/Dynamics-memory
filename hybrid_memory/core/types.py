@@ -132,6 +132,7 @@ class Tension:
 @dataclass
 class Retrieval:
     selected: list[Memory] = field(default_factory=list)
+    presented_texts: tuple[str, ...] = ()  # sidecar 实际送出的原文快照，供延迟反馈
     suppressed: list[tuple[int, int]] = field(default_factory=list)  # (被压, 压制者)
     contested: list[tuple[Memory, Memory]] = field(default_factory=list)
     # 入选记忆携带未决 tension 时，(入选者, 对手版本) 一并端出，不许单独自信出场

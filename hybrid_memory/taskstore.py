@@ -1,4 +1,4 @@
-"""SQLite 调查任务日志。任务/产物是 JSON，效果 checkpoint 与回执同事务提交。
+"""SQLite 调查与语义任务日志。任务/产物是 JSON，效果 checkpoint 与回执同事务提交。
 
 不承诺模型只执行一次；租约超时可重试，过期 token 无权提交。多个进程不能
 共享一个内存引擎，checkpoint revision CAS 至少阻止旧实例覆盖新状态。
@@ -15,6 +15,9 @@ import threading
 import time
 
 from .investigation_context import SignalClosed
+
+
+SEMANTIC_KINDS = frozenset({"conflict_pending", "feedback_pending", "maintenance_due"})
 
 
 class TaskLeaseLost(SignalClosed):
@@ -140,7 +143,7 @@ class TaskStore:
         count = conn.execute("SELECT COUNT(*) FROM tasks WHERE state IN "
                              "('pending','running','ready','applying')").fetchone()[0]
         if count >= self.capacity:
-            raise TaskQueueFull(f"调查任务队列容量 {self.capacity} 已满；未接受新任务")
+            raise TaskQueueFull(f"任务队列容量 {self.capacity} 已满；未接受新任务")
         completed = conn.execute("SELECT id FROM tasks WHERE kind=? AND task_key=? "
                                  "AND state='done' ORDER BY updated_at DESC,id DESC LIMIT 1",
                                  (kind, key)).fetchone() if key else None
@@ -198,9 +201,9 @@ class TaskStore:
                     ("applying", "ready", "apply_attempts", max_apply_attempts)):
                 conn.execute(f"UPDATE tasks SET state=CASE WHEN {field}>=? THEN 'dead' ELSE ? END, "
                              "token=NULL,lease_until=NULL,last_error='lease expired',updated_at=? "
-                             "WHERE state=? AND lease_until<=?", (maximum, pending, now, active, now))
+                             "WHERE kind IN ('recall_miss','extract_due') AND state=? AND lease_until<=?", (maximum, pending, now, active, now))
             conn.execute("UPDATE tasks SET state='dead',last_error='attempt limit exhausted',updated_at=? "
-                         "WHERE (state='pending' AND attempts>=?) OR (state='ready' AND apply_attempts>=?)",
+                         "WHERE kind IN ('recall_miss','extract_due') AND ((state='pending' AND attempts>=?) OR (state='ready' AND apply_attempts>=?))",
                          (now, max_attempts, max_apply_attempts))
 
     def skip_recent(self, task_id, ttl):
@@ -305,6 +308,85 @@ class TaskStore:
                          (unit_id, encode(response), self.clock()))
         return response, revision, False
 
+    def apply_effect(self, mutate, dump_state, expected_revision):
+        """非单元 sidecar 改动、发射的任务和 checkpoint 共用一笔事务。"""
+        with self.transaction() as conn:
+            current = conn.execute("SELECT revision FROM checkpoint WHERE id=1").fetchone()
+            if (current[0] if current else 0) != expected_revision:
+                raise CheckpointConflict("checkpoint 已推进；拒绝旧内存实例")
+            out = mutate(conn)
+            revision = self._write_checkpoint(conn, dump_state(), expected_revision)
+        return out, revision
+
+    def recover_semantic_expired(self):
+        now = self.clock()
+        with self.transaction() as conn:
+            conn.execute("UPDATE tasks SET state=CASE WHEN state='running' THEN 'pending' ELSE 'ready' END, "
+                         "token=NULL,lease_until=NULL,last_error='lease expired',next_run_at=?,updated_at=? "
+                         "WHERE kind IN ('conflict_pending','feedback_pending','maintenance_due') "
+                         "AND state IN ('running','applying') AND lease_until<=?", (now, now, now))
+
+    def claim_semantic(self, task_id, version, lease_s=120):
+        now = self.clock()
+        with self.transaction() as conn:
+            row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if (not row or row["kind"] not in SEMANTIC_KINDS
+                    or row["state"] not in ("pending", "ready")
+                    or row["version"] != version or row["next_run_at"] > now):
+                return None
+            token = secrets.token_hex(16)
+            field = "attempts" if row["state"] == "pending" else "apply_attempts"
+            state = "running" if row["state"] == "pending" else "applying"
+            conn.execute(f"UPDATE tasks SET state=?,{field}={field}+1,token=?,lease_until=?,"
+                         "updated_at=? WHERE id=?", (state, token, now + lease_s, now, task_id))
+            return self._decode(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone())
+
+    def store_semantic_result(self, task_id, token, result):
+        with self.transaction() as conn:
+            row = self._owned(conn, task_id, token, ("running",))
+            if row["kind"] not in SEMANTIC_KINDS:
+                raise TaskLeaseLost("非语义任务")
+            conn.execute("UPDATE tasks SET result=?,state='ready',token=NULL,lease_until=NULL,"
+                         "next_run_at=0,updated_at=? WHERE id=?",
+                         (encode(result), self.clock(), task_id))
+
+    def complete_semantic(self, task_id, token, mutate, dump_state, expected_revision):
+        """效果/checkpoint/回执/完成状态同事务，不存在效果提交后未 ack 窗口。"""
+        with self.transaction() as conn:
+            row = self._owned(conn, task_id, token, ("applying",))
+            if row["kind"] not in SEMANTIC_KINDS or row["result"] is None:
+                raise TaskLeaseLost("非语义任务或产物缺失")
+            result = json.loads(row["result"])
+            current = conn.execute("SELECT revision FROM checkpoint WHERE id=1").fetchone()
+            if (current[0] if current else 0) != expected_revision:
+                raise CheckpointConflict("checkpoint 已推进；拒绝旧内存实例")
+            # 同一事务中先释放旧任务的容量名额，允许迟到结果再发新的待办；
+            # 整笔提交前其他连接看不到 done，失败则状态也回滚为 applying。
+            conn.execute("UPDATE tasks SET state='done',token=NULL,lease_until=NULL,"
+                         "last_error='',updated_at=? WHERE id=?", (self.clock(), task_id))
+            out = mutate(conn, result)
+            if out.get("recog_fail"):
+                conn.execute("INSERT INTO metadata(key,value) VALUES('semantic_recog_fail',1) "
+                             "ON CONFLICT(key) DO UPDATE SET value=value+1")
+            if row["lease_until"] <= self.clock():
+                raise TaskLeaseLost(f"task {task_id} 租约已失效")
+            revision = self._write_checkpoint(conn, dump_state(), expected_revision)
+            conn.execute("INSERT INTO operations(task_id,op_key,request,response,created_at) "
+                         "VALUES (?,'semantic',?,?,?)", (task_id, row["result"], encode(out), self.clock()))
+        return out, revision
+
+    def retry_semantic(self, task_id, token, error):
+        with self.transaction() as conn:
+            row = self._owned(conn, task_id, token)
+            if row["kind"] not in SEMANTIC_KINDS:
+                raise TaskLeaseLost("非语义任务")
+            state = "ready" if row["state"] == "applying" else "pending"
+            attempts = row["apply_attempts"] if state == "ready" else row["attempts"]
+            delay = min(300, 2 ** min(8, attempts))
+            conn.execute("UPDATE tasks SET state=?,token=NULL,lease_until=NULL,last_error=?,"
+                         "next_run_at=?,updated_at=? WHERE id=?",
+                         (state, str(error)[:1000], self.clock() + delay, self.clock(), task_id))
+
     def apply_operation(self, task_id, token, request, mutate, dump_state, expected_revision):
         request_json = encode(request)
         key = hashlib.sha256(request_json.encode("utf-8")).hexdigest()
@@ -328,6 +410,24 @@ class TaskStore:
         with self._lock:
             return dict(self._conn.execute(
                 "SELECT kind,COUNT(*) FROM tasks WHERE state IN ('pending','ready') GROUP BY kind"))
+
+    def semantic_stats(self):
+        with self._lock:
+            rows = list(self._conn.execute(
+                "SELECT state,COUNT(*) FROM tasks WHERE kind IN "
+                "('conflict_pending','feedback_pending','maintenance_due') GROUP BY state"))
+            errors = [dict(r) for r in self._conn.execute(
+                "SELECT id,kind,attempts,apply_attempts,last_error,next_run_at FROM tasks "
+                "WHERE kind IN ('conflict_pending','feedback_pending','maintenance_due') "
+                "AND last_error<>'' ORDER BY updated_at DESC LIMIT 5")]
+            retrying = self._conn.execute(
+                "SELECT COUNT(*) FROM tasks WHERE kind IN "
+                "('conflict_pending','feedback_pending','maintenance_due') "
+                "AND state IN ('pending','ready') AND next_run_at>?", (self.clock(),)).fetchone()[0]
+            failure = self._conn.execute(
+                "SELECT value FROM metadata WHERE key='semantic_recog_fail'").fetchone()
+            return {"states": dict(rows), "retrying": retrying, "errors": errors,
+                    "recog_fail": failure[0] if failure else 0}
 
     def stats(self):
         with self._lock:

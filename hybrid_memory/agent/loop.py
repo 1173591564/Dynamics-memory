@@ -6,7 +6,7 @@ pending → running → ready → applying → done；异常有限重试，耗�
 模型调用可能重做，但已保存的产物不再问模型；任务效果与回执同事务 checkpoint。
 每日调查次数和完成任务 TTL 去重持久化。工具预算仍按每次调查尝试单独开关。
 before/origin 在首次领取时冻结，工具与最终 JSON 均沿用；不重建历史引擎。
-不覆盖语义 worker 的 feedback/conflict/maintenance 易失队列，不宣称 exactly once。
+不领取语义任务；sidecar 的语义任务由独立 SQLite 消费路径负责。
 """
 from __future__ import annotations
 
