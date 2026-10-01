@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import time
 from pathlib import Path
 
@@ -21,7 +20,8 @@ import numpy as np
 from experiments import paths as P
 from experiments.real_embedding import load_dotenv_key
 from hybrid_memory.candgen import (OpencodeCliGenerator,
-                                   priority_to_salience, redact_secrets)
+                                   redact_secrets)
+from hybrid_memory.candgen.prompt import parse_candidate
 from hybrid_memory.config import Cfg
 from hybrid_memory.core.engine import MemoryEngine
 from hybrid_memory.core.types import Event, Query
@@ -48,10 +48,10 @@ JUDGE_SYS = ("You are grading a QA answer. Reply with exactly one word: "
 
 def _gen_or_load(inst: BenchInstance, size: int, stride: int,
                  gen: OpencodeCliGenerator) -> dict[int, list[dict]]:
-    """每实例 candgen 缓存：bench-candgen/{ds}-{iid}.jsonl，缺窗才调用 LLM。"""
+    """每实例 candgen 缓存：bench-candgen/{iid}-k{size}-s{stride}.jsonl，缺窗才调用 LLM。"""
     windows = build_interaction_windows(list(inst.units), size=size,
                                         stride=stride)
-    path = CG_DIR / f"{inst.id}-k{size}.jsonl"
+    path = CG_DIR / f"{inst.id}-k{size}-s{stride}.jsonl"
     done: dict[int, dict] = {}
     if path.exists():
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -64,7 +64,6 @@ def _gen_or_load(inst: BenchInstance, size: int, stride: int,
             rec = done.get(w.id)
             if rec is None or "error" in rec:
                 try:
-                    t1 = time.time()
                     g = gen.generate(w, prev_scene)
                     rec = {"window_id": w.id, "scene_name": g.scene_name,
                            "candidates": [{"text": redact_secrets(c.text),
@@ -118,18 +117,11 @@ def run_instance(inst: BenchInstance, args, emb, key: str,
             continue
         by_avail.setdefault(w.end_unit_id + 1, []).append(rec_c)
 
-    def _cand_salience(c: dict) -> float:
-        sal = c.get("salience")
-        if isinstance(sal, bool) or not isinstance(sal, (int, float)):
-            return priority_to_salience(c.get("priority"))
-        return max(0.0, min(1.0, float(sal)))
-
     def _observe(rec_c, t):
-        evs = [Event(eng.semantics.fingerprint(normalize(c["text"])),
-                     normalize(c["text"]), c["text"],
-                     tuple(c.get("source_unit_ids") or ()),
-                     salience=_cand_salience(c), scene=c.get("scene", ""))
-               for c in rec_c]
+        evs = [Event(eng.semantics.fingerprint(normalize(c.text)),
+                     normalize(c.text), c.text, c.source_unit_ids,
+                     salience=c.salience, scene=raw.get("scene", ""))
+               for raw in rec_c if (c := parse_candidate(raw)) is not None]
         eng.observe(evs, t)
 
     t0 = time.time()
@@ -225,7 +217,7 @@ def main() -> None:
         P.EMB_CACHE))
     CG_DIR.mkdir(parents=True, exist_ok=True)
     gen = OpencodeCliGenerator(model=args.model,
-                               scratch_dir=P.SCRATCH,
+                               payload_dir=P.SCRATCH,
                                env_extra={"ZAI_API_KEY": key})
 
     results = []

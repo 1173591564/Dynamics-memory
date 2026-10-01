@@ -1,7 +1,6 @@
 """每步度量采集。全部指标有 ground truth 精确值。"""
 from __future__ import annotations
 
-import csv
 from dataclasses import dataclass
 
 from .core.types import Pool, Retrieval
@@ -117,12 +116,3 @@ class Recorder:
         for name in ("n_promote", "n_demote", "n_merge", "n_evict", "n_archive",
                      "n_revive", "n_tension", "n_resolve"):
             setattr(eng, name, 0)
-
-    def to_csv(self, path: str) -> None:
-        if not self.rows:
-            return
-        with open(path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=list(StepMetrics.__dataclass_fields__))
-            writer.writeheader()
-            for row in self.rows:
-                writer.writerow(row.__dict__)

@@ -1,20 +1,18 @@
 """cand-gen 解析/脱敏 + RealChatSemantics pending 裁判路径测试。全程无网络。"""
 import json
-import os
-import sys
 import tempfile
 from pathlib import Path
 
 import numpy as np
+import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from hybrid_memory.candgen.prompt import (parse_candidates, parse_generation,
+from hybrid_memory.candgen.prompt import (parse_generation,
                                           priority_to_salience, redact_secrets,
                                           serialize_window)
 from hybrid_memory.config import Cfg
 from hybrid_memory.core.engine import MemoryEngine
-from hybrid_memory.core.types import Event, Pool
+from hybrid_memory.core.types import Event
 from hybrid_memory.datasets.real_chat import (InteractionUnit,
                                               InteractionWindow)
 from hybrid_memory.semantics import RealChatSemantics, normalize
@@ -60,12 +58,13 @@ def test_redact_secrets():
 
 
 def test_parse_candidates_json_array_and_redact():
-    out = parse_candidates('前言 [{"text":" 记住这个 "},'
+    out = parse_generation('前言 [{"text":" 记住这个 "},'
                            ' {"text":"key sk-1234567890abcd"},'
                            ' {"no_text":1}] 后记')
-    assert [c.text for c in out] == ["记住这个", "key [REDACTED]"]
-    assert parse_candidates("没有数组") == []
-    assert parse_candidates('```json\n[{"text":"x"}]\n```')[0].text == "x"
+    assert [c.text for c in out.candidates] == ["记住这个", "key [REDACTED]"]
+    with pytest.raises(ValueError):
+        parse_generation("没有数组")
+    assert parse_generation('```json\n[{"text":"x"}]\n```').candidates[0].text == "x"
 
 
 def test_parse_generation_v2_envelope_and_v1_fallback():
@@ -103,7 +102,7 @@ def test_parse_generation_salience_clamp_and_fallback():
 
 
 def test_load_candgen_salience_explicit_and_fallback():
-    from experiments.qa_real import _load_candgen
+    from experiments.candgen_real import load_candidates
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "candgen.jsonl"
         p.write_text(json.dumps({"window_id": 0, "scene_name": "在围绕X做Y",
@@ -112,7 +111,7 @@ def test_load_candgen_salience_explicit_and_fallback():
             {"text": "prio", "priority": 100},
             {"text": "bare"},
         ]}, ensure_ascii=False) + "\n", encoding="utf-8")
-        cands = _load_candgen(p)
+        cands, redacted = load_candidates(p)
     got = cands[0]
     assert got[0]["salience"] == 1.0
     assert got[0]["src"] == (1,)
@@ -180,14 +179,36 @@ def test_pending_tension_stays_in_backlog():
     assert len(eng.tensions) == 0 and eng.n_merge == 1
 
 
-def run_all():
-    fns = [v for k, v in list(globals().items())
-           if k.startswith("test_") and callable(v)]
-    for fn in fns:
-        fn()
-        print(f"  PASS {fn.__name__}")
-    print(f"{len(fns)} tests passed")
+def test_chat_generator_uses_injected_transport_and_shared_prompt():
+    from hybrid_memory.candgen.chat import ChatGenerator
+    from hybrid_memory.candgen.prompt import INSTRUCTION
+
+    calls = []
+
+    def chat_fn(system, user):
+        calls.append((system, user))
+        return '{"scene_name":"new scene","memories":[{"text":"fact"}]}'
+
+    window = InteractionWindow(0, 0, 0, 0, 0, (_unit(0),))
+    out = ChatGenerator(chat_fn).generate(window, "previous scene")
+    assert calls == [(INSTRUCTION, serialize_window(window, "previous scene"))]
+    assert out.scene_name == "new scene" and out.candidates[0].text == "fact"
 
 
-if __name__ == "__main__":
-    run_all()
+@pytest.mark.parametrize("src", [7, True, "0", {"id": 0},
+                                  [0, True, 1.9, float("nan"), float("inf"),
+                                   -1, 2**63, "²", "0" * 5000 + "1"]])
+def test_candidate_malformed_metadata_is_bounded(src):
+    from hybrid_memory.candgen.prompt import parse_candidate
+    c = parse_candidate({"text": "fact", "source_unit_ids": src,
+                         "salience": float("nan"), "priority": 10**400})
+    assert c.source_unit_ids == ((0,) if isinstance(src, list) else ())
+    assert c.salience == 1.0  # invalid salience falls back to bounded priority
+    assert parse_candidate({"text": "fact", "salience": float("nan")}).salience == 0.5
+
+
+def test_invalid_generation_is_not_successful_empty_or_nested_metadata():
+    for text in ("not JSON", '{"memories":true}', '{"metadata":[{"text":"not a memory"}]}'):
+        with pytest.raises(ValueError):
+            parse_generation(text)
+    assert parse_generation('{"memories":[]}').candidates == ()

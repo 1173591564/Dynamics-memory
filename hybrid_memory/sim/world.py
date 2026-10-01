@@ -17,7 +17,6 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ..core.types import Event, Query
-from ..embed.base import Embedder
 
 
 @dataclass
@@ -38,12 +37,11 @@ class Belief:
 
 
 class StreamGen:
-    def __init__(self, emb: Embedder, seed: int = 0,
+    def __init__(self, seed: int = 0,
                  n_stable: int = 20, t_drift: int = 60, t_noise: int = 100,
                  noise_end: int = 140, t_conflict: int = 140,
                  n_drift: int = 3, n_pairs: int = 3, noise_rate: float = 6.0,
                  query_rate: float = 2.0, conflict_gap: int = 20):
-        self.emb = emb
         self.rng = np.random.default_rng(seed)
         self.t_drift, self.t_noise = t_drift, t_noise
         self.noise_end, self.t_conflict = noise_end, t_conflict
@@ -95,9 +93,6 @@ class StreamGen:
 
     def relevant(self, belief_id: int, value: str, query: Query, t: int) -> bool:
         return belief_id == query.target and self.valid(belief_id, value, t)
-
-    def useful(self, belief_id: int, value: str, t: int) -> bool:
-        return self.valid(belief_id, value, t)
 
     def phase(self, t: int) -> str:
         if t < self.t_drift:

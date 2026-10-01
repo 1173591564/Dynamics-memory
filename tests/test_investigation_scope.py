@@ -47,28 +47,27 @@ def test_all_investigation_http_tools_share_admission(state, expected):
         _open(svc, calls=0)
     if state == "closed":
         svc.close_budget("s")
-    post, get, stop = _http(svc)
-    headers = {"X-Signal-Id": "s"}
-    before = pickle.dumps(svc.engine.mems)
     try:
-        requests = [
-            ("/search", {"query": "部署在哪"}),
-            ("/resolve", {"left": 0, "right": 4, "verdict": "update"}),
-            ("/propose", {"proposals": [{"text": "past fact", "source_unit_ids": [0]}]}),
-            ("/diagnose", {"miss_type": "no_miss"}),
-            ("/log/search", {"query": "handler.ts"}),
-            ("/log/timeline", {"entity": "handler.ts"}),
-            ("/log/stats", {"group_by": "scene"}),
-            ("/log/window", {"unit_ids": [0]}),
-        ]
-        for path, body in requests:
-            assert post(path, body, headers)[0] == expected, path
-        for path in ("/recall?q=test", "/conflicts"):
-            assert get(path, headers)[0] == expected, path
-        assert pickle.dumps(svc.engine.mems) == before
-        assert not svc._retrievals and not svc.miss_counts
+        with _http(svc) as (post, get, _):
+            headers = {"X-Signal-Id": "s"}
+            before = pickle.dumps(svc.engine.mems)
+            requests = [
+                ("/search", {"query": "部署在哪"}),
+                ("/resolve", {"left": 0, "right": 4, "verdict": "update"}),
+                ("/propose", {"proposals": [{"text": "past fact", "source_unit_ids": [0]}]}),
+                ("/diagnose", {"miss_type": "no_miss"}),
+                ("/log/search", {"query": "handler.ts"}),
+                ("/log/timeline", {"entity": "handler.ts"}),
+                ("/log/stats", {"group_by": "scene"}),
+                ("/log/window", {"unit_ids": [0]}),
+            ]
+            for path, body in requests:
+                assert post(path, body, headers)[0] == expected, path
+            for path in ("/recall?q=test", "/conflicts"):
+                assert get(path, headers)[0] == expected, path
+            assert pickle.dumps(svc.engine.mems) == before
+            assert not svc._retrievals and not svc.miss_counts
     finally:
-        stop()
         svc.log.close()
 
 
@@ -96,26 +95,25 @@ def test_conflicts_resolve_and_supersedes_obey_same_bound(target):
     svc = _service(texts=())
     _seed(svc)
     _open(svc)
-    post, get, stop = _http(svc)
-    h = {"X-Signal-Id": "s"}
     try:
-        status, out = get("/conflicts", h)
-        assert status == 200 and len(out["conflicts"]) == 1
-        assert out["conflicts"][0]["right"] == 4
-        before = pickle.dumps((svc.engine.mems, svc.engine.tensions))
-        assert post("/resolve", {"left": 0, "right": target, "verdict": "update",
-                                 "ensure_tension": True, "entity_key": "injected"}, h)[0] == 403
-        assert pickle.dumps((svc.engine.mems, svc.engine.tensions)) == before
-        status, out = post("/propose", {"proposals": [
-            {"text": "old source cannot replace a future memory", "source_unit_ids": [0],
-             "supersedes": [target]}]}, h)
-        assert status == 200 and out["accepted"] == 0
-        assert "future" in out["rejected"][0]["reason"]
-        assert pickle.dumps((svc.engine.mems, svc.engine.tensions)) == before
-        assert post("/resolve", {"left": 0, "right": 4, "verdict": "collision"}, h)[0] == 200
-        assert svc.close_budget("s")["calls"] == 4
+        with _http(svc) as (post, get, _):
+            h = {"X-Signal-Id": "s"}
+            status, out = get("/conflicts", h)
+            assert status == 200 and len(out["conflicts"]) == 1
+            assert out["conflicts"][0]["right"] == 4
+            before = pickle.dumps((svc.engine.mems, svc.engine.tensions))
+            assert post("/resolve", {"left": 0, "right": target, "verdict": "update",
+                                     "ensure_tension": True, "entity_key": "injected"}, h)[0] == 403
+            assert pickle.dumps((svc.engine.mems, svc.engine.tensions)) == before
+            status, out = post("/propose", {"proposals": [
+                {"text": "old source cannot replace a future memory", "source_unit_ids": [0],
+                 "supersedes": [target]}]}, h)
+            assert status == 200 and out["accepted"] == 0
+            assert "future" in out["rejected"][0]["reason"]
+            assert pickle.dumps((svc.engine.mems, svc.engine.tensions)) == before
+            assert post("/resolve", {"left": 0, "right": 4, "verdict": "collision"}, h)[0] == 200
+            assert svc.close_budget("s")["calls"] == 4
     finally:
-        stop()
         svc.log.close()
 
 
@@ -234,25 +232,23 @@ def test_resolve_cannot_follow_an_old_id_to_future_representative(pointer):
     _seed(svc)
     setattr(svc.engine.mems[0], pointer, 1)
     _open(svc)
-    post, get, stop = _http(svc)
     try:
-        before = pickle.dumps(svc.engine.mems)
-        status, _ = post("/resolve", {"left": 0, "right": 4, "verdict": "update",
-                                      "ensure_tension": True}, {"X-Signal-Id": "s"})
-        assert status == 403
-        assert pickle.dumps(svc.engine.mems) == before
+        with _http(svc) as (post, get, _):
+            before = pickle.dumps(svc.engine.mems)
+            status, _ = post("/resolve", {"left": 0, "right": 4, "verdict": "update",
+                                          "ensure_tension": True}, {"X-Signal-Id": "s"})
+            assert status == 403
+            assert pickle.dumps(svc.engine.mems) == before
     finally:
-        stop()
         svc.log.close()
 
 
 def test_blank_signal_header_is_not_a_main_agent_request():
     svc = _service(texts=())
-    post, get, stop = _http(svc)
     try:
-        assert post("/search", {"query": "test"}, {"X-Signal-Id": " "})[0] == 403
+        with _http(svc) as (post, get, _):
+            assert post("/search", {"query": "test"}, {"X-Signal-Id": " "})[0] == 403
     finally:
-        stop()
         svc.log.close()
 
 
@@ -308,21 +304,20 @@ def test_concurrent_calls_share_one_call_allowance():
 def test_signal_requests_cannot_use_main_only_endpoints_or_forge_context():
     svc = _service(texts=())
     _open(svc)
-    post, get, stop = _http(svc)
-    h = {"X-Signal-Id": "s"}
     try:
-        for path, body in (("/observe", {"user_text": "x"}),
-                           ("/feedback", {"retrieval_id": 0}),
-                           ("/miss", {"query": "x"}), ("/save", {})):
-            assert post(path, body, h)[0] == 403
-        assert get("/signals", h)[0] == 403
-        assert get("/health", h)[0] == 200  # 插件启动探针保持兼容
-        assert svc.close_budget("s")["calls"] == 0
-        assert post("/propose", {"proposals": [], "_context": {
-            "before": 999, "origin": "user_confirmed"}}, h)[0] == 403
-        assert svc.log.count() == 0 and svc.n_missed == 0
+        with _http(svc) as (post, get, _):
+            h = {"X-Signal-Id": "s"}
+            for path, body in (("/observe", {"user_text": "x"}),
+                               ("/feedback", {"retrieval_id": 0}),
+                               ("/miss", {"query": "x"}), ("/save", {})):
+                assert post(path, body, h)[0] == 403
+            assert get("/signals", h)[0] == 403
+            assert get("/health", h)[0] == 200  # 插件启动探针保持兼容
+            assert svc.close_budget("s")["calls"] == 0
+            assert post("/propose", {"proposals": [], "_context": {
+                "before": 999, "origin": "user_confirmed"}}, h)[0] == 403
+            assert svc.log.count() == 0 and svc.n_missed == 0
     finally:
-        stop()
         svc.log.close()
 
 
@@ -330,19 +325,18 @@ def test_all_tools_draw_from_the_same_call_budget():
     svc = _service(texts=())
     _seed(svc)
     _open(svc, calls=6)
-    post, get, stop = _http(svc)
-    h = {"X-Signal-Id": "s"}
     try:
-        assert post("/search", {"query": "部署在哪"}, h)[0] == 200
-        assert get("/conflicts", h)[0] == 200
-        assert post("/log/stats", {}, h)[0] == 200
-        assert post("/resolve", {"left": 0, "right": 4, "verdict": "pending"}, h)[0] == 200
-        assert post("/propose", {"proposals": []}, h)[0] == 200
-        assert post("/diagnose", {"miss_type": "no_miss"}, h)[0] == 200
-        assert post("/log/search", {"query": "handler.ts"}, h)[0] == 429
-        assert svc.close_budget("s")["calls"] == 7
+        with _http(svc) as (post, get, _):
+            h = {"X-Signal-Id": "s"}
+            assert post("/search", {"query": "部署在哪"}, h)[0] == 200
+            assert get("/conflicts", h)[0] == 200
+            assert post("/log/stats", {}, h)[0] == 200
+            assert post("/resolve", {"left": 0, "right": 4, "verdict": "pending"}, h)[0] == 200
+            assert post("/propose", {"proposals": []}, h)[0] == 200
+            assert post("/diagnose", {"miss_type": "no_miss"}, h)[0] == 200
+            assert post("/log/search", {"query": "handler.ts"}, h)[0] == 429
+            assert svc.close_budget("s")["calls"] == 7
     finally:
-        stop()
         svc.log.close()
 
 
@@ -409,20 +403,19 @@ def test_active_http_search_and_recall_are_bounded_but_main_search_is_unchanged(
     _seed(svc)
     svc.cfg.k = 10
     _open(svc)
-    post, get, stop = _http(svc)
-    h = {"X-Signal-Id": "s"}
     try:
-        for status, out in (post("/search", {"query": "部署在哪"}, h),
-                            get("/recall?q=" + quote("部署在哪"), h)):
-            assert status == 200 and "FUTURE" not in out["context"]
-            assert {m["id"] for m in out["selected"]} == {0, 4}
-            assert out["retrieval_id"] is None
-        status, out = post("/search", {"query": "部署在哪"})
-        assert status == 200 and "FUTURE" in out["context"]
-        assert isinstance(out["retrieval_id"], int)
-        assert svc.close_budget("s")["calls"] == 2
+        with _http(svc) as (post, get, _):
+            h = {"X-Signal-Id": "s"}
+            for status, out in (post("/search", {"query": "部署在哪"}, h),
+                                get("/recall?q=" + quote("部署在哪"), h)):
+                assert status == 200 and "FUTURE" not in out["context"]
+                assert {m["id"] for m in out["selected"]} == {0, 4}
+                assert out["retrieval_id"] is None
+            status, out = post("/search", {"query": "部署在哪"})
+            assert status == 200 and "FUTURE" in out["context"]
+            assert isinstance(out["retrieval_id"], int)
+            assert svc.close_budget("s")["calls"] == 2
     finally:
-        stop()
         svc.log.close()
 
 

@@ -18,10 +18,9 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-import numpy as np
 
 from experiments import paths as P
-from hybrid_memory.core.retrieval import _lex_tokens
+from hybrid_memory.core.retrieval import lexical_scores
 from hybrid_memory.datasets.real_chat import load_interaction_units
 from hybrid_memory.embed.base import cosine
 from hybrid_memory.embed.cache import SqliteEmbeddingCache
@@ -38,27 +37,6 @@ def parse_pool(pool: str):
         if m:
             out.append({"birth": int(m.group(1)), "text": m.group(2)})
     return out
-
-
-def lex_scores(query: str, mems: list[dict]) -> dict[int, float]:
-    qtok = _lex_tokens(query)
-    if not qtok:
-        return {}
-    toks = [_lex_tokens(m["text"]) for m in mems]
-    df: dict[str, int] = {}
-    for mt in toks:
-        for tok in mt:
-            df[tok] = df.get(tok, 0) + 1
-    n = max(len(mems), 1)
-    if not any(df.get(t, 0) <= max(3, int(0.15 * n)) for t in qtok):
-        return {}
-
-    def idf(t):
-        return math.log((n + 1) / (df.get(t, 0) + 0.5))
-
-    denom = sum(idf(t) for t in qtok) or 1.0
-    return {i: sum(idf(t) for t in (qtok & mt)) / denom
-            for i, mt in enumerate(toks) if qtok & mt}
 
 
 def main() -> None:
@@ -83,7 +61,7 @@ def main() -> None:
         mems = parse_pool(d["pool"])
         qv = emb.embed([u.user_text])[0]
         mv = emb.embed([m["text"] for m in mems])
-        lex = lex_scores(u.user_text, mems)
+        lex = lexical_scores(u.user_text, {i: m["text"] for i, m in enumerate(mems)})
         for i, m in enumerate(mems):
             s = cosine(qv, mv[i])
             m["base"] = s + FRESH_ALPHA * math.exp(-LAM * (t - m["birth"]))

@@ -38,7 +38,7 @@ def query(eng, emb, world, belief, t: int):
 def run_shadow(seed: int, shadow_credit: bool) -> tuple[list[dict], int | None]:
     cfg = replace(SHADOW_BASE, shadow_credit=shadow_credit)
     emb = SyntheticEmbedder(seed=seed)
-    world = StreamGen(emb, seed=seed, n_stable=0, t_drift=1000,
+    world = StreamGen(seed=seed, n_stable=0, t_drift=1000,
                       t_noise=1000, noise_end=1001, t_conflict=1000)
     eng = MemoryEngine(cfg, emb, world)
     worker = SignalWorker(eng, world)
@@ -89,7 +89,7 @@ def run_shadow(seed: int, shadow_credit: bool) -> tuple[list[dict], int | None]:
 def run_stream(name: str, seed: int) -> list[dict]:
     cfg = PRESETS[name]
     emb = SyntheticEmbedder(seed=seed)
-    world = StreamGen(emb, seed=seed, t_drift=STREAM_T + 1, t_noise=0,
+    world = StreamGen(seed=seed, t_drift=STREAM_T + 1, t_noise=0,
                       noise_end=STREAM_T, t_conflict=STREAM_T + 1,
                       noise_rate=6.0, query_rate=2.0)
     eng = MemoryEngine(cfg, emb, world)

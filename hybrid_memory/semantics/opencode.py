@@ -2,7 +2,7 @@
 
 角色提示词仍由 LLMSemantics 提供（与裸 API 传输单一来源）；
 opencode agent 定义（.opencode/agent/*.md）只承载模型/温度/权限与工具面。
-按提示词身份映射到对应 agent 壳；agent 参与缓存键，换定义即换缓存。
+按提示词身份映射到对应 agent 壳；agent 名称参与缓存键；修改定义文件后须清理旧缓存。
 失败抛 ZhipuChatError，沿用 LLMSemantics 既有降级路径。
 """
 from __future__ import annotations
@@ -29,21 +29,19 @@ class OpencodeSemantics(LLMSemantics):
                  cache_dir: Path | None = None,
                  env_extra: dict | None = None,
                  timeout_s: int = 300,
-                 use_agents: bool = True,
                  strict: bool = False,
                  runner: OpencodeRunner | None = None):
         self._runner = runner or OpencodeRunner(
             model=model, workdir=_PROJECT_DIR,
             payload_dir=_PROJECT_DIR / ".opencode" / "tmp",
             timeout_s=timeout_s, env_extra=env_extra, cache_dir=cache_dir)
-        self._use_agents = use_agents
         self.strict = strict
         self.n_failed = 0     # 调用失败计数：LLMSemantics 会静默降级，
                               # 这个计数是"降级发生过"的唯一痕迹，必须外显
         super().__init__(labels_path, chat_fn=self._chat_via_runner, model=model)
 
     def _chat_via_runner(self, system: str, user: str) -> str:
-        agent = _ROLE_AGENT.get(system) if self._use_agents else None
+        agent = _ROLE_AGENT[system]
         try:
             return self._runner.chat(system, user, agent=agent)
         except ZhipuChatError as exc:

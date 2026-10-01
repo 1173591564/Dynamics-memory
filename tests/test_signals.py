@@ -4,13 +4,10 @@ P2 后引擎不做语义判定：conflict 信号由 maintenance 对老化 tensio
 feedback_pending 由 engine.feedback 发射，shadow 信用恒延迟结算。
 """
 import math
-import os
-import sys
 
 import numpy as np
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hybrid_memory.config import Cfg
 from hybrid_memory.core.engine import MemoryEngine
@@ -23,7 +20,7 @@ from hybrid_memory.worker import SignalWorker
 
 def make(seed=0, cfg=None):
     emb = SyntheticEmbedder(seed=seed)
-    world = StreamGen(emb, seed=seed)
+    world = StreamGen(seed=seed)
     return emb, world, MemoryEngine(cfg or Cfg(), emb, world)
 
 

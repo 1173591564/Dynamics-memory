@@ -183,7 +183,7 @@ class MemoryEngine:
 
     def add_reflection(self, event: Event, derived_from, t: int) -> Memory:
         """操作面：worker 回报 consolidation 产物（reflection 记忆入库）。
-        derived_from 为源记忆 id 列表；语义与同步回调路径一致。"""
+        derived_from 为源记忆 id 列表。"""
         chosen = sorted((self.mems[i] for i in derived_from
                          if i in self.mems), key=lambda m: (m.birth, m.id))
         return consolidation.admit_reflection(self, event, chosen, t)

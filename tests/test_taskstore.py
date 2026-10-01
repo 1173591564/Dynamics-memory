@@ -8,7 +8,8 @@ from hybrid_memory.taskstore import CheckpointConflict, TaskLeaseLost, TaskQueue
 
 def _claim(store, task_id, **overrides):
     args = dict(before=1, origin="repair", day="2026-10-01", daily_cap=10,
-                lease_s=10, checkpoint=b"unit-test checkpoint", expected_revision=0)
+                lease_s=10, checkpoint=b"unit-test checkpoint", expected_revision=0,
+                expected_version=store.get(task_id)["version"])
     args.update(overrides)
     return store.claim(task_id, **args)
 
@@ -41,7 +42,8 @@ def test_stale_claim_token_cannot_store_result_or_finish():
     store.recover_expired(3, 3)
     fresh = _claim(store, tid, expected_revision=1)
     with pytest.raises(TaskLeaseLost):
-        store.store_result(tid, old["token"], {})
+        store.store_result(tid, old["token"], {}, checkpoint=b"stale",
+                           expected_revision=fresh["revision"])
     with pytest.raises(TaskLeaseLost):
         store.finish(tid, old["token"])
     assert store.get(tid)["token"] == fresh["token"]
@@ -75,3 +77,24 @@ def test_capacity_rejects_instead_of_evicting_accepted_task():
     with pytest.raises(TaskQueueFull):
         store.enqueue("recall_miss", {"q": "other"}, 1, key="other")
     assert len(store.list_tasks()) == 1 and store.get(tid)["payload"] == {"q": "merged"}
+
+
+def test_result_and_checkpoint_commit_together_with_revision_guard():
+    store = TaskStore()
+    try:
+        tid = store.enqueue("recall_miss", {}, 0)
+        row = _claim(store, tid)
+        revision = store.save_checkpoint(b"newer state", row["revision"])
+        with pytest.raises(CheckpointConflict):
+            store.store_result(tid, row["token"], {"answer": "ready"},
+                               checkpoint=b"stale", expected_revision=row["revision"])
+        assert store.get(tid)["state"] == "running"
+        assert store.get(tid)["result"] is None
+        assert store.checkpoint() == (revision, b"newer state")
+        assert store.store_result(tid, row["token"], {"answer": "ready"},
+                                  checkpoint=b"result state", expected_revision=revision) == revision + 1
+        assert store.get(tid)["state"] == "ready"
+        assert store.get(tid)["result"] == {"answer": "ready"}
+        assert store.checkpoint() == (revision + 1, b"result state")
+    finally:
+        store.close()

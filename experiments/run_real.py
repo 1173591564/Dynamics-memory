@@ -23,11 +23,11 @@ from pathlib import Path
 import numpy as np
 
 from experiments import paths as P
+from experiments.candgen_real import load_candidates
 from experiments.real_embedding import load_dotenv_key
-from hybrid_memory.candgen import priority_to_salience, redact_secrets
 from hybrid_memory.config import Cfg
 from hybrid_memory.core.engine import MemoryEngine
-from hybrid_memory.core.types import Event, Pool, Query
+from hybrid_memory.core.types import Event, Query
 from hybrid_memory.datasets.real_chat import (build_interaction_windows,
                                               load_interaction_units)
 from hybrid_memory.embed.base import cosine
@@ -60,29 +60,10 @@ def main() -> None:
         raise SystemExit("choose exactly one of --allow-remote or --offline")
 
     units = load_interaction_units(args.data)
+    if not units:
+        raise SystemExit("no interaction units to replay")
     windows = build_interaction_windows(units, size=3, stride=3)
-    candgen = {}
-    n_redacted = 0
-    for line in args.candgen.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        rec = json.loads(line)
-        if "error" in rec:
-            continue
-        cands = []
-        for t_ in rec["candidates"]:
-            raw = t_["text"] if isinstance(t_, dict) else t_
-            rt = redact_secrets(raw)
-            n_redacted += int(rt != raw)
-            sal = t_.get("salience") if isinstance(t_, dict) else None
-            if isinstance(sal, bool) or not isinstance(sal, (int, float)):
-                sal = priority_to_salience(
-                    t_.get("priority") if isinstance(t_, dict) else None)
-            else:
-                sal = max(0.0, min(1.0, float(sal)))
-            cands.append({"text": rt, "salience": sal,
-                          "scene": str(rec.get("scene_name", ""))})
-        candgen[rec["window_id"]] = cands
+    candgen, n_redacted = load_candidates(args.candgen)
 
     api_key = None if args.offline else load_dotenv_key(args.dotenv)
     emb = ZhipuEmbedder(api_key=api_key, cache=SqliteEmbeddingCache(
@@ -100,16 +81,23 @@ def main() -> None:
             by_avail.setdefault(w.end_unit_id + 1, []).append(w)
 
     prompt_tokens = 0
+    windows_injected = candidates_total = 0
     rows = []
     t0 = time.time()
-    for t in range(len(units)):
+    for t in range(len(units) + 1):
         for w in by_avail.get(t, []):
             events = [Event(semantics.fingerprint(c["text"]),
-                            normalize(c["text"]), c["text"],
+                            normalize(c["text"]), c["text"], c["src"],
                             salience=c["salience"], scene=c["scene"])
                       for c in candgen[w.id]]
             eng.observe(events, t)
+            windows_injected += 1
+            candidates_total += len(events)
             prompt_tokens += emb.last_prompt_tokens
+        if t == len(units):  # 流尾窗口也入终态，但不能回头影响最后一轮检索
+            eng.step(t)
+            worker.process(t)
+            break
         qv = emb.embed([units[t].user_text])[0]
         prompt_tokens += emb.last_prompt_tokens
         ret = eng.retrieve(qv, Query(-1, units[t].user_text), t)
@@ -164,8 +152,8 @@ def main() -> None:
     top_sims = [r["top_sim"] for r in rows]
     hits = [r["n_selected"] for r in rows]
     summary = {
-        "units": len(units), "windows_injected": len(candgen),
-        "candidates_total": sum(len(v) for v in candgen.values()),
+        "units": len(units), "windows_injected": windows_injected,
+        "candidates_total": candidates_total,
         "secrets_redacted": n_redacted,
         "prompt_tokens": prompt_tokens,
         "elapsed_s": round(time.time() - t0, 1),

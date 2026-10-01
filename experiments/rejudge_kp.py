@@ -150,12 +150,11 @@ def main() -> None:
     ap.add_argument("--reader-model", default="glm-5.3-flash")
     ap.add_argument("--groups", default="memory,flat,none")
     ap.add_argument("--allow-remote", action="store_true")
-    ap.add_argument("--offline", action="store_true")
     args = ap.parse_args()
-    if args.allow_remote == args.offline:
-        raise SystemExit("choose exactly one of --allow-remote or --offline")
+    if not args.allow_remote:
+        raise SystemExit("--allow-remote is required for reader/judge calls")
 
-    key = None if args.offline else load_dotenv_key(args.dotenv)
+    key = load_dotenv_key(args.dotenv)
     units = load_interaction_units(args.data)
     groups = args.groups.split(",")
 

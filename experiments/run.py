@@ -55,7 +55,7 @@ PRESETS: dict[str, Cfg] = {
 
 def run_one(name: str, cfg: Cfg, seed: int = 0) -> Recorder:
     emb = SyntheticEmbedder(seed=seed)
-    world = StreamGen(emb, seed=seed)
+    world = StreamGen(seed=seed)
     eng = MemoryEngine(cfg, emb, world)
     worker = SignalWorker(eng, world)   # ground-truth 裁判走信号通路
     recorder = Recorder()

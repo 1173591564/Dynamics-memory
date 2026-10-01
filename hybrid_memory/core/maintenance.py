@@ -3,7 +3,7 @@
 V ← V·e^(−λ) + η·hit + η_s·shadow（可选 Ψ_div 冗余门乘在 η 项上）
 → promote/demote（滞回 θ_p>θ_d）→ 容量驱逐 → 闲置归档
 → tension 消解：synonym→merge（V=η_c·和）、update→新替旧、
-  contradiction→异 scope 互免压制 / 同 scope 双方降权、collision→留痕。
+  contradiction→异 scope 条件化聚合 / 同 scope 双方降权并待裁决聚合、collision→留痕。
 """
 from __future__ import annotations
 
@@ -109,7 +109,7 @@ def follow_chain(eng, m: Memory) -> Memory:
     两个防御：
     - 不能写 `a or b`——memory id 从 0 起，superseded_by=0 会被当成 False
       （曾让 experiments.run 在 step 里 KeyError: None）；
-    - 链成环（只可能来自损坏的 state.pkl）：计数外显并在环处停下，
+    - 链成环（例如持久状态损坏）：计数外显并在环处停下，
       不能让每次 step 都炸掉整个 sidecar。
     """
     seen = {m.id}

@@ -47,3 +47,24 @@ def test_legacy_getattr_adapter_rejects_non_pool_member_access(cls, name):
     data = pickle.dumps(_ByName(cls, name), protocol=4)
     with pytest.raises(pickle.UnpicklingError):
         _RestrictedUnpickler(io.BytesIO(data)).load()
+
+
+def test_legacy_niche_field_loads_but_does_not_bypass_suppression():
+    import numpy as np
+
+    from hybrid_memory.config import Cfg
+    from hybrid_memory.core.engine import MemoryEngine
+    from hybrid_memory.core.types import Memory, Query
+    from hybrid_memory.semantics.real import RealChatSemantics
+
+    cfg = Cfg(k=2, theta=0, confidence_on=False, defer_credit=True,
+              shadow_credit=False, tension_on=False)
+    engine = MemoryEngine(cfg, None, RealChatSemantics())
+    vec = np.array([1.0, 0.0])
+    mems = {i: Memory(i, i, str(i), str(i), vec) for i in range(2)}
+    # 旧快照可能携带这个已停止生成的字段；兼容读取不等于继续执行旧豁免。
+    mems[1].niche_pair = 0
+    engine.mems = _RestrictedUnpickler(io.BytesIO(pickle.dumps(mems, protocol=4))).load()
+    result = engine.retrieve(vec, Query(-1, "q"), 0)
+    assert [m.id for m in result.selected] == [0]
+    assert result.suppressed == [(1, 0)]

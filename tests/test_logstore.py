@@ -1,11 +1,8 @@
 """L0 日志层测试：实体抽取、混合检索、因果上界、回展预算、持久化。全程无网络。"""
-import os
-import sys
 
 import numpy as np
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hybrid_memory.logstore import LogStore, entities_in
 

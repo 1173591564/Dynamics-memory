@@ -35,11 +35,15 @@ def test_emitted_task_survives_restart_without_save_or_worker(tmp_path):
         _close(restored)
 
 
-def test_queue_eviction_does_not_drop_durable_jobs():
+def test_durable_jobs_do_not_compete_with_volatile_queue_capacity():
     svc = _svc(signal_queue_cap=1)
+    svc.engine.signals.emit("thin_recall", {"q": "thin"}, 0)
     for i in range(4):
         svc.report_miss(f"question {i}")
-    assert len(svc.engine.signals) == 1
+    assert svc.engine.signals.peek_kinds() == {"thin_recall": 1}
+    assert svc.engine.signals.n_dropped == 0
+    assert svc.tasks.queued_counts() == {"recall_miss": 4}
+    assert len(svc.engine.drain_signals()) == 1  # 排空易失队列不会删除任务
     agent = AgentWorker(svc, _fake(diagnosis={"miss_type": "no_miss"}))
     assert agent.process_once()["run"] == 4
     assert len(svc.tasks.list_tasks(states=("done",))) == 4
@@ -220,8 +224,9 @@ def test_expired_applying_lease_replays_receipt_not_effect(tmp_path):
     svc = _queued(tmp_path)
     agent = AgentWorker(svc, _fake(), lease_s=1)
     row = agent._claim(svc.tasks.list_tasks()[0])
-    svc.tasks.store_result(row["id"], row["token"], {
-        "investigation": asdict(Investigation(proposals=[PROPOSAL])), "usage": {}, "signal_id": "old"})
+    svc._checkpoint_revision = svc.tasks.store_result(row["id"], row["token"], {
+        "investigation": asdict(Investigation(proposals=[PROPOSAL])), "usage": {}, "signal_id": "old"},
+        checkpoint=svc._dump_state(), expected_revision=svc._checkpoint_revision)
     row = agent._claim(svc.tasks.get(row["id"]))
     ctx = InvestigationContext("old", 1, "repair", row["id"], row["token"])
     svc.propose([PROPOSAL], _context=ctx)
@@ -275,12 +280,9 @@ def test_uncertain_commit_stops_service_until_restart(tmp_path, monkeypatch):
     assert AgentWorker(svc, _fake(proposals=[PROPOSAL])).process_once()["failed"] == 1
     assert svc._checkpoint_fault
     from test_server import _http
-    post, get, stop = _http(svc)
-    try:
+    with _http(svc) as (post, get, _):
         status, health = get("/health")
         assert status == 503 and not health["ok"] and health["checkpoint_fault"]
-    finally:
-        stop()
     with pytest.raises(CheckpointConflict):
         svc.save()
     with pytest.raises(CheckpointConflict):
@@ -506,13 +508,10 @@ def test_task_queue_full_is_explicit_http_backpressure():
 
     svc = _queued()
     svc.tasks.capacity = 1
-    post, get, stop = _http(svc)
-    try:
+    with _http(svc) as (post, get, _):
         status, out = post("/miss", {"query": "another task"})
         assert status == 503 and "容量" in out["error"]
         assert svc.n_missed == 1 and len(svc.tasks.list_tasks()) == 1
-    finally:
-        stop()
 
 
 def test_pending_task_reserves_referenced_memory_ids_before_any_checkpoint(tmp_path):

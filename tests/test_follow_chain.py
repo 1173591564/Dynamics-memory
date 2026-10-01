@@ -1,11 +1,8 @@
 """follow_chain 回归：id=0 作为链目标、环/断链防御、经 step 的端到端触发。"""
-import os
-import sys
 
 import numpy as np
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hybrid_memory.config import Cfg
 from hybrid_memory.core import maintenance
@@ -17,7 +14,7 @@ from hybrid_memory.sim.world import StreamGen
 
 def _engine():
     emb = SyntheticEmbedder(seed=0)
-    world = StreamGen(emb, seed=0)
+    world = StreamGen(seed=0)
     return MemoryEngine(Cfg(), emb, world)
 
 
@@ -81,7 +78,7 @@ def test_synthetic_sim_runs_end_to_end(seed):
     # experiments.run 的 ours 预设曾在此路径必现 KeyError
     from hybrid_memory.worker import SignalWorker
     emb = SyntheticEmbedder(seed=seed)
-    world = StreamGen(emb, seed=seed)
+    world = StreamGen(seed=seed)
     eng = MemoryEngine(Cfg(cap_m=8), emb, world)
     worker = SignalWorker(eng, world)
     for t in range(120):

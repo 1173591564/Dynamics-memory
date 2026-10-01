@@ -1,12 +1,9 @@
-"""冒烟测试：每回路基本不变量。直接 python tests/test_smoke.py 跑。"""
+"""冒烟测试：每回路基本不变量。使用 pytest 执行。"""
 import math
-import os
-import sys
 
 import numpy as np
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hybrid_memory.config import Cfg
 from hybrid_memory.core.confidence import discount_to, projected
@@ -20,7 +17,7 @@ from hybrid_memory.worker import SignalWorker
 
 def make(seed=0, cfg=None, **world_kwargs):
     emb = SyntheticEmbedder(seed=seed)
-    world = StreamGen(emb, seed=seed, **world_kwargs)
+    world = StreamGen(seed=seed, **world_kwargs)
     return emb, world, MemoryEngine(cfg or Cfg(), emb, world)
 
 
@@ -35,8 +32,7 @@ class _TableEmbedder:
 
 
 def _stub_engine(cfg, table):
-    emb = SyntheticEmbedder(seed=0)
-    world = StreamGen(emb, seed=0)
+    world = StreamGen(seed=0)
     return world, MemoryEngine(cfg, _TableEmbedder(table), world)
 
 
@@ -551,7 +547,7 @@ def test_contradiction_scoped_no_negative_evidence():
 def test_contradiction_unscoped_adds_negative_evidence():
     cfg = Cfg(confidence_on=True, tension_delay=0)
     emb = SyntheticEmbedder(seed=0)
-    world = StreamGen(emb, seed=0)
+    world = StreamGen(seed=0)
 
     class Unscoped:
         def __getattr__(self, name):
@@ -912,7 +908,6 @@ def test_consolidation_prunes_ineligible_pending():
     emb, world, eng = make(cfg=cfg)
     sem = _Consolidatable(world, None)
     eng.semantics = sem
-    worker = SignalWorker(eng, sem)
     for i in range(4):
         b = world.beliefs[i]
         eng.observe([Event(b.id, b.value, b.phrasings[b.value][0],
@@ -1276,9 +1271,8 @@ def test_ingest_dedup_ignores_hidden_members():
     assert not eng.tensions
 
 
-def test_lex_scores_skip_hidden_members():
-    from hybrid_memory.core.retrieval import _lexical_scores
-    world, eng = _stub_engine(Cfg(), {})
+def test_lex_scores_skip_hidden_members(monkeypatch):
+    world, eng = _stub_engine(Cfg(lex_weight=0.25), {})
     b = world.beliefs[0]
     vis = Memory(0, b.id, b.value, "alpha beta",
                  np.array([1.0, 0.0]))
@@ -1286,8 +1280,18 @@ def test_lex_scores_skip_hidden_members():
                  np.array([1.0, 0.0]), aggregated_into=9)
     eng.mems[0] = vis
     eng.mems[1] = hid
-    scores = _lexical_scores(eng, Query(b.id, "alpha"))
-    assert 0 in scores and 1 not in scores
+    from hybrid_memory.core import retrieval
+    captured = []
+    score = retrieval.lexical_scores
+
+    def spy(query, texts):
+        captured.append(texts)
+        return score(query, texts)
+
+    monkeypatch.setattr(retrieval, "lexical_scores", spy)
+    ret = eng.retrieve(np.array([1.0, 0.0]), Query(b.id, "alpha"), 0)
+    assert captured == [{0: "alpha beta"}]
+    assert [m.id for m in ret.selected] == [0]
 
 
 def test_consolidation_pending_pruned_without_callback():
@@ -1314,11 +1318,3 @@ def test_context_efficiency_counts_unique_facts():
     assert counts.relevant == 2
     assert counts.unique_selected == 1
     assert counts.unique_relevant == 1
-
-
-if __name__ == "__main__":
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    for f in fns:
-        f()
-        print(f"{f.__name__} ok")
-    print("all smoke tests passed")

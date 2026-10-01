@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import os
 import sys
@@ -13,19 +12,12 @@ from statistics import mean, median
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hybrid_memory.datasets.real_chat import build_interaction_windows, load_interaction_units
+from experiments.real_embedding import file_sha256
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 DEFAULT_DATA = ROOT / "data" / "l0-tencent-consistency-check.jsonl"
 DEFAULT_OUT = HERE / "out" / "runs"
-
-
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as f:
-        for block in iter(lambda: f.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def parse_args() -> argparse.Namespace:

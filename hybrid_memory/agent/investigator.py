@@ -1,7 +1,7 @@
 """调查员（investigator）：引擎信号 → 小载荷任务 → opencode agent 用工具
 操作日志 → 严格 JSON 回报。
 
-本模块只负责三件事，全部零 LLM：
+本模块只负责三件事，模型执行交给外部 agent：
   build_payload(signal, ctx)  把信号翻译成调查员的附件（< 1k tokens，
                               不含日志原文，只含问题/场景/已召回/线索/预算）
   parse_investigation(text)   解析并规整 agent 输出（提议/裁决/诊断），
@@ -19,6 +19,7 @@ import json
 import sys
 from dataclasses import dataclass, field
 
+from ..candgen.prompt import parse_ids, parse_salience
 from ..llm import ZhipuChatError
 from .opencode import OpencodeRunner
 
@@ -104,9 +105,6 @@ def build_payload(signal, *, signal_id: str, t: int, scene: str,
             "entities": p.get("entities", []),
             "scene": p.get("scene", ""),
         })
-    elif signal.kind == "thin_recall":
-        base.update({"q": p.get("q", ""), "hints": [], "sources": ["thin"],
-                     "retrieved": [], "entities": []})
     if entity_hints:
         base["entity_mentions"] = entity_hints
     return base
@@ -129,20 +127,6 @@ def _first_json_object(text: str) -> dict | None:
     return None
 
 
-def _int_list(x) -> list[int]:
-    if not isinstance(x, list):
-        return []
-    out = []
-    for v in x:
-        if isinstance(v, bool):
-            continue
-        if isinstance(v, int) or (isinstance(v, float) and v.is_integer()):
-            out.append(int(v))
-        elif isinstance(v, str) and v.strip().lstrip("-").isdigit():
-            out.append(int(v.strip()))
-    return out
-
-
 def parse_investigation(text: str) -> Investigation | None:
     """→ Investigation；找不到合法对象返回 None（调用方计失败）。
     单条形状不对只丢那一条。"""
@@ -150,16 +134,14 @@ def parse_investigation(text: str) -> Investigation | None:
     if obj is None:
         return None
     inv = Investigation(raw=text)
-    for item in obj.get("proposals") or []:
+    proposals = obj.get("proposals")
+    for item in proposals if isinstance(proposals, list) else []:
         if not isinstance(item, dict):
             continue
         txt = item.get("text", item.get("content"))
         if not isinstance(txt, str) or not txt.strip():
             continue
-        src = _int_list(item.get("source_unit_ids") or item.get("src") or [])
-        sal = item.get("salience", 0.5)
-        if isinstance(sal, bool) or not isinstance(sal, (int, float)):
-            sal = 0.5
+        src = parse_ids(item.get("source_unit_ids") or item.get("src") or [])
         kind = str(item.get("kind") or item.get("type") or "work_fact")
         if kind not in KINDS:
             kind = "work_fact"
@@ -167,18 +149,19 @@ def parse_investigation(text: str) -> Investigation | None:
         inv.proposals.append({
             "text": txt.strip(),
             "kind": kind,
-            "salience": max(0.0, min(1.0, float(sal))),
+            "salience": parse_salience(item.get("salience")),
             "source_unit_ids": src,
             "entity_key": ek.strip() if isinstance(ek, str) and ek.strip() else "",
-            "supersedes": _int_list(item.get("supersedes") or []),
+            "supersedes": parse_ids(item.get("supersedes") or []),
         })
-    for item in obj.get("verdicts") or []:
+    verdicts = obj.get("verdicts")
+    for item in verdicts if isinstance(verdicts, list) else []:
         if not isinstance(item, dict):
             continue
-        try:
-            left, right = int(item["left"]), int(item["right"])
-        except (KeyError, TypeError, ValueError):
+        pair = parse_ids([item.get("left"), item.get("right")])
+        if len(pair) != 2:
             continue
+        left, right = pair
         verdict = str(item.get("verdict", "")).strip().lower()
         if verdict in VERDICTS and left != right:
             inv.verdicts.append((left, right, verdict))
@@ -206,15 +189,13 @@ class OpencodeInvestigator:
                  model: str = "zhipu-env/glm-5.3-flash",
                  runner: OpencodeRunner | None = None,
                  timeout_s: int = 300, env_extra: dict | None = None,
-                 workdir=None, cache_dir=None):
-        self.port = int(port)
-        self.token = token
+                 workdir=None):
         env = {"MEMORY_BRIDGE_ROLE": "worker",
-               "MEMORY_BRIDGE_PORT": str(self.port),
+               "MEMORY_BRIDGE_PORT": str(int(port)),
                "MEMORY_BRIDGE_TOKEN": token, **(env_extra or {})}
         self._runner = runner or OpencodeRunner(
             model=model, timeout_s=timeout_s, env_extra=env, pure=False,
-            workdir=workdir, cache_dir=cache_dir)
+            workdir=workdir)
         self.n_calls = 0
         self.n_failed = 0
 

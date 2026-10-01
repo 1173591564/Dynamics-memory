@@ -18,7 +18,7 @@ pending → skipped                              已完成任务的 TTL 去重
 
 - 信号发出时，通过 `SignalQueue.on_emit` **先提交 SQLite，再发布内存信号**。
   没有启动调查员、没有调用 `/save`，也不影响已接受任务的持久性。
-- 内存 SignalQueue 仍有界，但对调查任务只是显示镜像；它的逐出不删除 SQLite 任务。
+- 调查任务只存 SQLite，不再写入有界 SignalQueue。语义信号和 thin_recall 遥测仍走内存队列；健康接口通过 SQL 汇总待处理任务，不维护另一份镜像。
   `GET /signals` 新增 `tasks` 状态计数和 `checkpoint_fault`。
 - `pending` 且从未领取的同 `(kind, key)` 任务可以合并；合并提升 payload version 和时间步。
   领取校验版本，防止用旧 payload 算出的因果界领取已更新的任务。
@@ -60,7 +60,7 @@ pending → skipped                              已完成任务的 TTL 去重
 3. 把 **引擎 checkpoint 与操作回执放进同一个 SQLite 事务**。
 4. 提交后才确认本次操作；所有条目处理完，再把任务标记为 `done`。
 
-持久任务的一次 proposal 批次最多 50 条；超限明确失败，不静默截断后把任务标记完成。
+所有入口的一次 proposal 批次最多 50 条；超限明确失败，不静默截断后把任务标记完成。
 proposal 按实际服务字段规范化文本、来源、salience、entity、supersedes，消除 HTTP
 和最终 JSON 的默认值/别名差异；每条 proposal 分别记录回执。诊断按类型与规整后的
 note 识别。裁决按 pair、verdict、entity_key、ensure_tension 识别；输入不同不承诺是同一操作。
@@ -123,7 +123,7 @@ python -m pytest -q tests/test_durable_tasks.py tests/test_taskstore.py
 python -m pytest tests/ -q
 ```
 
-新增 **34 个用例**；Python 3.11.2 下，NumPy 1.26.4 / 2.4.6 两套环境全套各 **307 passed**。覆盖未保存就重启、镜像逐出、部分应用失败、
+Python 3.11.2 下，NumPy 1.26.4 / 2.4.6 两套环境全套各 **338 passed**。覆盖未保存就重启、调查任务不挤占内存队列、部分应用失败、
 每日限额/去重/次数恢复、同任务工具与最终产物去重、租约过期/迟到 token、并发领取、
 回执写入失败的内存回滚、checkpoint 冲突/损坏、退避、关闭线程、容量 503 和编号高水位。
 

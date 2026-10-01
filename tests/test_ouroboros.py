@@ -5,12 +5,9 @@
 提议校验与来源标签。全程无网络。
 """
 import json
-import os
-import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hybrid_memory.agent.investigator import (Budget, Investigation,
                                               build_payload,
@@ -120,7 +117,7 @@ def test_correction_triggers_repair_and_recall_improves():
     r1 = svc.recall("hermes 是什么类型的 agent")
     assert r1["n"] == 0                                    # 被动抽取漏了
     svc.observe("不对，后来把 hermes 移出 _headerOnlyAgents 了", "收到，改为 form agent。")
-    assert svc.engine.signals.peek_kinds()["recall_miss"] == 1
+    assert svc.signals()["queued"]["recall_miss"] == 1
 
     fake = _fake(proposals=[{"text": "hermes 在 proxy/handler.ts 里已移出 _headerOnlyAgents，现为 form agent。",
                              "kind": "work_fact", "salience": 0.8,
@@ -140,7 +137,7 @@ def test_correction_triggers_repair_and_recall_improves():
     assert len(mems) == 1 and mems[0].origin == "repair" and mems[0].entity == "hermes"
     assert svc.recall("hermes 是什么类型的 agent")["n"] == 1
     assert svc.miss_counts == {"dropped_by_candgen": len(fake.calls)}
-    assert svc.engine.signals.peek_kinds().get("recall_miss") is None
+    assert svc.signals()["queued"].get("recall_miss") is None
 
 
 def test_extract_due_uses_extract_origin_and_causal_bound():
@@ -171,10 +168,10 @@ def test_investigator_failure_requeues_then_gives_up(capsys):
         return None                                        # 解析失败/异常都走这里
     agent = AgentWorker(svc, flaky, max_attempts=2)
     s1 = agent.process_once()
-    assert s1["failed"] == 1 and svc.engine.signals.peek_kinds() == {"recall_miss": 1}
+    assert s1["failed"] == 1 and svc.signals()["queued"] == {"recall_miss": 1}
     s2 = agent.process_once()
     assert s2["failed"] == 1 and agent.n_gave_up == 1
-    assert svc.engine.signals.peek_kinds() == {}          # 放弃，不再重排
+    assert svc.signals()["queued"] == {}          # 放弃，不再重排
     assert len(calls) == 2
     assert "放弃" in capsys.readouterr().err
 
@@ -191,7 +188,7 @@ def test_investigator_exception_is_contained():
     assert svc.signals()["open_budgets"] == []             # 预算已关
 
 
-def test_daily_cap_pauses_and_keeps_signals():
+def test_daily_cap_pauses_and_keeps_signals(monkeypatch):
     svc = _svc()
     svc.report_miss("a", source="external")
     svc.report_miss("b", source="external")
@@ -200,8 +197,22 @@ def test_daily_cap_pauses_and_keeps_signals():
     agent = AgentWorker(svc, fake, daily_cap=2)
     stats = agent.process_once()
     assert stats["run"] == 2 and stats["deferred"] == 1
-    assert agent.paused_until and svc.engine.signals.peek_kinds() == {"recall_miss": 1}
+    assert agent.stats()["paused_until"] and svc.signals()["queued"] == {"recall_miss": 1}
     assert agent.process_once()["run"] == 0               # 仍在暂停
+    import datetime
+    from hybrid_memory.agent import loop
+    tomorrow = datetime.date.today() + datetime.timedelta(days=1)
+
+    class NextDay(datetime.date):
+        @classmethod
+        def today(cls):
+            return tomorrow
+
+    monkeypatch.setattr(loop._dt, "date", NextDay)
+    assert agent.stats()["paused_until"] == ""
+    assert agent.stats()["runs_today"] == 0
+    assert agent.process_once()["run"] == 1
+
 
 
 def test_recent_dedupe_skips_same_question():
@@ -222,7 +233,7 @@ def test_max_signals_defers_rest():
     agent = AgentWorker(svc, _fake(diagnosis={"miss_type": "no_miss"}))
     stats = agent.process_once(max_signals=1)
     assert stats["run"] == 1 and stats["deferred"] == 2
-    assert svc.engine.signals.peek_kinds() == {"recall_miss": 2}
+    assert svc.signals()["queued"] == {"recall_miss": 2}
 
 
 def test_verdicts_from_investigator_are_applied():
@@ -244,7 +255,7 @@ def test_candgen_failure_keeps_unit_and_flags_extract_due():
     out = svc.observe("在吗", "在的")                      # 闲聊：原本不会触发
     assert out["candidates"] == 0 and "candgen_failed" in out["reasons"]
     assert svc.n_candgen_fail == 1 and svc.log.count() == 1
-    assert svc.engine.signals.peek_kinds() == {"extract_due": 1}
+    assert svc.signals()["queued"] == {"extract_due": 1}
 
 
 def test_agent_worker_thread_start_stop():
@@ -332,3 +343,15 @@ def test_opencode_investigator_runner_is_non_pure_worker(monkeypatch, tmp_path):
     assert env["MEMORY_BRIDGE_ROLE"] == "worker"
     assert env["MEMORY_BRIDGE_PORT"] == "17872" and env["MEMORY_BRIDGE_TOKEN"] == "abc"
     assert env["ZAI_API_KEY"] == "k"
+
+
+def test_investigation_malformed_collections_and_ids_do_not_crash_or_retarget():
+    assert parse_investigation('{"proposals":true,"verdicts":4}').proposals == []
+    inv = parse_investigation(json.dumps({
+        "proposals": [{"text": "fact", "source_unit_ids": [0, "²", 1.2, True],
+                       "salience": float("nan")}],
+        "verdicts": [{"left": x, "right": 2, "verdict": "update"}
+                     for x in (True, 1.9, float("inf"), 2**64, "0")]}))
+    assert inv.proposals[0]["source_unit_ids"] == [0]
+    assert inv.proposals[0]["salience"] == 0.5
+    assert inv.verdicts == [(0, 2, "update")]

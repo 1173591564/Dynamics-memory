@@ -26,7 +26,7 @@ import numpy as np
 
 from experiments import paths as P
 from experiments.dynamics_v3 import FEATURE_SETS, configure, diagnostics
-from experiments.qa_real import _load_candgen
+from experiments.candgen_real import load_candidates
 from experiments.real_embedding import load_dotenv_key
 from hybrid_memory.config import Cfg
 from hybrid_memory.core.engine import MemoryEngine
@@ -61,8 +61,6 @@ JUDGE_SYS = (
     "1=编造了与事实冲突的项目状态。\n"
     "只回复一行：SCORE:<数字>，可跟一句简短理由。")
 
-_NOISE = {"继续", "开工", "看看", "嗯", "好", "可以"}
-
 
 def _unit_text(u) -> str:
     return u.user_text + "\n" + u.assistant_text
@@ -74,7 +72,7 @@ def _pick_eval_points(units, start: int, stride: int) -> list[int]:
         if i < start or (i - start) % stride:
             continue
         txt = u.user_text.strip()
-        if len(txt) < 20 or txt in _NOISE:
+        if len(txt) < 20:
             continue
         pts.append(i)
     return pts
@@ -131,11 +129,10 @@ def main() -> None:
                     help="延迟记账：recognizer 按回答判 useful-hit")
     ap.add_argument("--feature-set", choices=tuple(FEATURE_SETS), default="p01")
     ap.add_argument("--allow-remote", action="store_true")
-    ap.add_argument("--offline", action="store_true")
     ap.add_argument("--out-prefix", default="qa-continuity")
     args = ap.parse_args()
-    if args.allow_remote == args.offline:
-        raise SystemExit("choose exactly one of --allow-remote or --offline")
+    if not args.allow_remote:
+        raise SystemExit("--allow-remote is required for reader/judge calls")
     if args.feature_set == "r1234_full" and not args.llm_judge:
         raise SystemExit("r1234_full requires --llm-judge for consolidation")
     if args.feedback and not args.llm_judge:
@@ -144,21 +141,19 @@ def main() -> None:
             "静默退化为 selected-hit 全记，strict 记账失效）")
     if args.opencode and not args.llm_judge:
         raise SystemExit("--opencode requires --llm-judge")
-    if args.opencode and args.offline:
-        raise SystemExit("--opencode 无法离线运行（CLI 需要远端）")
 
     units = load_interaction_units(args.data)
     if args.max_units:
         units = units[: args.max_units]
     windows = build_interaction_windows(units, size=args.size,
                                         stride=args.stride)
-    candgen = _load_candgen(args.candgen)
+    candgen, _ = load_candidates(args.candgen)
     eval_pts = _pick_eval_points(units, args.eval_start, args.eval_stride)
     groups = args.groups.split(",")
 
-    key = None if args.offline else load_dotenv_key(args.dotenv)
+    key = load_dotenv_key(args.dotenv)
     emb = ZhipuEmbedder(api_key=key, cache=SqliteEmbeddingCache(
-        P.EMB_CACHE), offline=args.offline)
+        P.EMB_CACHE), offline=False)
     if args.llm_judge and args.opencode:
         semantics = OpencodeSemantics(
             args.labels, model=args.opencode_model, cache_dir=CHAT_CACHE,
@@ -276,7 +271,6 @@ def main() -> None:
                   flush=True)
 
     # 每行 = (t, group)；结果文件按 t 聚合
-    results = []
     by_t: dict[int, dict] = {}
     for job in jobs:
         row = by_t.setdefault(job["t"], {

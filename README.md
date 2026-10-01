@@ -7,7 +7,7 @@
 把连续、嘈杂、前后矛盾的项目交互，蒸馏成一个不会堆成"史山"的记忆库。<br/>
 新会话里一句"接着搞"，agent 就知道进行到哪、上次卡在哪。
 
-![tests](https://img.shields.io/badge/tests-307%20passed-brightgreen?style=flat-square)
+![tests](https://img.shields.io/badge/tests-338%20passed-brightgreen?style=flat-square)
 ![engine](https://img.shields.io/badge/engine-LLM--free-blue?style=flat-square)
 ![status](https://img.shields.io/badge/status-research%20preview-orange?style=flat-square)
 
@@ -23,9 +23,12 @@
 pip install numpy pytest
 cp .env.example .env          # ZAI_API_KEY=...
 
-python -m pytest tests/                          # 307 passed
+python -m pytest tests/                          # 338 passed
 python -m hybrid_memory.server --project <dir>   # 或被 opencode 插件自动拉起
 ```
+
+插件回归：`bun test tests/memory_bridge.test.ts`（17 项，mock 外部 I/O）。
+本轮删除/保留依据与验证范围见[代码清理记录](docs/cleanup-review.md)。
 
 ```text
 交互回合 ──observe──→ L0 日志 + candgen 蒸馏 → 记忆池
@@ -135,7 +138,7 @@ flowchart LR
 
 | 已验证 | 未验证 |
 |---|---|
-| `pytest` 307 通过 | 调查员端到端真跑（opencode + API） |
+| `pytest` 338 通过（NumPy 1.x / 2.x） | 调查员端到端真跑（opencode + API） |
 | 因果回放评测（106 单元真实日志） | 真实会话的 miss 分布与记忆质量 |
 | 三臂对照：memory / flat / none | 有害命中率（旧事实推翻后不再注入） |
 
@@ -191,7 +194,7 @@ hybrid_memory/
 .opencode/       plugin/memory-bridge.ts（main/worker 两角色）+ agent/*.md
 experiments/     评测驱动脚本 + out/ 产物
 docs/            ouroboros.md（pull 回路设计与取舍）
-tests/           pytest，211 项
+tests/           Python 回归 + Bun 插件回归
 ```
 </details>
 

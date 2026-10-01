@@ -1,17 +1,13 @@
 """OpencodeRunner 传输层测试：命令构造、事件流解析、缓存、降级。
 全程无网络：executor 注入假实现。"""
 import json
-import os
 import subprocess
-import sys
-import tempfile
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from hybrid_memory.agent.opencode import OpencodeRunner, collect_text
+from hybrid_memory.agent.opencode import OpencodeRunner
 from hybrid_memory.llm import ZhipuChatError
 from hybrid_memory.semantics.llm import LLMSemantics
 
@@ -45,7 +41,7 @@ def _stream(*texts):
 
 
 def _runner(tmp_path, exec_impl, **kw):
-    return OpencodeRunner(exe="opencode-fake", scratch_dir=tmp_path / "scratch",
+    return OpencodeRunner(exe="opencode-fake", workdir=tmp_path / "scratch",
                           executor=exec_impl, **kw)
 
 
@@ -78,9 +74,9 @@ def test_command_shape_and_payload_file(tmp_path):
     assert not list(r.payload_dir.glob("call_*.txt"))
 
 
-def test_collect_text_ignores_non_text_and_junk():
+def test_runner_ignores_non_text_and_junk(tmp_path):
     s = "not json\n" + _stream("a", "b") + "\n" + json.dumps({"type": "x"})
-    assert collect_text(s) == "ab"
+    assert _runner(tmp_path, _FakeExec(s)).chat("S", "U") == "ab"
 
 
 def test_cache_hit_skips_executor(tmp_path):
@@ -250,3 +246,95 @@ def test_opencode_semantics_maps_role_to_agent(tmp_path, monkeypatch):
     sem.relevant_set(["x"], "q", "a")
     agents = [c["cmd"][c["cmd"].index("--agent") + 1] for c in fake.calls]
     assert agents == ["judge", "recognizer"]
+
+
+def test_partial_text_followed_by_error_is_not_cached(tmp_path):
+    out = _stream('partial result') + '\n' + json.dumps({
+        "type": "error", "error": {"data": {"message": "stream interrupted"}}})
+    cache = tmp_path / "cache"
+    runner = _runner(tmp_path, _FakeExec(out), cache_dir=cache)
+    with pytest.raises(ZhipuChatError, match="stream interrupted"):
+        runner.chat("S", "U")
+    assert not list(cache.glob("*.json"))
+
+
+def test_runner_ignores_non_object_events_and_malformed_text_parts(tmp_path):
+    noise = [None, [], 42, "noise", {"type": "text", "part": "not an object"}]
+    out = '\n'.join(json.dumps(x) for x in noise) + '\n' + _stream("valid")
+    assert _runner(tmp_path, _FakeExec(out)).chat("S", "U") == "valid"
+
+
+@pytest.mark.parametrize("error", [None, [], "failed", {"data": "failed"}])
+def test_malformed_error_events_still_fail_closed(tmp_path, error):
+    out = _stream("partial") + '\n' + json.dumps({"type": "error", "error": error})
+    with pytest.raises(ZhipuChatError, match="opencode error"):
+        _runner(tmp_path, _FakeExec(out)).chat("S", "U")
+
+
+def test_candgen_discovers_agent_in_repo_not_payload_directory(tmp_path, monkeypatch):
+    import hybrid_memory.agent.opencode as transport
+    from hybrid_memory.candgen.opencode import OpencodeCliGenerator
+    from hybrid_memory.datasets.real_chat import InteractionWindow
+
+    calls = []
+
+    def execute(cmd, env, timeout):
+        calls.append(cmd)
+        workdir = Path(cmd[cmd.index("--dir") + 1])
+        agent = cmd[cmd.index("--agent") + 1]
+        assert (workdir / ".opencode" / "agent" / f"{agent}.md").is_file()
+        payload = next(arg.split("=", 1)[1] for arg in cmd if arg.startswith("--file="))
+        assert (workdir / payload).is_file()
+        assert Path(payload).parent == tmp_path
+        return 0, _stream('{"scene_name":"s","memories":[]}'), ""
+
+    monkeypatch.setattr(transport.shutil, "which", lambda _: "opencode-fake")
+    monkeypatch.setattr(transport, "_default_executor", execute)
+    gen = OpencodeCliGenerator(payload_dir=tmp_path)
+    assert gen.generate(InteractionWindow(0, 0, 0, 0, 0, ())).scene_name == "s"
+    assert len(calls) == 1 and "--pure" in calls[0]
+    assert not list(tmp_path.glob("call_*.txt"))
+
+
+def test_concurrent_calls_use_private_unique_payloads(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    import os
+    import stat
+    import threading
+
+    barrier = threading.Barrier(4)
+    paths = []
+
+    def execute(cmd, env, timeout):
+        ref = next(arg.split("=", 1)[1] for arg in cmd if arg.startswith("--file="))
+        payload = Path(cmd[cmd.index("--dir") + 1]) / ref
+        paths.append(payload)
+        if os.name == "posix":
+            assert stat.S_IMODE(payload.stat().st_mode) == 0o600
+        text = payload.read_text(encoding="utf-8")
+        barrier.wait(timeout=5)
+        return 0, _stream(text), ""
+
+    runner = _runner(tmp_path, execute)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda i: runner.run(system="S", user=str(i)), range(4)))
+    assert results == [f"S\n\n---\n\n{i}" for i in range(4)]
+    assert len(set(paths)) == 4 and all(not path.exists() for path in paths)
+
+
+def test_invalid_chat_cache_is_rebuilt_and_failed_replace_keeps_previous(tmp_path, monkeypatch):
+    from hybrid_memory import llm
+    cache = tmp_path / "cache"
+    fake = _FakeExec(_stream("ok"))
+    runner = _runner(tmp_path, fake, cache_dir=cache)
+    assert runner.chat("s", "u") == "ok"
+    path = next(cache.glob("*.json"))
+    for broken in ('{"out":', '[]', 'null', '{"out":4}'):
+        path.write_text(broken)
+        assert runner.chat("s", "u") == "ok"
+    assert len(fake.calls) == 5
+    monkeypatch.setattr(llm.os, "replace", lambda *_: (_ for _ in ()).throw(OSError("replace failed")))
+    with pytest.raises(OSError, match="replace failed"):
+        llm._cache_store(cache, path.stem, "new")
+    assert llm._cache_lookup(cache, path.stem) == "ok"
+    assert not list(cache.glob("*.tmp"))

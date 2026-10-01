@@ -1,11 +1,11 @@
-"""真实数据 cand-gen 驱动：K=3 窗口 → opencode(deepseek-v4-flash) → MemoryCandidate。
+"""真实数据 cand-gen 驱动：K=3 窗口 → opencode → MemoryCandidate。
 
 用法：
     python -m experiments.candgen_real --start 0 --limit 1   # 试点
     python -m experiments.candgen_real                        # 全部 35 窗
 
 输出 out/candgen/real-candgen-k3-s3.jsonl：每窗一条记录，含候选文本、耗时、错误。
-原始窗口文本落在 out/cache/_candgen_scratch/（已 gitignore），不进清单。
+窗口附件临时落盘，调用结束即删除；不在缓存目录保留原文。
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from pathlib import Path
 from experiments import paths as P
 from experiments.real_embedding import load_dotenv_key
 from hybrid_memory.candgen import OpencodeCliGenerator
+from hybrid_memory.candgen.prompt import parse_candidate, redact_secrets
 from hybrid_memory.datasets.real_chat import (build_interaction_windows,
                                               load_interaction_units)
 
@@ -25,6 +26,28 @@ SCRATCH = P.SCRATCH
 DOTENV = Path(".env")
 # 覆盖 models.dev zhipuai provider 可能读取的几种环境变量名
 ZHIPU_ENV_NAMES = ("ZAI_API_KEY", "ZHIPUAI_API_KEY", "ZHIPU_API_KEY")
+
+
+def load_candidates(path: Path) -> tuple[dict[int, list[dict]], int]:
+    """加载抽取缓存，统一脱敏、salience 和来源；错误窗口不进入回放。"""
+    windows, redacted = {}, 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        if "error" in rec:
+            continue
+        candidates = []
+        for item in rec["candidates"]:
+            c = parse_candidate(item)
+            if c is None:
+                continue
+            raw = item if isinstance(item, str) else item.get("content", item.get("text"))
+            redacted += int(redact_secrets(raw) != raw)
+            candidates.append({"text": c.text, "src": c.source_unit_ids,
+                               "salience": c.salience, "scene": str(rec.get("scene_name", ""))})
+        windows[rec["window_id"]] = candidates
+    return windows, redacted
 
 
 def main() -> None:
@@ -47,7 +70,7 @@ def main() -> None:
     end = len(windows) if args.limit is None else min(len(windows), args.start + args.limit)
     selected = windows[args.start:end]
 
-    gen = OpencodeCliGenerator(model=args.model, scratch_dir=SCRATCH,
+    gen = OpencodeCliGenerator(model=args.model, payload_dir=SCRATCH,
                                env_extra=env_extra)
     out_path = Path(args.out) if args.out else \
         P.CANDGEN_DIR / f"real-candgen-k{args.size}-s{args.stride}.jsonl"

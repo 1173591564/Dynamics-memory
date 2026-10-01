@@ -86,34 +86,31 @@ export default (async ({ directory }) => {
         body: body === undefined ? undefined : JSON.stringify(body),
       })
       const ok = check(r)
-      let data: any = null
       try {
-        data = await r.json()
+        const data = await r.json()
+        if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("expected object")
+        return { ok, status: r.status, data }
       } catch {
-        data = null
+        return { ok: false, status: r.status, data: { error: "sidecar 返回非法 JSON 对象" } }
       }
-      return { ok, status: r.status, data }
     } catch (e) {
       return { ok: false, status: 0, data: { error: `sidecar 不可达: ${String(e)}` } }
     }
-  }
-  const get = async (path: string) => (await call("GET", path)).data
-  const post = async (path: string, body: unknown) => {
-    const r = await call("POST", path, body)
-    return r.ok ? r.data : null
   }
   const errText = (r: Res) => `（失败 ${r.status}: ${r.data?.error ?? "unknown"}）`
 
   // ---------------------------------------------------------------- 生命周期
   let proc: Bun.Subprocess<"ignore", "pipe", "pipe"> | undefined
-  let ready = !!(await get("/health"))
+  const health = await call("GET", "/health")
+  let ready = health.ok && health.data?.ok === true
   if (ROLE === "worker") {
     if (!ready) log(`sidecar NOT reachable on :${PORT}（worker 角色不拉起）`)
   } else {
     // 已有 sidecar（用户手起 / 插件被加载多次）→ 直接复用，不重复拉起；
     // 只有自己拉起的进程才在 dispose 时杀掉
     if (ready) log(`sidecar already up on :${PORT}（复用，不重复拉起）`)
-    if (!ready) {
+    // 只有连接失败才拉起；503/非法健康响应不能触发同端口的第二个进程。
+    if (!ready && health.status === 0) {
       proc = Bun.spawn(
         ["python", "-m", "hybrid_memory.server", "--port", String(PORT), "--project", directory],
         { cwd: REPO_ROOT, env: process.env, stdout: "pipe", stderr: "pipe" },
@@ -126,7 +123,8 @@ export default (async ({ directory }) => {
       void drain(proc.stdout as ReadableStream<Uint8Array>, "sidecar")
       void drain(proc.stderr as ReadableStream<Uint8Array>, "sidecar!")
       for (let i = 0; i < 40; i++) {
-        if (await get("/health")) {
+        const probe = await call("GET", "/health")
+        if (probe.ok && probe.data?.ok === true) {
           ready = true
           break
         }
@@ -146,8 +144,10 @@ export default (async ({ directory }) => {
   let lastMiss = ""
   const reportMiss = (query: string, hint: string) => {
     if (ROLE !== "main" || !query || query === lastMiss) return
-    lastMiss = query
-    void post("/miss", { query, hint, source: "agent_tool" })
+    void call("POST", "/miss", { query, hint, source: "agent_tool" }).then((r) => {
+      if (r.ok) lastMiss = query
+      else log(`缺失上报失败 ${errText(r)}`)
+    })
   }
 
   const tools = {
@@ -155,17 +155,18 @@ export default (async ({ directory }) => {
       description: "检索长期记忆：按查询召回相关的项目事实、决策与待办",
       args: { query: tool.schema.string().describe("查询文本") },
       execute: async (args) => {
-        const rec = await post("/search", { query: args.query })
-        return rec?.context || "（无相关记忆）"
+        const r = await call("POST", "/search", { query: args.query })
+        return r.ok ? r.data.context || "（无相关记忆）" : `记忆检索失败 ${errText(r)}`
       },
     }),
     memory_conflicts: tool({
       description: "列出未裁决的记忆冲突（同实体新旧版本或矛盾条目）",
       args: {},
       execute: async () => {
-        const out = await get("/conflicts")
-        if (!out?.conflicts?.length) return "（无未决冲突）"
-        return out.conflicts
+        const r = await call("GET", "/conflicts")
+        if (!r.ok) return `冲突查询失败 ${errText(r)}`
+        if (!r.data.conflicts?.length) return "（无未决冲突）"
+        return r.data.conflicts
           .map((c: Conflict) => `[${c.left} vs ${c.right}] ${c.left_text} ⚔ ${c.right_text}`)
           .join("\n")
       },
@@ -312,7 +313,8 @@ export default (async ({ directory }) => {
 
   // ---------------------------------------------------------------- main 钩子
   const pending = new Map<string, { user: string; retrievalId?: number }>()
-  const assistantText = new Map<string, { sessionID: string; text: string }>()
+  const textParts = new Map<string, { sessionID: string; messageID: string; text: string }>()
+  const messageRoles = new Map<string, { sessionID: string; role: string }>()
   // 在途的 observe/feedback：opencode 不等待事件回调，进程退出会掐断请求；
   // dispose 必须先 await 它再 /save + kill
   let inflight: Promise<unknown> = Promise.resolve()
@@ -332,11 +334,14 @@ export default (async ({ directory }) => {
       if (!p) return
       // 走 POST /search：长 CJK 输入放 query string 会 ×3 URL 编码后
       // 超 request-line 上限（recall 静默失败）；/search 与 /recall 返回同构
-      const rec = await post("/search", { query: p.user })
-      if (!rec) return
-      p.retrievalId = rec.retrieval_id
-      const memo = rec.context
-        ? `<relevant-memories>\n以下是召回的相关记忆，不代表当前任务进程，仅作为参考：\n${rec.context}\n</relevant-memories>`
+      const r = await call("POST", "/search", { query: p.user })
+      if (!r.ok) {
+        log(`记忆注入失败 ${errText(r)}`)
+        return
+      }
+      p.retrievalId = r.data.retrieval_id
+      const memo = r.data.context
+        ? `<relevant-memories>\n以下是召回的相关记忆，不代表当前任务进程，仅作为参考：\n${r.data.context}\n</relevant-memories>`
         : `<relevant-memories>\n（本轮没有召回到相关记忆）\n</relevant-memories>`
       output.system.push(
         memo +
@@ -348,12 +353,18 @@ export default (async ({ directory }) => {
     event: async ({ event }) => {
       if (process.env.MEMORY_BRIDGE_DEBUG) log(`event: ${event.type}`)
       if (!ready) return
+      if (event.type === "message.updated") {
+        const info = event.properties.info
+        if (pending.has(info.sessionID)) {
+          messageRoles.set(info.id, { sessionID: info.sessionID, role: info.role })
+        }
+        return
+      }
       if (event.type === "message.part.updated") {
         const part = event.properties.part
-        if (part.type === "text" && typeof part.text === "string" && part.text) {
-          assistantText.set(part.messageID, {
-            sessionID: part.sessionID,
-            text: part.text,
+        if (part.type === "text" && typeof part.text === "string" && pending.has(part.sessionID)) {
+          textParts.set(part.id, {
+            sessionID: part.sessionID, messageID: part.messageID, text: part.text,
           })
         }
         return
@@ -362,13 +373,16 @@ export default (async ({ directory }) => {
         const sid = event.properties.sessionID
         const p = pending.get(sid)
         if (!p) return
-        const reply = [...assistantText.values()]
-          .filter((a) => a.sessionID === sid)
+        const reply = [...textParts.values()]
+          .filter((a) => a.sessionID === sid && a.text.trim() && messageRoles.get(a.messageID)?.role === "assistant")
           .map((a) => a.text)
           .join("\n\n")
         pending.delete(sid)
-        for (const [mid, a] of assistantText) {
-          if (a.sessionID === sid) assistantText.delete(mid)
+        for (const [id, a] of textParts) {
+          if (a.sessionID === sid) textParts.delete(id)
+        }
+        for (const [id, info] of messageRoles) {
+          if (info.sessionID === sid) messageRoles.delete(id)
         }
         if (!reply) {
           log(`idle: no reply captured for session ${sid}`)
@@ -379,15 +393,15 @@ export default (async ({ directory }) => {
         // 否则提前 idle 的 observe/feedback 会被 proc.kill 截断丢数据
         inflight = inflight.then(async () => {
           log(`idle: observe turn (user=${p.user.length}ch, reply=${reply.length}ch)`)
-          const obs = await post("/observe", { user_text: p.user, assistant_text: reply })
-          log(`idle: observe → ${JSON.stringify(obs)}`)
-          if (retrievalId !== undefined) {
-            const fb = await post("/feedback", {
+          const obs = await call("POST", "/observe", { user_text: p.user, assistant_text: reply })
+          log(`idle: observe → ${obs.ok ? JSON.stringify(obs.data) : errText(obs)}`)
+          if (obs.ok && retrievalId !== undefined) {
+            const fb = await call("POST", "/feedback", {
               retrieval_id: retrievalId,
               question: p.user,
               answer: reply,
             })
-            log(`idle: feedback → ${JSON.stringify(fb)}`)
+            log(`idle: feedback → ${fb.ok ? JSON.stringify(fb.data) : errText(fb)}`)
           }
         })
       }
@@ -397,7 +411,8 @@ export default (async ({ directory }) => {
 
     dispose: async () => {
       await inflight // 等捕获回路落地，再存盘收尾
-      await post("/save", {})
+      const saved = await call("POST", "/save", {})
+      if (!saved.ok) log(`保存失败 ${errText(saved)}`)
       proc?.kill() // 只杀自己拉起的 sidecar
     },
   }

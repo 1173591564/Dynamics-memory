@@ -10,17 +10,15 @@
 from __future__ import annotations
 
 import argparse
-import io
 import json
 import time
 from collections import defaultdict
 from pathlib import Path
 
 from experiments import paths as P
-from experiments.dynamics_v3 import FEATURE_SETS, configure
-from experiments.qa_real import _load_candgen
-from experiments.qa_continuity import (_pick_eval_points, _unit_text,
-                                       DATA, CANDGEN, CHAT_CACHE, DOTENV)
+from experiments.dynamics_v3 import configure
+from experiments.candgen_real import load_candidates
+from experiments.qa_continuity import (_pick_eval_points, DATA, CANDGEN, CHAT_CACHE, DOTENV, READER_SYS)
 from experiments.real_embedding import load_dotenv_key
 from experiments.rejudge_kp import _extract_kps, _judge_kp, _hit
 from hybrid_memory.config import Cfg
@@ -28,19 +26,14 @@ from hybrid_memory.core.engine import MemoryEngine
 from hybrid_memory.core.types import Event, Pool, Query
 from hybrid_memory.datasets.real_chat import (build_interaction_windows,
                                               load_interaction_units)
-from hybrid_memory.embed.base import cosine
 from hybrid_memory.embed.cache import SqliteEmbeddingCache
 from hybrid_memory.embed.zhipu import ZhipuEmbedder
 from hybrid_memory.llm import chat
-from hybrid_memory.semantics import RealChatSemantics, normalize
+from hybrid_memory.semantics import normalize
 from hybrid_memory.semantics.llm import LLMSemantics
 from hybrid_memory.semantics.opencode import OpencodeSemantics
 from hybrid_memory.worker import SignalWorker
 
-READER_SYS = ("你在协助一个进行中的工程项目。根据给出的记忆回答问题。"
-              "标为[未确认]的条目只能作为线索，不得作为确定结论；"
-              "未决冲突必须同时说明版本与时间，不得擅自裁决。"
-              "不知道的事不要编造，可以说不确定。用中文简洁回答。")
 
 
 def main() -> None:
@@ -57,12 +50,14 @@ def main() -> None:
                     help="opencode 裁判失败即中止（默认降级并计数）")
     ap.add_argument("--allow-remote", action="store_true")
     args = ap.parse_args()
+    if not args.allow_remote:
+        raise SystemExit("--allow-remote is required for reader/judge calls")
 
     key = load_dotenv_key(DOTENV)
     units = load_interaction_units(DATA)
     windows = build_interaction_windows(units, size=args.size,
                                         stride=args.stride)
-    candgen = _load_candgen(args.candgen)
+    candgen, _ = load_candidates(args.candgen)
     eval_pts = _pick_eval_points(units, 25, 5)
 
     emb = ZhipuEmbedder(api_key=key, cache=SqliteEmbeddingCache(P.EMB_CACHE),

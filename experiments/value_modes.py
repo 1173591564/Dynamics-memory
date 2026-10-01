@@ -32,7 +32,7 @@ def run_one(feature_set: str, seed: int) -> dict:
         cap_m=8, archive_retrieval=False, suppression_on=False,
         tension_delay=0, fresh_alpha=0.0), feature_set)
     emb = SyntheticEmbedder(seed=seed)
-    world = StreamGen(emb, seed=seed, n_stable=0, t_drift=1000,
+    world = StreamGen(seed=seed, n_stable=0, t_drift=1000,
                       t_noise=1000, noise_end=1001, t_conflict=1000,
                       query_rate=0.0)
     eng = MemoryEngine(cfg, emb, world)

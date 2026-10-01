@@ -1,7 +1,7 @@
 """AgentWorker：从 SQLite 领取调查任务，保存产物，再幂等写回。
 
 pending → running → ready → applying → done；异常有限重试，耗尽保留 dead。
-信号在发出时已持久化，易失 SignalQueue 仅作有界镜像；不再先摘整批。
+调查信号直接持久化到 SQLite，不再保留内存镜像。
 同一个 worker 同时只跑一次；SQLite 租约/token 防同任务重复领取和迟到写入。
 模型调用可能重做，但已保存的产物不再问模型；任务效果与回执同事务 checkpoint。
 每日调查次数和完成任务 TTL 去重持久化。工具预算仍按每次调查尝试单独开关。
@@ -23,21 +23,18 @@ from ..core.signals import Signal
 from ..taskstore import TaskLeaseLost
 from .investigator import Budget, Investigation, build_payload
 
-ORIGIN_BY_KIND = {"recall_miss": "repair", "extract_due": "extract",
-                  "thin_recall": "repair"}
+ORIGIN_BY_KIND = {"recall_miss": "repair", "extract_due": "extract"}
 
 
 class AgentWorker:
     def __init__(self, service, investigate: Callable[[dict], Investigation | None],
-                 *, kinds=("recall_miss", "extract_due"),
-                 budget: Budget | None = None, daily_cap: int = 200,
+                 *, budget: Budget | None = None, daily_cap: int = 200,
                  max_attempts: int = 2, dedupe_ttl_s: float = 24 * 3600,
                  idle_s: float = 2.0, before_for: Callable | None = None,
                  max_apply_attempts: int = 3, retry_delay_s: float = 0,
                  lease_s: float | None = None):
         self.svc = service
         self.investigate = investigate
-        self.kinds = tuple(kinds)
         self.budget = budget or Budget()
         self.daily_cap = int(daily_cap)
         self.max_attempts = int(max_attempts)
@@ -52,9 +49,6 @@ class AgentWorker:
                 or not math.isfinite(self.retry_delay_s) or self.retry_delay_s < 0
                 or not math.isfinite(self.dedupe_ttl_s) or self.dedupe_ttl_s < 0):
             raise ValueError("attempt limits/lease must be positive; delays/TTL finite and non-negative")
-        self.svc.persist_task_kinds(self.kinds)
-        self._day = ""
-        self._runs_today = 0
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -67,7 +61,6 @@ class AgentWorker:
         self.n_accepted = 0
         self.n_verdicts = 0
         self.n_diagnosed = 0
-        self.paused_until = ""
 
     # ---- 生命周期 ----
     def start(self) -> None:
@@ -102,19 +95,6 @@ class AgentWorker:
                       file=sys.stderr, flush=True)
 
     # ---- 一轮 ----
-    def _cap_ok(self) -> bool:
-        today = _dt.date.today().isoformat()
-        if today != self._day:
-            self._day, self.paused_until = today, ""
-        self._runs_today = self.svc.tasks.runs_today(today)
-        if self._runs_today >= self.daily_cap:
-            if not self.paused_until:
-                self.paused_until = (_dt.date.today() + _dt.timedelta(days=1)).isoformat()
-                print(f"[agent] 今日调查预算 {self.daily_cap} 用尽，任务留在 SQLite，"
-                      f"{self.paused_until} 恢复", file=sys.stderr, flush=True)
-            return False
-        return True
-
     def process_once(self, max_signals: int | None = None) -> dict:
         """以 SQLite 为事实源，逐个领取；绝不先破坏性摘走一整批任务。
         有保存产物的 ready 任务不再调用模型，也不受当天调查次数用尽阻塞。
@@ -126,7 +106,7 @@ class AgentWorker:
         try:
             store = self.svc.tasks
             store.recover_expired(self.max_attempts, self.max_apply_attempts)
-            batch = store.list_tasks(states=("pending", "ready"), kinds=self.kinds)
+            batch = store.list_tasks(states=("pending", "ready"), kinds=ORIGIN_BY_KIND)
             stats["taken"] = len(batch)
             processed = 0
             for row in batch:
@@ -137,7 +117,8 @@ class AgentWorker:
                     self.n_skipped_recent += 1
                     stats["skipped"] += 1
                     continue
-                if row["state"] == "pending" and not self._cap_ok():
+                if (row["state"] == "pending" and store.runs_today(
+                        _dt.date.today().isoformat()) >= self.daily_cap):
                     stats["deferred"] += 1
                     continue
                 claimed = None
@@ -148,7 +129,6 @@ class AgentWorker:
                         continue
                     processed += 1
                     if claimed["state"] == "running":
-                        self._runs_today = store.runs_today(_dt.date.today().isoformat())
                         self.n_runs += 1
                         stats["run"] += 1
                         self._investigate(claimed)
@@ -180,15 +160,12 @@ class AgentWorker:
                           f"{type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
             return stats
         finally:
-            try:
-                self.svc._sync_task_signals()
-            finally:
-                self._busy.release()
+            self._busy.release()
 
     def _claim(self, row):
         with self.svc.lock:
             row = self.svc.tasks.get(row["id"])
-            sig = Signal(row["kind"], row["payload"], row["t"], row["task_key"], row["id"], row["id"])
+            sig = Signal(row["kind"], row["payload"], row["t"], row["task_key"], row["id"])
             before = row["before_t"] if row["before_t"] is not None else int(self.before_for(sig))
             revision = self.svc._checkpoint_revision
             try:
@@ -206,7 +183,7 @@ class AgentWorker:
 
     def _investigate(self, row):
         signal_id = f"{row['kind']}-{row['id']}-{secrets.token_hex(12)}"
-        sig = Signal(row["kind"], row["payload"], row["t"], row["task_key"], row["id"], row["id"])
+        sig = Signal(row["kind"], row["payload"], row["t"], row["task_key"], row["id"])
         try:
             with self.svc.lock:
                 t_now, scene = self.svc.current()
@@ -265,11 +242,14 @@ class AgentWorker:
                 stats["diagnosed"] += 1
 
     def stats(self) -> dict:
-        self._runs_today = self.svc.tasks.runs_today(_dt.date.today().isoformat())
+        today = _dt.date.today()
+        runs_today = self.svc.tasks.runs_today(today.isoformat())
+        paused_until = ((today + _dt.timedelta(days=1)).isoformat()
+                        if runs_today >= self.daily_cap else "")
         return {"runs": self.n_runs, "failed": self.n_failed,
                 "gave_up": self.n_gave_up, "skipped_recent": self.n_skipped_recent,
                 "proposed": self.n_proposed, "accepted": self.n_accepted,
                 "verdicts": self.n_verdicts, "diagnosed": self.n_diagnosed,
-                "runs_today": self._runs_today, "daily_cap": self.daily_cap,
-                "paused_until": self.paused_until, "tasks": self.svc.tasks.stats(),
+                "runs_today": runs_today, "daily_cap": self.daily_cap,
+                "paused_until": paused_until, "tasks": self.svc.tasks.stats(),
                 "alive": bool(self._thread and self._thread.is_alive())}

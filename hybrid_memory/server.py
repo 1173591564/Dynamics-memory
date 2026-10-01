@@ -64,10 +64,9 @@ from urllib.parse import parse_qs, urlparse
 from . import triggers
 from .candgen.base import CandidateGenerator
 from .candgen.chat import ChatGenerator
-from .candgen.prompt import redact_secrets
+from .candgen.prompt import parse_ids, parse_salience, redact_secrets
 from .config import Cfg
 from .core.engine import MemoryEngine
-from .core.signals import Signal
 from .core.types import Event, Memory, Pool, Query, Retrieval, Tension
 from .datasets.real_chat import InteractionUnit, InteractionWindow
 from .embed.base import Embedder
@@ -182,7 +181,6 @@ class MemoryService:
                                capacity=task_capacity)
         self._checkpoint_revision = 0
         self._checkpoint_fault = False
-        self._task_kinds = {"recall_miss", "extract_due"}
         self.token = self._load_or_create_token()
         self.agent = None                 # AgentWorker，attach_agent 挂上
         self._t = 0
@@ -232,7 +230,6 @@ class MemoryService:
         self._t = max(self._t, next_t)
         self.engine._next_id = max(self.engine._next_id, self.tasks.memory_next_id())
         self.engine.signals.on_emit = self._journal_signal
-        self._sync_task_signals()
 
     def _ensure_healthy(self):
         if self._checkpoint_fault:
@@ -245,27 +242,11 @@ class MemoryService:
             self._checkpoint_fault = True
 
     def _journal_signal(self, kind, payload, t, key, merge):
-        if kind in self._task_kinds:
+        if kind in ("recall_miss", "extract_due"):
             self._ensure_healthy()
             return self.tasks.enqueue(kind, payload, t, key=key, merge=merge,
                                       memory_next_id=self.engine._next_id)
         return None
-
-    def persist_task_kinds(self, kinds):
-        with self._lock:
-            added = set(kinds) - self._task_kinds
-            for sig in self.engine.signals._items:
-                if sig.kind in added and sig.task_id is None:
-                    sig.task_id = self.tasks.enqueue(sig.kind, sig.payload, sig.t, key=sig.key,
-                                                     memory_next_id=self.engine._next_id)
-            self._task_kinds.update(kinds)
-
-    def _sync_task_signals(self):
-        with self._lock:
-            rows = self.tasks.list_tasks(states=("pending", "ready"), kinds=self._task_kinds)
-            self.engine.signals.mirror(self._task_kinds, [
-                Signal(r["kind"], r["payload"], r["t"], r["task_key"], r["id"], r["id"])
-                for r in rows])
 
     def _task_once(self, ctx, request, mutate):
         """调用方持服务锁。业务效果 + checkpoint + 回执同一 SQLite 事务。
@@ -302,11 +283,9 @@ class MemoryService:
             raise
 
     def _durable_propose(self, proposals, ctx):
-        if len(proposals) > 50:
-            raise ValueError("durable proposal batch exceeds limit 50; no items applied")
         accepted, ids, rejected, replayed, applied = 0, [], [], 0, 0
         plain = replace(ctx, task_id=None, lease_token=None)
-        for i, proposal in enumerate(proposals[:50]):
+        for i, proposal in enumerate(proposals):
             # 用实际 ingest 字段规整签名，消除 HTTP 与最终 JSON 的默认值差异。
             # supersedes 的因果检查留在 receipt 查询之后：成功更新后的旧链可能
             # 已指向本任务刚创建的新条目，不能把合法重放误判成未来访问。
@@ -412,7 +391,7 @@ class MemoryService:
                                         reasons=tuple(reasons),
                                         entities=tuple(idx["entities"][:12]))
             evs = [Event(self.semantics.fingerprint(normalize(c.text)),
-                         normalize(c.text), c.text, c.source_unit_ids or (uid,),
+                         normalize(c.text), c.text, (uid,),
                          salience=c.salience, scene=self._scene)
                    for c in cands]
             if evs:
@@ -559,7 +538,7 @@ class MemoryService:
                                     source=source,
                                     entities=tuple(e for e, _ in entities_in(query)))
             self.n_missed += 1
-            n = len(self.engine.signals)
+            n = sum(self.tasks.queued_counts().values()) + len(self.engine.signals)
         self._kick()
         return {"queued": n, "t": self._t}
 
@@ -738,27 +717,23 @@ class MemoryService:
         if _SELF_REF_RE.search(text):
             raise ProposalRejected("self_reference")
         src_raw = p.get("source_unit_ids") or p.get("src") or []
-        src = []
-        for v in src_raw if isinstance(src_raw, list) else []:
-            if isinstance(v, bool):
-                continue
-            if isinstance(v, int) or (isinstance(v, str) and v.strip().isdigit()):
-                src.append(int(v))
+        src = parse_ids(src_raw)
         if not src:
             raise ProposalRejected("no_source")
         known = self.log.exists(src, before=before)
         bad = sorted(set(src) - set(known))
         if bad:
             raise ProposalRejected(f"unknown_or_future_source:{bad}")
-        sal = p.get("salience", 0.5)
-        if isinstance(sal, bool) or not isinstance(sal, (int, float)):
-            sal = 0.5
         ek = p.get("entity_key")
-        sup = [int(v) for v in (p.get("supersedes") or [])
-               if isinstance(v, int) and not isinstance(v, bool)]
+        sup = p.get("supersedes")
+        if sup is None:
+            sup = []
+        if not isinstance(sup, list):
+            raise ProposalRejected("supersedes_must_be_list")
+        sup = parse_ids(sup)
         ev = Event(self.semantics.fingerprint(normalize(text)), normalize(text),
                    text, tuple(sorted(set(src))),
-                   salience=max(0.0, min(1.0, float(sal))),
+                   salience=parse_salience(p.get("salience")),
                    kind="fact", scene=self._scene,
                    entity=(ek.strip()[:120] if isinstance(ek, str) else ""))
         return ev, sup
@@ -771,6 +746,8 @@ class MemoryService:
         取代。返回逐条结果。"""
         if not isinstance(proposals, list):
             raise ValueError("proposals must be a list")
+        if len(proposals) > 50:
+            raise ValueError("proposal batch exceeds limit 50; no items applied")
         accepted, new_ids, rejected = 0, [], []
         with self._lock:
             ctx = (_context if _context is not None
@@ -783,7 +760,7 @@ class MemoryService:
             if origin not in _ORIGINS:
                 origin = "agent"
             t = self._t
-            for i, p in enumerate(proposals[:50]):
+            for i, p in enumerate(proposals):
                 if not isinstance(p, dict):
                     rejected.append({"index": i, "reason": "not_an_object"})
                     continue
@@ -846,7 +823,7 @@ class MemoryService:
     def signals(self) -> dict:
         with self._lock:
             q = self.engine.signals
-            return {"queued": q.peek_kinds(), "n_emitted": q.n_emitted,
+            return {"queued": self.tasks.queued_counts() | q.peek_kinds(), "n_emitted": q.n_emitted,
                     "n_dropped": q.n_dropped,
                     "open_budgets": sorted(self._budgets),
                     "tasks": self.tasks.stats(), "checkpoint_fault": self._checkpoint_fault,
@@ -998,8 +975,8 @@ def _opt_int(body: dict, key: str, *, positive: bool = False):
     v = body.get(key)
     if v is None:
         return None
-    if isinstance(v, bool) or not isinstance(v, int):
-        raise _HttpError(400, f"{key} must be int")
+    if type(v) is not int or not -(2**63) <= v < 2**63:
+        raise _HttpError(400, f"{key} must be a 64-bit int")
     if positive and v <= 0:
         raise _HttpError(400, f"{key} must be positive")
     return v
@@ -1028,8 +1005,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _authorized(self) -> bool:
         return secrets.compare_digest(
-            self.headers.get("Authorization") or "",
-            f"Bearer {self.service.token}")
+            (self.headers.get("Authorization") or "").encode("utf-8"),
+            f"Bearer {self.service.token}".encode("utf-8"))
 
     def _body(self) -> dict:
         ct = (self.headers.get("Content-Type") or "").split(";")[0].strip()
@@ -1067,7 +1044,7 @@ class _Handler(BaseHTTPRequestHandler):
                              "checkpoint_fault": svc._checkpoint_fault, "t": svc._t,
                                   "mems": svc.engine.pool_sizes(),
                                   "tensions": len(svc.engine.tensions),
-                                  "signals": len(svc.engine.signals),
+                                  "signals": sum(svc.tasks.queued_counts().values()) + len(svc.engine.signals),
                                   "log_units": svc.log.count(),
                                   "agent": bool(svc.agent)})
         elif path == "/recall":
@@ -1094,22 +1071,24 @@ class _Handler(BaseHTTPRequestHandler):
                 raise _HttpError(400, "empty turn")
             self._reply(200, svc.observe(user, assistant))
         elif path == "/feedback":
-            try:
-                rid = int(body.get("retrieval_id", -1))
-            except (TypeError, ValueError):
-                raise _HttpError(400, "retrieval_id must be int")
-            out = svc.feedback(rid, body.get("question", ""),
-                               body.get("answer", ""))
+            rid = _opt_int(body, "retrieval_id")
+            if rid is None:
+                raise _HttpError(400, "retrieval_id required")
+            question, answer = body.get("question", ""), body.get("answer", "")
+            if not isinstance(question, str) or not isinstance(answer, str):
+                raise _HttpError(400, "question/answer must be strings")
+            out = svc.feedback(rid, question, answer)
             if "error" in out:
                 code = 409 if "already" in out["error"] else 404
                 raise _HttpError(code, out["error"])
             self._reply(200, out)
         elif path == "/resolve":
-            try:
-                left = int(body.get("left", -1))
-                right = int(body.get("right", -1))
-            except (TypeError, ValueError):
-                raise _HttpError(400, "left/right must be int")
+            left, right = _opt_int(body, "left"), _opt_int(body, "right")
+            if left is None or right is None:
+                raise _HttpError(400, "left/right required")
+            ensure = body.get("ensure_tension", False)
+            if not isinstance(ensure, bool):
+                raise _HttpError(400, "ensure_tension must be bool")
             verdict = str(body.get("verdict", "pending"))
             if verdict not in _VERDICTS:
                 raise _HttpError(400, f"verdict must be one of "
@@ -1118,7 +1097,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._reply(200, svc.resolve(
                 left, right, verdict,
                 entity_key=ek if isinstance(ek, str) else "",
-                ensure_tension=bool(body.get("ensure_tension", False)), signal_id=sid))
+                ensure_tension=ensure, signal_id=sid))
         elif path == "/search":
             k = _opt_int(body, "k", positive=True)
             query = body.get("query", "")
@@ -1156,8 +1135,7 @@ class _Handler(BaseHTTPRequestHandler):
         elif path == "/log/window":
             ids = body.get("unit_ids")
             if (not isinstance(ids, list) or not ids or len(ids) > 20
-                    or not all(isinstance(i, int) and not isinstance(i, bool)
-                               for i in ids)):
+                    or not all(type(i) is int and 0 <= i < 2**63 for i in ids)):
                 raise _HttpError(400, "unit_ids must be a non-empty int list (≤20)")
             self._reply(200, svc.log_window(
                 ids, max_chars=_opt_int(body, "max_chars", positive=True),

@@ -18,10 +18,10 @@ from pathlib import Path
 import numpy as np
 
 from experiments import paths as P
+from experiments.candgen_real import load_candidates
 from experiments.dynamics_v3 import FEATURE_SETS, configure, diagnostics
 from experiments.real_embedding import load_dotenv_key
-from experiments.run_bench import JUDGE_SYS, _judge_answer
-from hybrid_memory.candgen import priority_to_salience, redact_secrets
+from experiments.run_bench import _judge_answer
 from hybrid_memory.config import Cfg
 from hybrid_memory.core.engine import MemoryEngine
 from hybrid_memory.core.types import Event, Query
@@ -44,29 +44,6 @@ READER_SYS = ("你在根据长期记忆回答问题。只依据给出的记忆�
               "标为[未确认]的条目只能作为线索，不得作为确定结论；"
               "未决冲突必须同时说明版本与时间，不得擅自裁决。"
               "用中文简洁回答；记忆里没有答案就回答“不知道”。")
-
-
-def _load_candgen(path: Path) -> dict[int, list[dict]]:
-    candgen: dict[int, list[dict]] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        rec = json.loads(line)
-        if "error" in rec:
-            continue
-        cands = []
-        for c in rec["candidates"]:
-            sal = c.get("salience")
-            if isinstance(sal, bool) or not isinstance(sal, (int, float)):
-                sal = priority_to_salience(c.get("priority"))
-            else:
-                sal = max(0.0, min(1.0, float(sal)))
-            cands.append({"text": redact_secrets(c["text"]),
-                          "src": tuple(c.get("source_unit_ids") or ()),
-                          "salience": sal,
-                          "scene": str(rec.get("scene_name", ""))})
-        candgen[rec["window_id"]] = cands
-    return candgen
 
 
 def _load_questions(path: Path) -> list[dict]:
@@ -105,11 +82,10 @@ def main() -> None:
                     help="延迟记账：recognizer 按回答判 useful-hit")
     ap.add_argument("--feature-set", choices=tuple(FEATURE_SETS), default="p01")
     ap.add_argument("--allow-remote", action="store_true")
-    ap.add_argument("--offline", action="store_true")
     ap.add_argument("--out-prefix", default="qa-real")
     args = ap.parse_args()
-    if args.allow_remote == args.offline:
-        raise SystemExit("choose exactly one of --allow-remote or --offline")
+    if not args.allow_remote:
+        raise SystemExit("--allow-remote is required for reader/judge calls")
     if args.feature_set == "r1234_full" and not args.llm_judge:
         raise SystemExit("r1234_full requires --llm-judge for consolidation")
     if args.feedback and not args.llm_judge:
@@ -118,18 +94,16 @@ def main() -> None:
             "静默退化为 selected-hit 全记，strict 记账失效）")
     if args.opencode and not args.llm_judge:
         raise SystemExit("--opencode requires --llm-judge")
-    if args.opencode and args.offline:
-        raise SystemExit("--opencode 无法离线运行（CLI 需要远端）")
 
     units = load_interaction_units(args.data)
     windows = build_interaction_windows(units, size=args.size,
                                         stride=args.stride)
-    candgen = _load_candgen(args.candgen)
+    candgen, _ = load_candidates(args.candgen)
     questions = _load_questions(args.questions)
 
-    key = None if args.offline else load_dotenv_key(args.dotenv)
+    key = load_dotenv_key(args.dotenv)
     emb = ZhipuEmbedder(api_key=key, cache=SqliteEmbeddingCache(
-        P.EMB_CACHE), offline=args.offline)
+        P.EMB_CACHE), offline=False)
     if args.llm_judge and args.opencode:
         semantics = OpencodeSemantics(
             args.labels, model=args.opencode_model, cache_dir=P.CHAT_CACHE,

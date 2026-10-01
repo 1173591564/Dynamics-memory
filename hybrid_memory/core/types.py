@@ -41,14 +41,12 @@ class Memory:
     # 终身计数（统计用）
     hits: int = 0
     shadow_hits: int = 0
-    shortlisted: int = 0
     evid: int = 1           # 独立重新生成确认次数
     birth: int = 0
     last_hit: int | None = None  # 最近一次 selected（进 context）
     last_seen: int = 0      # 最近一次被生成/确认
     suppressed_by: int | None = None
     superseded_by: int | None = None
-    niche_pair: int | None = None   # 已判定的异 scope 矛盾对（豁免后续压制）
     aggregated_into: int | None = None  # 被收编进聚合 memory（冲突容器代其出场）
     agg_members: tuple = ()         # 聚合 memory 持有的成员 id
     pending_review: bool = False    # 聚合体内的冲突未裁决，等人工/LLM 终裁

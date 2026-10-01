@@ -208,13 +208,13 @@ class TaskStore:
             return True
 
     def claim(self, task_id, *, before, origin, day, daily_cap, lease_s,
-              checkpoint: bytes, expected_revision: int, expected_version: int | None = None):
+              checkpoint: bytes, expected_revision: int, expected_version: int):
         now = self.clock()
         with self.transaction() as conn:
             row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
             if not row or row["state"] not in ("pending", "ready") or row["next_run_at"] > now:
                 return None
-            if expected_version is not None and row["version"] != expected_version:
+            if row["version"] != expected_version:
                 return None  # 列出任务后发生合并，下一轮使用新的 payload/t 重新算因果界
             applying = row["state"] == "ready"
             if not applying:
@@ -245,12 +245,10 @@ class TaskStore:
         with self._lock:
             self._owned(self._conn, task_id, token)
 
-    def store_result(self, task_id, token, result, *, checkpoint=None, expected_revision=None):
-        revision = expected_revision
+    def store_result(self, task_id, token, result, *, checkpoint: bytes, expected_revision: int):
         with self.transaction() as conn:
             self._owned(conn, task_id, token, ("running",))
-            if checkpoint is not None:
-                revision = self._write_checkpoint(conn, checkpoint, expected_revision)
+            revision = self._write_checkpoint(conn, checkpoint, expected_revision)
             conn.execute("UPDATE tasks SET result=?,state='ready',token=NULL,lease_until=NULL,"
                          "updated_at=?,next_run_at=0 WHERE id=?", (encode(result), self.clock(), task_id))
         return revision
@@ -291,6 +289,11 @@ class TaskStore:
             conn.execute("INSERT INTO operations VALUES (?,?,?,?,?)",
                          (task_id, key, request_json, encode(response), self.clock()))
         return response, revision, False
+
+    def queued_counts(self):
+        with self._lock:
+            return dict(self._conn.execute(
+                "SELECT kind,COUNT(*) FROM tasks WHERE state IN ('pending','ready') GROUP BY kind"))
 
     def stats(self):
         with self._lock:

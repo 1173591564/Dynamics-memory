@@ -18,7 +18,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from ..llm import ZhipuChatError
+from ..llm import ZhipuChatError, _cache_lookup, _cache_store
 
 _CLI_INSTRUCTION = "读取附件，按附件中的说明完成任务，只输出结果，不要任何解释。"
 
@@ -49,25 +49,24 @@ def _parse_events(stdout: str):
             ev = json.loads(line)
         except json.JSONDecodeError:
             continue
+        if not isinstance(ev, dict):
+            continue
         if ev.get("type") == "text":
-            part = ev.get("part") or {}
-            if isinstance(part.get("text"), str):
+            part = ev.get("part")
+            if isinstance(part, dict) and isinstance(part.get("text"), str):
                 texts.append(part["text"])
         elif ev.get("type") == "error":
-            err = ev.get("error") or {}
-            data = err.get("data") or {}
-            errors.append(str(data.get("message") or err.get("name") or "error"))
+            err = ev.get("error")
+            data = err.get("data") if isinstance(err, dict) else None
+            message = data.get("message") if isinstance(data, dict) else None
+            name = err.get("name") if isinstance(err, dict) else None
+            errors.append(str(message or name or "error"))
     return "".join(texts), errors, fallback
-
-
-def collect_text(stdout: str) -> str:
-    """从 opencode JSON 事件流里收集 type=="text" 的 part 文本。"""
-    return _parse_events(stdout)[0]
 
 
 class OpencodeRunner:
     def __init__(self, model: str = "zhipu-env/glm-5.3-flash", *,
-                 exe: str | None = None, scratch_dir=None,
+                 exe: str | None = None,
                  timeout_s: int = 300, env_extra: dict | None = None,
                  config_path=None, cache_dir=None, executor=None,
                  workdir=None, payload_dir=None, pure: bool = True):
@@ -81,12 +80,10 @@ class OpencodeRunner:
         if self._exe is None:
             raise RuntimeError("opencode CLI not found on PATH")
         # workdir = --dir（agent 定义从 <workdir>/.opencode/agent/ 发现）；
-        # payload_dir = 附件落盘处（默认同 workdir）
-        self.workdir = (Path(workdir) if workdir else
-                        Path(scratch_dir) if scratch_dir else
-                        Path(tempfile.gettempdir()) / "hybrid_memory_opencode")
+        # payload_dir = 附件落盘处（默认 workdir/.opencode/tmp）；不得反过来改变 agent 发现目录
+        self.workdir = Path(workdir) if workdir else Path(__file__).resolve().parents[2]
         self.workdir.mkdir(parents=True, exist_ok=True)
-        self.payload_dir = Path(payload_dir) if payload_dir else self.workdir
+        self.payload_dir = Path(payload_dir) if payload_dir else self.workdir / ".opencode" / "tmp"
         self.payload_dir.mkdir(parents=True, exist_ok=True)
         env = {**os.environ, **(env_extra or {})}
         cfg = Path(config_path) if config_path else (
@@ -96,36 +93,32 @@ class OpencodeRunner:
         self._env = env
         self.cache_dir = Path(cache_dir) if cache_dir else None
         self._exec = executor or _default_executor
-        self._tag = os.urandom(3).hex()
-        self._seq = 0
 
     def chat(self, system: str, user: str, *,
              agent: str | None = None) -> str:
         """与 llm.chat 同形；cache_dir 非空时按 (agent, model, system, user)
-        磁盘缓存。agent 参与缓存键——换 agent 定义即换缓存命名空间。"""
+        磁盘缓存。只包含 agent 名称，不跟踪定义文件；改定义后须清理缓存。"""
         key = None
         if self.cache_dir is not None:
             raw = (f"opencode\0{agent or ''}\0{self.model}\0{system}\0{user}"
                    .encode("utf-8"))
             key = hashlib.sha256(raw).hexdigest()
-            path = self.cache_dir / f"{key}.json"
-            if path.exists():
-                return json.loads(path.read_text(encoding="utf-8"))["out"]
+            hit = _cache_lookup(self.cache_dir, key)
+            if hit is not None:
+                return hit
         out = self.run(system=system, user=user, agent=agent)
         if key is not None:
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            (self.cache_dir / f"{key}.json").write_text(
-                json.dumps({"out": out}, ensure_ascii=False), encoding="utf-8")
+            _cache_store(self.cache_dir, key, out)
         return out
 
     def run(self, *, system: str, user: str, instruction: str | None = None,
             agent: str | None = None, env_extra: dict | None = None) -> str:
         """env_extra：本次调用追加的环境变量（如每信号的 MEMORY_BRIDGE_SIGNAL）。"""
-        self._seq += 1
-        payload = self.payload_dir / f"call_{self._tag}_{self._seq}.txt"
+        fd, name = tempfile.mkstemp(prefix="call_", suffix=".txt", dir=self.payload_dir)
+        payload = Path(name)
         try:
-            payload.write_text(system + "\n\n---\n\n" + user,
-                               encoding="utf-8")
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(system + "\n\n---\n\n" + user)
             try:    # --file 相对 --dir 解析；payload 在 workdir 内时给相对路径
                 ref = str(payload.relative_to(self.workdir))
             except ValueError:
@@ -158,8 +151,8 @@ class OpencodeRunner:
         if fallback or _FALLBACK_MARKER in (stderr or ""):
             raise ZhipuChatError(
                 f"opencode agent 未找到，已静默回退默认壳: {agent!r}")
+        if errors:
+            raise ZhipuChatError(f"opencode error: {errors[0]}")
         if not reply.strip():
-            if errors:
-                raise ZhipuChatError(f"opencode error: {errors[0]}")
             raise ZhipuChatError("opencode returned no text part")
         return reply

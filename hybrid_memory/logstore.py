@@ -240,18 +240,6 @@ class LogStore:
         return {"unit_id": unit_id, "t": t,
                 "entities": [e for e, _ in ents], "new_entities": new}
 
-    def add_units(self, units: Iterable, scene: str = "") -> int:
-        """批量预灌（回放评测）：InteractionUnit → units。t 取 unit.id
-        （回放里的时间步就是 unit 序号），ts 取 start_time。"""
-        n = 0
-        for u in units:
-            self.add_unit(u.id, u.id, user_text=u.user_text,
-                          assistant_text=u.assistant_text, scene=scene,
-                          assistant_turns=getattr(u, "assistant_turns", 1),
-                          ts=float(getattr(u, "start_time", 0) or 0))
-            n += 1
-        return n
-
     def _embed(self, unit_id: int, user_text: str, assistant_text: str) -> None:
         if self._embedder is None:
             return

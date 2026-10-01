@@ -31,7 +31,7 @@ def test_feature_sets_are_strictly_cumulative():
 def test_diagnostics_excludes_hidden_members():
     cfg = configure(Cfg(), "r1234_full")
     emb = SyntheticEmbedder(seed=0)
-    world = StreamGen(emb, seed=0)
+    world = StreamGen(seed=0)
     eng = MemoryEngine(cfg, emb, world)
     eng.mems[0] = Memory(0, 0, "v", "active", np.ones(2),
                          conf_pos=1.0, salience=0.8, novelty=0.7)
