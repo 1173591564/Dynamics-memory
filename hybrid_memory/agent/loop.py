@@ -1,33 +1,26 @@
-"""AgentWorker：衔尾蛇的"手"——后台线程，把引擎信号交给调查员，把产物喂回引擎。
+"""AgentWorker：从 SQLite 领取调查任务，保存产物，再幂等写回。
 
-    take(recall_miss / extract_due)（锁内）
-      → build_payload（锁内，只读小信息）
-      → investigate(payload)（锁外，可能几十秒：opencode 子进程 + 工具调用）
-      → service.propose / resolve / diagnose（各自锁内）
-
-纪律（衔尾蛇不能把自己吃死）：
-- 同时只跑一个调查员（单线程）；
-- 每信号：工具调用上限 + 回展字符上限 + 超时（预算由 service 按 signal_id
-  在服务端计量，不靠 LLM 自觉）；
-- 每日调用上限：到顶后信号留在有界队列里，次日恢复（不静默丢）；
-- 幂等：同 key 的 recall_miss 在 TTL 内只调查一次；extract_due 每 unit 一次；
-- 失败重试有限次，超过即放弃并计数外显；
-- 因果：before = 信号所在步 + 1（含该步）——日志、记忆工具和写回共用
-  此上界；记忆只提供保守筛选后的当前版本，不重建历史状态。
-  回放驱动可用 before_for 覆盖。
-- 工具结束后关闭预算；正常最终 JSON 使用进程内保留的上下文提交，不把
-  已关闭信号重新开放给 HTTP。每轮随机后缀防旧调用在重试/重启后借壳。
+pending → running → ready → applying → done；异常有限重试，耗尽保留 dead。
+信号在发出时已持久化，易失 SignalQueue 仅作有界镜像；不再先摘整批。
+同一个 worker 同时只跑一次；SQLite 租约/token 防同任务重复领取和迟到写入。
+模型调用可能重做，但已保存的产物不再问模型；任务效果与回执同事务 checkpoint。
+每日调查次数和完成任务 TTL 去重持久化。工具预算仍按每次调查尝试单独开关。
+before/origin 在首次领取时冻结，工具与最终 JSON 均沿用；不重建历史引擎。
+不覆盖语义 worker 的 feedback/conflict/maintenance 易失队列，不宣称 exactly once。
 """
 from __future__ import annotations
 
 import datetime as _dt
+from dataclasses import asdict
+import math
 import secrets
 import sys
 import threading
-import time
 from typing import Callable
 
-from ..investigation_context import CausalViolation
+from ..investigation_context import CausalViolation, InvestigationContext
+from ..core.signals import Signal
+from ..taskstore import TaskLeaseLost
 from .investigator import Budget, Investigation, build_payload
 
 ORIGIN_BY_KIND = {"recall_miss": "repair", "extract_due": "extract",
@@ -39,7 +32,9 @@ class AgentWorker:
                  *, kinds=("recall_miss", "extract_due"),
                  budget: Budget | None = None, daily_cap: int = 200,
                  max_attempts: int = 2, dedupe_ttl_s: float = 24 * 3600,
-                 idle_s: float = 2.0, before_for: Callable | None = None):
+                 idle_s: float = 2.0, before_for: Callable | None = None,
+                 max_apply_attempts: int = 3, retry_delay_s: float = 0,
+                 lease_s: float | None = None):
         self.svc = service
         self.investigate = investigate
         self.kinds = tuple(kinds)
@@ -49,8 +44,15 @@ class AgentWorker:
         self.dedupe_ttl_s = float(dedupe_ttl_s)
         self.idle_s = float(idle_s)
         self.before_for = before_for or (lambda sig: sig.t + 1)
-        self._recent: dict[str, float] = {}
-        self._attempts: dict[str, int] = {}
+        self.max_apply_attempts = int(max_apply_attempts)
+        self.retry_delay_s = float(retry_delay_s)
+        self.lease_s = float(lease_s if lease_s is not None else self.budget.timeout_s + 60)
+        if (self.max_attempts < 1 or self.max_apply_attempts < 1
+                or not math.isfinite(self.lease_s) or self.lease_s <= 0
+                or not math.isfinite(self.retry_delay_s) or self.retry_delay_s < 0
+                or not math.isfinite(self.dedupe_ttl_s) or self.dedupe_ttl_s < 0):
+            raise ValueError("attempt limits/lease must be positive; delays/TTL finite and non-negative")
+        self.svc.persist_task_kinds(self.kinds)
         self._day = ""
         self._runs_today = 0
         self._wake = threading.Event()
@@ -69,8 +71,9 @@ class AgentWorker:
 
     # ---- 生命周期 ----
     def start(self) -> None:
-        if self._thread is not None:
+        if self._thread is not None and self._thread.is_alive():
             return
+        self._stop.clear()
         self._thread = threading.Thread(target=self._loop, name="memory-agent",
                                         daemon=True)
         self._thread.start()
@@ -80,7 +83,8 @@ class AgentWorker:
         self._wake.set()
         if self._thread is not None:
             self._thread.join(timeout)
-            self._thread = None
+            if not self._thread.is_alive():
+                self._thread = None
 
     def notify(self) -> None:
         self._wake.set()
@@ -101,133 +105,171 @@ class AgentWorker:
     def _cap_ok(self) -> bool:
         today = _dt.date.today().isoformat()
         if today != self._day:
-            self._day, self._runs_today = today, 0
-            self.paused_until = ""
+            self._day, self.paused_until = today, ""
+        self._runs_today = self.svc.tasks.runs_today(today)
         if self._runs_today >= self.daily_cap:
             if not self.paused_until:
-                self.paused_until = (_dt.date.today()
-                                     + _dt.timedelta(days=1)).isoformat()
-                print(f"[agent] 今日调查预算 {self.daily_cap} 用尽，信号留队，"
+                self.paused_until = (_dt.date.today() + _dt.timedelta(days=1)).isoformat()
+                print(f"[agent] 今日调查预算 {self.daily_cap} 用尽，任务留在 SQLite，"
                       f"{self.paused_until} 恢复", file=sys.stderr, flush=True)
             return False
         return True
 
     def process_once(self, max_signals: int | None = None) -> dict:
-        """摘一批自己的信号并逐个调查。可从外部同步调用（测试/回放）。"""
+        """以 SQLite 为事实源，逐个领取；绝不先破坏性摘走一整批任务。
+        有保存产物的 ready 任务不再调用模型，也不受当天调查次数用尽阻塞。
+        """
         stats = {"taken": 0, "run": 0, "failed": 0, "skipped": 0,
                  "accepted": 0, "verdicts": 0, "diagnosed": 0, "deferred": 0}
         if not self._busy.acquire(blocking=False):
-            return stats                     # 上一轮还在跑
+            return stats
         try:
-            with self.svc.lock:
-                batch = self.svc.engine.signals.take(self.kinds)
+            store = self.svc.tasks
+            store.recover_expired(self.max_attempts, self.max_apply_attempts)
+            batch = store.list_tasks(states=("pending", "ready"), kinds=self.kinds)
             stats["taken"] = len(batch)
-            now = time.monotonic()
-            for i, sig in enumerate(batch):
-                if max_signals is not None and stats["run"] >= max_signals:
-                    self._requeue(batch[i:])
-                    stats["deferred"] += len(batch) - i
-                    break
-                if not self._cap_ok():
-                    self._requeue(batch[i:])
-                    stats["deferred"] += len(batch) - i
-                    break
-                key = sig.key or f"{sig.kind}:{sig.id}"
-                last = self._recent.get(key)
-                if last is not None and now - last < self.dedupe_ttl_s:
+            processed = 0
+            for row in batch:
+                if self._stop.is_set() or (max_signals is not None and processed >= max_signals):
+                    stats["deferred"] += 1
+                    continue
+                if store.skip_recent(row["id"], self.dedupe_ttl_s):
                     self.n_skipped_recent += 1
                     stats["skipped"] += 1
                     continue
-                ok = self._run_one(sig, stats)
-                if ok:
-                    self._recent[key] = now
-                    self._attempts.pop(key, None)
-                else:
-                    n = self._attempts.get(key, 0) + 1
-                    if n < self.max_attempts:
-                        self._attempts[key] = n
-                        self._requeue([sig])
-                    else:
-                        self._attempts.pop(key, None)
-                        self.n_gave_up += 1
-                        print(f"[agent] 信号 {sig.kind} key={key} 连续失败 "
-                              f"{n} 次，放弃", file=sys.stderr, flush=True)
-            if len(self._recent) > 4096:     # 有界
-                cutoff = now - self.dedupe_ttl_s
-                self._recent = {k: v for k, v in self._recent.items() if v >= cutoff}
+                if row["state"] == "pending" and not self._cap_ok():
+                    stats["deferred"] += 1
+                    continue
+                claimed = None
+                try:
+                    claimed = self._claim(row)
+                    if claimed is None:
+                        stats["deferred"] += 1
+                        continue
+                    processed += 1
+                    if claimed["state"] == "running":
+                        self._runs_today = store.runs_today(_dt.date.today().isoformat())
+                        self.n_runs += 1
+                        stats["run"] += 1
+                        self._investigate(claimed)
+                        # 产物已经持久化；停止时留给下一次启动，而非丢弃。
+                        if self._stop.is_set():
+                            continue
+                        claimed = self._claim(store.get(row["id"]))
+                        if claimed is None:
+                            continue
+                    self._apply(claimed, stats)
+                    store.finish(claimed["id"], claimed["token"])
+                except Exception as exc:
+                    self.n_failed += 1
+                    stats["failed"] += 1
+                    if claimed is not None:
+                        try:
+                            state = store.retry(
+                                claimed["id"], claimed["token"], f"{type(exc).__name__}: {exc}",
+                                max_attempts=self.max_attempts, max_apply_attempts=self.max_apply_attempts,
+                                delay=min(300, self.retry_delay_s * 2 ** min(10, max(
+                                    claimed["attempts"], claimed["apply_attempts"]) - 1)))
+                            if state == "dead":
+                                self.n_gave_up += 1
+                                print(f"[agent] task {claimed['id']} 重试耗尽，放弃（保留 dead 记录）",
+                                      file=sys.stderr, flush=True)
+                        except TaskLeaseLost:
+                            pass  # 已过期/已保存产物：不能覆盖新领取者的状态
+                    print(f"[agent] task {row['id']} 失败，任务/产物保留: "
+                          f"{type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
             return stats
         finally:
-            self._busy.release()
+            try:
+                self.svc._sync_task_signals()
+            finally:
+                self._busy.release()
 
-    def _requeue(self, sigs) -> None:
+    def _claim(self, row):
         with self.svc.lock:
-            for sig in sigs:
-                self.svc.engine.signals.emit(sig.kind, sig.payload, sig.t,
-                                             key=sig.key,
-                                             merge=lambda o, n: o)
+            row = self.svc.tasks.get(row["id"])
+            sig = Signal(row["kind"], row["payload"], row["t"], row["task_key"], row["id"], row["id"])
+            before = row["before_t"] if row["before_t"] is not None else int(self.before_for(sig))
+            revision = self.svc._checkpoint_revision
+            try:
+                claimed = self.svc.tasks.claim(
+                    row["id"], before=before, origin=ORIGIN_BY_KIND.get(sig.kind, "agent"),
+                    day=_dt.date.today().isoformat(), daily_cap=self.daily_cap,
+                    lease_s=self.lease_s, checkpoint=self.svc._dump_state(),
+                    expected_revision=self.svc._checkpoint_revision, expected_version=row["version"])
+            except BaseException:
+                self.svc._check_checkpoint_error(revision)
+                raise
+            if claimed is not None:
+                self.svc._checkpoint_revision = claimed["revision"]
+            return claimed
 
-    def _run_one(self, sig, stats: dict) -> bool:
-        before = int(self.before_for(sig))
-        signal_id = f"{sig.kind}-{sig.id}-{sig.t}-{secrets.token_hex(12)}"
-        with self.svc.lock:
-            t_now, scene = self.svc.current()
-            ents = []
-            if isinstance(sig.payload, dict):
-                ents = list(sig.payload.get("entities", []))[:12]
-            hints = self.svc.log.mention_counts(ents, before=before) if ents else {}
-            payload = build_payload(sig, signal_id=signal_id, t=t_now,
-                                    scene=scene, budget=self.budget,
-                                    entity_hints=hints)
-            payload["before"] = before
-            context = self.svc.open_budget(
-                signal_id, tool_calls=self.budget.tool_calls,
-                window_chars=self.budget.window_chars, before=before,
-                origin=ORIGIN_BY_KIND.get(sig.kind, "agent"))
-        self._runs_today += 1
-        self.n_runs += 1
-        stats["run"] += 1
+    def _investigate(self, row):
+        signal_id = f"{row['kind']}-{row['id']}-{secrets.token_hex(12)}"
+        sig = Signal(row["kind"], row["payload"], row["t"], row["task_key"], row["id"], row["id"])
         try:
+            with self.svc.lock:
+                t_now, scene = self.svc.current()
+                ents = list(sig.payload.get("entities", []))[:12] if isinstance(sig.payload, dict) else []
+                hints = self.svc.log.mention_counts(ents, before=row["before_t"]) if ents else {}
+                payload = build_payload(sig, signal_id=signal_id, t=t_now, scene=scene,
+                                        budget=self.budget, entity_hints=hints)
+                payload["before"] = row["before_t"]
+                self.svc.open_budget(signal_id, tool_calls=self.budget.tool_calls,
+                                     window_chars=self.budget.window_chars,
+                                     before=row["before_t"], origin=row["origin"],
+                                     task_id=row["id"], lease_token=row["token"])
             inv = self.investigate(payload)
-        except Exception as exc:             # noqa: BLE001
-            print(f"[agent] 调查员异常: {type(exc).__name__}: {exc}",
-                  file=sys.stderr, flush=True)
-            inv = None
+            if inv is None:
+                raise RuntimeError("调查员没有返回合法产物")
         finally:
             usage = self.svc.close_budget(signal_id)
-        if inv is None:
-            self.n_failed += 1
-            stats["failed"] += 1
-            return False
-        # 工具已关闭，但正常最终 JSON 仍能提交；仅进程内持有此上下文，
-        # 不重新开放 signal_id，也不丢弃原来的因果界/来源标签。
+        # 产物可引用领取后才出现的记忆；与当前引擎 checkpoint 一起提交，
+        # 防止重启后有产物却丢掉它所引用的 memory id/版本。
+        with self.svc.lock:
+            revision = self.svc._checkpoint_revision
+            try:
+                self.svc._checkpoint_revision = self.svc.tasks.store_result(
+                    row["id"], row["token"],
+                    {"investigation": asdict(inv), "usage": usage, "signal_id": signal_id},
+                    checkpoint=self.svc._dump_state(), expected_revision=revision)
+            except BaseException:
+                self.svc._check_checkpoint_error(revision)
+                raise
+
+    def _apply(self, row, stats):
+        result = row["result"]
+        inv = Investigation(**result["investigation"])
+        context = InvestigationContext(result["signal_id"], row["before_t"], row["origin"],
+                                       row["id"], row["token"])
         if inv.proposals:
             self.n_proposed += len(inv.proposals)
             res = self.svc.propose(inv.proposals, _context=context)
-            self.n_accepted += res["accepted"]
-            stats["accepted"] += res["accepted"]
+            applied = res.get("applied", res["accepted"])
+            self.n_accepted += applied
+            stats["accepted"] += applied
         for left, right, verdict in inv.verdicts:
             try:
-                out = self.svc.resolve(left, right, verdict, ensure_tension=True,
-                                       _context=context)
+                out = self.svc.resolve(left, right, verdict, ensure_tension=True, _context=context)
             except CausalViolation:
-                # 一条越界裁决不阻断同份 JSON 的合法诊断/提议；也不做任何写入。
                 print(f"[agent] 拒绝越界裁决 {left}/{right}", file=sys.stderr, flush=True)
                 continue
-            self.n_verdicts += out.get("resolved", 0)
-            stats["verdicts"] += out.get("resolved", 0)
+            resolved = 0 if out.get("replayed") else out.get("resolved", 0)
+            self.n_verdicts += resolved
+            stats["verdicts"] += resolved
         if inv.diagnosis is not None:
-            self.svc.diagnose(inv.diagnosis["miss_type"],
-                              inv.diagnosis.get("note", ""),
-                              kind=sig.kind, usage=usage, _context=context)
-            self.n_diagnosed += 1
-            stats["diagnosed"] += 1
-        return True
+            out = self.svc.diagnose(inv.diagnosis["miss_type"], inv.diagnosis.get("note", ""),
+                                   kind=row["kind"], usage=result["usage"], _context=context)
+            if not out.get("replayed"):
+                self.n_diagnosed += 1
+                stats["diagnosed"] += 1
 
     def stats(self) -> dict:
+        self._runs_today = self.svc.tasks.runs_today(_dt.date.today().isoformat())
         return {"runs": self.n_runs, "failed": self.n_failed,
                 "gave_up": self.n_gave_up, "skipped_recent": self.n_skipped_recent,
                 "proposed": self.n_proposed, "accepted": self.n_accepted,
                 "verdicts": self.n_verdicts, "diagnosed": self.n_diagnosed,
                 "runs_today": self._runs_today, "daily_cap": self.daily_cap,
-                "paused_until": self.paused_until,
+                "paused_until": self.paused_until, "tasks": self.svc.tasks.stats(),
                 "alive": bool(self._thread and self._thread.is_alive())}

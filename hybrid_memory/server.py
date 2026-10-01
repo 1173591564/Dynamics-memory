@@ -36,15 +36,19 @@ token 持久化在 state_dir/.memory-token，插件侧同路径读取或经环�
 请求头 X-Signal-Id（调查员插件自动附带）：按信号计量工具调用次数与回展
 字符预算，并对该信号统一施加因果上界 before——不靠 LLM 自觉。
 
-状态：内存引擎 + <project>/.opencode/memory/state.pkl 快照（启动加载、
-/save 与退出时保存）+ log.sqlite（L0，追加写）。pickle 反序列化走白名单
-Unpickler。依赖注入（cfg/emb/semantics/generator/logstore）便于测试。
+状态：<project>/.opencode/memory/ 下 log.sqlite（L0）与 tasks.sqlite
+（调查任务/产物/回执/checkpoint）。有 SQLite checkpoint 时以它为准，否则兼容
+state.pkl；/save 更新 checkpoint 并导出 state.pkl。pickle 反序列化仍走白名单。
+依赖注入（cfg/emb/semantics/generator/logstore）便于测试。
 """
 from __future__ import annotations
 
 import argparse
 import copy
+from dataclasses import replace
+import io
 import json
+import math
 import os
 import pickle
 import re
@@ -63,6 +67,7 @@ from .candgen.chat import ChatGenerator
 from .candgen.prompt import redact_secrets
 from .config import Cfg
 from .core.engine import MemoryEngine
+from .core.signals import Signal
 from .core.types import Event, Memory, Pool, Query, Retrieval, Tension
 from .datasets.real_chat import InteractionUnit, InteractionWindow
 from .embed.base import Embedder
@@ -73,6 +78,7 @@ from .logstore import LogStore, entities_in
 from .semantics import normalize
 from .semantics.llm import LLMSemantics
 from .worker import SignalWorker
+from .taskstore import TaskStore, TaskQueueFull, CheckpointConflict
 
 _RETRIEVAL_KEEP = 512   # retrieval 注册表上限（feedback 用，防无界增长）
 # [^>]* 单趟即可：匹配内部不含 '>'，嵌套 payload 被整体吃掉，
@@ -159,7 +165,7 @@ class ProposalRejected(ValueError):
 class MemoryService:
     def __init__(self, cfg: Cfg, emb: Embedder, semantics, generator:
                  CandidateGenerator, state_dir: Path | None = None,
-                 logstore: LogStore | None = None):
+                 logstore: LogStore | None = None, task_capacity: int = 4096):
         self.cfg = cfg
         self.emb = emb
         self.semantics = semantics
@@ -172,6 +178,11 @@ class MemoryService:
                            if state_dir else None)
         self.log = logstore or LogStore(
             Path(state_dir) / "log.sqlite" if state_dir else None)
+        self.tasks = TaskStore(Path(state_dir) / "tasks.sqlite" if state_dir else None,
+                               capacity=task_capacity)
+        self._checkpoint_revision = 0
+        self._checkpoint_fault = False
+        self._task_kinds = {"recall_miss", "extract_due"}
         self.token = self._load_or_create_token()
         self.agent = None                 # AgentWorker，attach_agent 挂上
         self._t = 0
@@ -186,7 +197,21 @@ class MemoryService:
         self.n_missed = 0
         self.n_proposals = 0
         self.n_rejected = 0
-        if self.state_path and self.state_path.exists():
+        try:
+            revision, checkpoint = self.tasks.checkpoint()
+        except Exception as exc:
+            self.tasks.close()
+            self.log.close()
+            raise RuntimeError("durable checkpoint 无法读取；请恢复配套备份") from exc
+        if checkpoint is not None:
+            try:
+                self._load(checkpoint)
+                self._checkpoint_revision = revision
+            except Exception as exc:
+                self.tasks.close()
+                self.log.close()
+                raise RuntimeError("durable checkpoint 损坏；拒绝用旧 state.pkl 空启动，请恢复配套备份") from exc
+        elif self.state_path and self.state_path.exists():
             try:
                 self._load()
             except Exception as exc:  # noqa: BLE001
@@ -205,6 +230,102 @@ class MemoryService:
         next_id, next_t = self.log.next_position()
         self._unit_id = max(self._unit_id, next_id)
         self._t = max(self._t, next_t)
+        self.engine._next_id = max(self.engine._next_id, self.tasks.memory_next_id())
+        self.engine.signals.on_emit = self._journal_signal
+        self._sync_task_signals()
+
+    def _ensure_healthy(self):
+        if self._checkpoint_fault:
+            raise CheckpointConflict("checkpoint 状态不确定或已被其他实例推进；请重启服务")
+
+    def _check_checkpoint_error(self, revision):
+        try:
+            self._checkpoint_fault = self.tasks.checkpoint()[0] != revision
+        except Exception:
+            self._checkpoint_fault = True
+
+    def _journal_signal(self, kind, payload, t, key, merge):
+        if kind in self._task_kinds:
+            self._ensure_healthy()
+            return self.tasks.enqueue(kind, payload, t, key=key, merge=merge,
+                                      memory_next_id=self.engine._next_id)
+        return None
+
+    def persist_task_kinds(self, kinds):
+        with self._lock:
+            added = set(kinds) - self._task_kinds
+            for sig in self.engine.signals._items:
+                if sig.kind in added and sig.task_id is None:
+                    sig.task_id = self.tasks.enqueue(sig.kind, sig.payload, sig.t, key=sig.key,
+                                                     memory_next_id=self.engine._next_id)
+            self._task_kinds.update(kinds)
+
+    def _sync_task_signals(self):
+        with self._lock:
+            rows = self.tasks.list_tasks(states=("pending", "ready"), kinds=self._task_kinds)
+            self.engine.signals.mirror(self._task_kinds, [
+                Signal(r["kind"], r["payload"], r["t"], r["task_key"], r["id"], r["id"])
+                for r in rows])
+
+    def _task_once(self, ctx, request, mutate):
+        """调用方持服务锁。业务效果 + checkpoint + 回执同一 SQLite 事务。
+        外部 embedding 调用可能重做；失败回滚内存时保留已有 Memory 的身份，
+        使在途语义 worker/检索登记持有的引用不悬空。
+        """
+        self._ensure_healthy()
+        eng = self.engine
+        fields = ("mems", "tensions", "_next_id", "_consolidation_pending",
+                  "_consolidation_deferred", "_shadow_pending") + _COUNTERS
+        original_mems = dict(eng.mems)
+        backup = copy.deepcopy({k: getattr(eng, k) for k in fields})
+        counters = {k: getattr(self, k) for k in _SERVICE_COUNTERS}
+        miss_counts = dict(self.miss_counts)
+        revision = self._checkpoint_revision
+        try:
+            out, next_revision, replayed = self.tasks.apply_operation(
+                ctx.task_id, ctx.lease_token, request, mutate, self._dump_state, revision)
+            self._checkpoint_revision = next_revision
+            return dict(out, replayed=replayed)
+        except BaseException:
+            for mid, original in original_mems.items():
+                original.__dict__.clear()
+                original.__dict__.update(backup["mems"][mid].__dict__)
+            backup["mems"] = original_mems
+            for k, v in backup.items():
+                setattr(eng, k, v)
+            for k, v in counters.items():
+                setattr(self, k, v)
+            self.miss_counts = miss_counts
+            # SIGTERM/提交异常若落在 commit 与 Python 返回之间，不能再保存
+            # 回滚后的内存去覆盖已提交效果；置故障状态，要求重启读取 checkpoint。
+            self._check_checkpoint_error(revision)
+            raise
+
+    def _durable_propose(self, proposals, ctx):
+        if len(proposals) > 50:
+            raise ValueError("durable proposal batch exceeds limit 50; no items applied")
+        accepted, ids, rejected, replayed, applied = 0, [], [], 0, 0
+        plain = replace(ctx, task_id=None, lease_token=None)
+        for i, proposal in enumerate(proposals[:50]):
+            # 用实际 ingest 字段规整签名，消除 HTTP 与最终 JSON 的默认值差异。
+            # supersedes 的因果检查留在 receipt 查询之后：成功更新后的旧链可能
+            # 已指向本任务刚创建的新条目，不能把合法重放误判成未来访问。
+            try:
+                ev, sup = self._validate_proposal(proposal, ctx.before)
+                canonical = {"text": ev.text, "src": list(ev.src), "salience": ev.salience,
+                             "entity_key": ev.entity, "supersedes": sorted(set(sup))}
+            except (ProposalRejected, AttributeError):
+                canonical = proposal
+            out = self._task_once(ctx, {"action": "propose", "proposal": canonical},
+                                  lambda: self.propose([proposal], _context=plain))
+            accepted += out["accepted"]
+            ids.extend(out["new_ids"])
+            replayed += int(out["replayed"])
+            applied += out["accepted"] if not out["replayed"] else 0
+            rejected.extend(dict(r, index=i) for r in out["rejected"])
+        return {"accepted": accepted, "new_ids": ids, "merged": accepted - len(ids),
+                "rejected": rejected, "replayed": replayed, "applied": applied, "origin": ctx.origin,
+                "pool": self.engine.pool_sizes(), "t": self._t}
 
     # 供 AgentWorker 使用的最小接口
     @property
@@ -245,6 +366,7 @@ class MemoryService:
     def observe(self, user_text: str, assistant_text: str) -> dict:
         # 1) 锁内：L0 在数据库事务内分配 unit/t 并提交，再做扫描和抽取。
         with self._lock:
+            self._ensure_healthy()
             scene = self._scene
             idx = self.log.append_unit(self._t, min_unit_id=self._unit_id,
                                        user_text=user_text,
@@ -283,6 +405,7 @@ class MemoryService:
                   file=sys.stderr, flush=True)
         # 3) 锁内：产物入池、发信号、推进时间
         with self._lock:
+            self._ensure_healthy()
             self._scene = new_scene or self._scene
             if reasons:
                 self.engine.report_unit(uid, t, scene=self._scene,
@@ -353,6 +476,7 @@ class MemoryService:
             return self._recall_main(q, k)
         qv = self.emb.embed([q])[0]  # 未准入的请求不会触发 embedding
         with self._lock:
+            self._ensure_healthy()
             ids = self._causal_memory_ids(ctx.before)
             cfg = copy.copy(self.cfg)
             if k is not None:
@@ -369,6 +493,7 @@ class MemoryService:
     def _recall_main(self, q: str, k: int | None = None) -> dict:
         qv = self.emb.embed([q])[0]
         with self._lock:
+            self._ensure_healthy()
             if k is not None:
                 old_k, self.cfg.k = self.cfg.k, k
                 try:
@@ -396,6 +521,7 @@ class MemoryService:
 
     def feedback(self, retrieval_id: int, question: str, answer: str) -> dict:
         with self._lock:
+            self._ensure_healthy()
             ret = self._retrievals.get(retrieval_id)
             if ret is None:
                 return {"error": f"unknown retrieval_id {retrieval_id}"}
@@ -411,6 +537,7 @@ class MemoryService:
             t = self._t
         wstats = self.worker.process(t)   # 排空 feedback_pending 等信号（LLM 锁外）
         with self._lock:
+            self._ensure_healthy()
             # recognizer 说一条都没用上 → 记忆没接住这个问题
             if (ret.credited and ret.n_useful == 0 and ret.selected
                     and self.cfg.miss_on_recognizer_none):
@@ -427,6 +554,7 @@ class MemoryService:
         if source not in _MISS_SOURCES:
             source = "external"
         with self._lock:
+            self._ensure_healthy()
             self.engine.report_miss(query, self._t, hint=hint[:300],
                                     source=source,
                                     entities=tuple(e for e, _ in entities_in(query)))
@@ -463,6 +591,13 @@ class MemoryService:
             raise ValueError(f"verdict must be one of {sorted(_VERDICTS)}")
         with self._lock:
             ctx = _context if _context is not None else self._admit(signal_id)[0]
+            if ctx.task_id is not None:
+                request = {"action": "resolve", "pair": sorted((left, right)),
+                           "verdict": verdict, "entity_key": entity_key[:120],
+                           "ensure_tension": ensure_tension}
+                return self._task_once(ctx, request, lambda: self.resolve(
+                    left, right, verdict, entity_key, ensure_tension,
+                    _context=replace(ctx, task_id=None, lease_token=None)))
             if ctx.before is not None:
                 eligible = self._causal_memory_ids(ctx.before)
                 if left not in eligible or right not in eligible:
@@ -492,6 +627,7 @@ class MemoryService:
         if max_chars is not None and (type(max_chars) is not int or max_chars <= 0):
             raise ValueError("max_chars must be a positive int")
         with self._lock:
+            self._ensure_healthy()
             bud = None
             ctx = InvestigationContext(None, before)
             if signal_id is not None:
@@ -503,8 +639,10 @@ class MemoryService:
                     raise PermissionError(
                         f"该信号工具调用预算 {bud['tool_calls']} 已用尽，请立即汇总输出")
                 base = bud["context"]
+                if base.task_id is not None:
+                    self.tasks.check_owned(base.task_id, base.lease_token)
                 bound = base.before if before is None else min(before, base.before)
-                ctx = InvestigationContext(signal_id, bound, base.origin)
+                ctx = replace(base, before=bound)
             cap = 0
             if window:
                 remaining = (bud["window_chars"] - bud["window_used"]
@@ -557,7 +695,8 @@ class MemoryService:
 
     def open_budget(self, signal_id: str, *, tool_calls: int,
                     window_chars: int, before: int,
-                    origin: str | None = None) -> InvestigationContext:
+                    origin: str | None = None, task_id: int | None = None,
+                    lease_token: str | None = None) -> InvestigationContext:
         """打开一次调查并返回仅供进程内最终 JSON 使用的不可变上下文。
         HTTP 工具必须使用活跃 signal_id；不能提供此对象跳过计量。
         """
@@ -568,7 +707,7 @@ class MemoryService:
             if type(value) is not int or value < 0:
                 raise ValueError(f"{name} must be a non-negative int")
         ctx = InvestigationContext(signal_id, before,
-                                   origin if origin in _ORIGINS else "agent")
+                                   origin if origin in _ORIGINS else "agent", task_id, lease_token)
         with self._lock:
             if signal_id in self._budgets:
                 raise ValueError(f"signal {signal_id} already open")
@@ -636,6 +775,8 @@ class MemoryService:
         with self._lock:
             ctx = (_context if _context is not None
                    else self._admit(signal_id, before)[0])
+            if ctx.task_id is not None:
+                return self._durable_propose(proposals, ctx)
             bound = ctx.before
             if ctx.signal_id is not None:
                 origin = ctx.origin
@@ -675,16 +816,21 @@ class MemoryService:
     def diagnose(self, miss_type: str, note: str = "", *,
                  signal_id: str | None = None, kind: str = "",
                  usage: dict | None = None,
-                 _context: InvestigationContext | None = None) -> dict:
+                 _context: InvestigationContext | None = None, _audit=True) -> dict:
         from .agent.investigator import MISS_TYPES
         if miss_type not in MISS_TYPES:
             raise ValueError(f"miss_type must be one of {MISS_TYPES}")
         with self._lock:
             ctx = _context if _context is not None else self._admit(signal_id)[0]
+            if ctx.task_id is not None:
+                return self._task_once(ctx, {"action": "diagnose", "miss_type": miss_type,
+                                             "note": (note or "").strip()[:500]},
+                    lambda: self.diagnose(miss_type, note, kind=kind, usage=usage,
+                        _context=replace(ctx, task_id=None, lease_token=None), _audit=False))
             signal_id = ctx.signal_id
             self.miss_counts[miss_type] = self.miss_counts.get(miss_type, 0) + 1
             counts = dict(self.miss_counts)
-        if self.state_path is not None:
+        if _audit and self.state_path is not None:
             rec = {"ts": round(time.time(), 1), "t": self._t,
                    "signal_id": signal_id, "kind": kind,
                    "miss_type": miss_type, "note": (note or "")[:500],
@@ -703,6 +849,7 @@ class MemoryService:
             return {"queued": q.peek_kinds(), "n_emitted": q.n_emitted,
                     "n_dropped": q.n_dropped,
                     "open_budgets": sorted(self._budgets),
+                    "tasks": self.tasks.stats(), "checkpoint_fault": self._checkpoint_fault,
                     "missed": self.n_missed, "proposals": self.n_proposals,
                     "rejected": self.n_rejected,
                     "candgen_fail": self.n_candgen_fail,
@@ -712,11 +859,8 @@ class MemoryService:
                     "t": self._t}
 
     # ================================================== 持久化
-    def save(self) -> dict:
-        if self.state_path is None:
-            return {"saved": False, "reason": "no state_dir"}
-        with self._lock:
-            state = {
+    def _state(self):
+        return {
                 "mems": self.engine.mems, "tensions": self.engine.tensions,
                 "next_id": self.engine._next_id,
                 "consolidation_pending": self.engine._consolidation_pending,
@@ -727,16 +871,37 @@ class MemoryService:
                 "miss_counts": dict(self.miss_counts),
                 "service_counters": {k: getattr(self, k) for k in _SERVICE_COUNTERS},
                 "t": self._t, "unit_id": self._unit_id, "scene": self._scene}
+
+    def _dump_state(self):
+        self._ensure_healthy()
+        return pickle.dumps(self._state(), protocol=4)
+
+    def save(self) -> dict:
+        if self.state_path is None:
+            return {"saved": False, "reason": "no state_dir"}
+        with self._lock:
+            state = self._dump_state()
+            if self._checkpoint_revision or self.tasks.checkpoint()[0]:
+                revision = self._checkpoint_revision
+                try:
+                    self._checkpoint_revision = self.tasks.save_checkpoint(state, revision)
+                except BaseException:
+                    self._check_checkpoint_error(revision)
+                    raise
             tmp = self.state_path.with_suffix(".tmp")
             with open(tmp, "wb") as f:
-                # 固定协议，避免 Python 默认协议变化引入新的 numpy 重建 global。
-                pickle.dump(state, f, protocol=4)
+                f.write(state)
+                f.flush()
+                os.fsync(f.fileno())
             os.replace(tmp, self.state_path)
         return {"saved": True, "mems": len(self.engine.mems)}
 
-    def _load(self) -> None:
-        with open(self.state_path, "rb") as f:
-            state = _RestrictedUnpickler(f).load()
+    def _load(self, checkpoint: bytes | None = None) -> None:
+        if checkpoint is None:
+            with open(self.state_path, "rb") as f:
+                state = _RestrictedUnpickler(f).load()
+        else:
+            state = _RestrictedUnpickler(io.BytesIO(checkpoint)).load()
         if not isinstance(state, dict):
             raise ValueError(f"state.pkl 顶层类型异常: {type(state).__name__}")
         missing = _STATE_KEYS - state.keys()
@@ -897,7 +1062,9 @@ class _Handler(BaseHTTPRequestHandler):
             raise SignalClosed(f"调查员不允许访问 {path}")
         if path == "/health":
             with svc._lock:   # pool_sizes 迭代 mems，与 observe 并发会炸
-                self._reply(200, {"ok": True, "t": svc._t,
+                self._reply(503 if svc._checkpoint_fault else 200,
+                            {"ok": not svc._checkpoint_fault,
+                             "checkpoint_fault": svc._checkpoint_fault, "t": svc._t,
                                   "mems": svc.engine.pool_sizes(),
                                   "tensions": len(svc.engine.tensions),
                                   "signals": len(svc.engine.signals),
@@ -1022,6 +1189,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._dispatch(path, q, body)
         except _HttpError as exc:
             self._reply(exc.code, {"error": str(exc)})
+        except (TaskQueueFull, CheckpointConflict) as exc:
+            self._reply(503, {"error": str(exc)})
         except PermissionError as exc:          # 预算用尽
             self._reply(429, {"error": str(exc)})
         except (SignalClosed, CausalViolation) as exc:             # 信号号无效/已关闭
@@ -1088,7 +1257,7 @@ def _load_env_key(project_dir: Path) -> str | None:
 
 def build_default_service(project_dir: str | Path,
                           model: str = "glm-5.3-flash",
-                          embed_log: bool = True) -> MemoryService:
+                          embed_log: bool = True, task_capacity: int = 4096) -> MemoryService:
     from .embed.cache import SqliteEmbeddingCache
     from .embed.zhipu import ZhipuEmbedder
 
@@ -1112,7 +1281,7 @@ def build_default_service(project_dir: str | Path,
               useful_hit=True, defer_credit=True)
     log = LogStore(mem_dir / "log.sqlite", embedder=emb if embed_log else None)
     return MemoryService(cfg, emb, semantics, ChatGenerator(chat_fn),
-                         state_dir=mem_dir, logstore=log)
+                         state_dir=mem_dir, logstore=log, task_capacity=task_capacity)
 
 
 def main() -> None:
@@ -1128,15 +1297,23 @@ def main() -> None:
     ap.add_argument("--no-agent", action="store_true",
                     default=os.environ.get("MEMORY_AGENT", "").lower()
                     in ("off", "0", "false"),
-                    help="不启动调查员（仅被动 candgen；信号有界堆积可观测）；"
+                    help="不启动调查员（仅被动 candgen；调查任务留在 SQLite）；"
                          "环境变量 MEMORY_AGENT=off 等价")
     ap.add_argument("--agent-daily-cap", type=int,
                     default=int(os.environ.get("MEMORY_AGENT_DAILY_CAP", "200")))
     ap.add_argument("--agent-tool-calls", type=int, default=8)
     ap.add_argument("--agent-window-chars", type=int, default=4000)
+    ap.add_argument("--task-queue-cap", type=int, default=4096,
+                    help="未结束调查任务上限；满时拒绝新任务，不逐出已接受任务")
+    ap.add_argument("--agent-retry-delay", type=float, default=2.0,
+                    help="调查/应用失败的指数退避起点（秒，上限 300 秒）")
     args = ap.parse_args()
+    if args.task_queue_cap < 1:
+        ap.error("--task-queue-cap must be positive")
+    if not math.isfinite(args.agent_retry_delay) or args.agent_retry_delay < 0:
+        ap.error("--agent-retry-delay must be finite and non-negative")
 
-    service = build_default_service(args.project, model=args.model)
+    service = build_default_service(args.project, model=args.model, task_capacity=args.task_queue_cap)
     httpd = serve(service, args.port)
     port = httpd.server_address[1]
 
@@ -1147,13 +1324,14 @@ def main() -> None:
         try:
             key = _load_env_key(Path(args.project))
             # 不给调查员开 chat 缓存：载荷含唯一 signal_id 永不命中，只会
-            # 无界堆文件；诊断与用量已落 diagnoses.jsonl
+            # 无界堆文件；调查产物、诊断回执和用量已落 tasks.sqlite
             inv = OpencodeInvestigator(
                 port=port, token=service.token, model=args.agent_model,
                 env_extra={"ZAI_API_KEY": key} if key else None,
                 timeout_s=300,
                 workdir=Path(__file__).resolve().parents[1])
             agent = AgentWorker(service, inv, daily_cap=args.agent_daily_cap,
+                                retry_delay_s=args.agent_retry_delay,
                                 budget=Budget(tool_calls=args.agent_tool_calls,
                                               window_chars=args.agent_window_chars))
             service.attach_agent(agent)

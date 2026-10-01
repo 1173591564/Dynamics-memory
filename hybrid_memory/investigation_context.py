@@ -7,6 +7,8 @@ class InvestigationContext:
     signal_id: str | None
     before: int | None
     origin: str = "agent"
+    task_id: int | None = None
+    lease_token: str | None = None
 
 
 class SignalClosed(Exception):
