@@ -202,15 +202,16 @@ class MemoryEngine:
 
     def report_miss(self, q: str, t: int, *, hint: str = "",
                     source: str = "", retrieval: Retrieval | None = None,
-                    entities: tuple = ()) -> None:
+                    entities: tuple = (), retrieved: list[dict] | None = None) -> None:
         """记忆没接住一次需求：发 recall_miss。来源 source ∈
         {recognizer_none, correction, agent_tool, thin, external}。
         同一问题在队列里只留一条，新的 hint/source 合并进去。
         载荷带上当时已召回的记忆 id/文本，供调查员避免重复提议。"""
         if not q or not q.strip():
             return
-        retrieved = [{"id": m.id, "t": m.birth, "text": m.text}
-                     for m in (retrieval.selected if retrieval else [])]
+        if retrieved is None:
+            retrieved = [{"id": m.id, "t": m.birth, "text": m.text}
+                         for m in (retrieval.selected if retrieval else [])]
         payload = {"q": q, "hints": [hint] if hint else [],
                    "sources": [source] if source else [],
                    "retrieved": retrieved, "entities": list(entities),

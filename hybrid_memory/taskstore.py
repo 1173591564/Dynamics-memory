@@ -59,6 +59,9 @@ CREATE TABLE IF NOT EXISTS operations (
  request TEXT NOT NULL, response TEXT NOT NULL, created_at REAL NOT NULL,
  PRIMARY KEY(task_id, op_key)
 );
+CREATE TABLE IF NOT EXISTS unit_receipts (
+ unit_id INTEGER PRIMARY KEY, response TEXT NOT NULL, created_at REAL NOT NULL
+);
 """
 
 
@@ -116,30 +119,35 @@ class TaskStore:
             return [self._decode(r) for r in self._conn.execute(query + " ORDER BY id", params)]
 
     def enqueue(self, kind, payload, t, *, key="", merge=None, memory_next_id=0):
-        now = self.clock()
         with self.transaction() as conn:
-            conn.execute("INSERT INTO metadata(key,value) VALUES('memory_next_id',?) "
-                         "ON CONFLICT(key) DO UPDATE SET value=MAX(value,excluded.value)",
-                         (memory_next_id,))
-            row = conn.execute("SELECT * FROM tasks WHERE kind=? AND task_key=? "
-                               "AND state='pending' AND attempts=0", (kind, key)).fetchone() if key else None
-            if row:
-                old = json.loads(row["payload"])
-                value = merge(old, payload) if merge else payload
-                conn.execute("UPDATE tasks SET payload=?,t=?,updated_at=?,version=version+1 WHERE id=?",
-                             (encode(value), max(t, row["t"]), now, row["id"]))
-                return row["id"]
-            count = conn.execute("SELECT COUNT(*) FROM tasks WHERE state IN "
-                                 "('pending','running','ready','applying')").fetchone()[0]
-            if count >= self.capacity:
-                raise TaskQueueFull(f"调查任务队列容量 {self.capacity} 已满；未接受新任务")
-            completed = conn.execute("SELECT id FROM tasks WHERE kind=? AND task_key=? "
-                                     "AND state='done' ORDER BY updated_at DESC,id DESC LIMIT 1",
-                                     (kind, key)).fetchone() if key else None
-            cur = conn.execute("INSERT INTO tasks(kind,task_key,payload,t,state,created_at,updated_at,dedupe_id) "
-                               "VALUES (?,?,?,?,'pending',?,?,?)",
-                               (kind, key, encode(payload), t, now, now, completed[0] if completed else None))
-            return cur.lastrowid
+            return self._enqueue(conn, kind, payload, t, key=key, merge=merge,
+                                 memory_next_id=memory_next_id)
+
+    def _enqueue(self, conn, kind, payload, t, *, key="", merge=None, memory_next_id=0):
+        """与 unit checkpoint 共用事务；不得在此方法内部再次 BEGIN。"""
+        now = self.clock()
+        conn.execute("INSERT INTO metadata(key,value) VALUES('memory_next_id',?) "
+                     "ON CONFLICT(key) DO UPDATE SET value=MAX(value,excluded.value)",
+                     (memory_next_id,))
+        row = conn.execute("SELECT * FROM tasks WHERE kind=? AND task_key=? "
+                           "AND state='pending' AND attempts=0", (kind, key)).fetchone() if key else None
+        if row:
+            old = json.loads(row["payload"])
+            value = merge(old, payload) if merge else payload
+            conn.execute("UPDATE tasks SET payload=?,t=?,updated_at=?,version=version+1 WHERE id=?",
+                         (encode(value), max(t, row["t"]), now, row["id"]))
+            return row["id"]
+        count = conn.execute("SELECT COUNT(*) FROM tasks WHERE state IN "
+                             "('pending','running','ready','applying')").fetchone()[0]
+        if count >= self.capacity:
+            raise TaskQueueFull(f"调查任务队列容量 {self.capacity} 已满；未接受新任务")
+        completed = conn.execute("SELECT id FROM tasks WHERE kind=? AND task_key=? "
+                                 "AND state='done' ORDER BY updated_at DESC,id DESC LIMIT 1",
+                                 (kind, key)).fetchone() if key else None
+        cur = conn.execute("INSERT INTO tasks(kind,task_key,payload,t,state,created_at,updated_at,dedupe_id) "
+                           "VALUES (?,?,?,?,'pending',?,?,?)",
+                           (kind, key, encode(payload), t, now, now, completed[0] if completed else None))
+        return cur.lastrowid
 
     def memory_next_id(self):
         with self._lock:
@@ -155,7 +163,8 @@ class TaskStore:
                 return row["revision"], row["state"]
             used = self._conn.execute("SELECT 1 FROM tasks WHERE attempts>0 LIMIT 1").fetchone()
             receipt = self._conn.execute("SELECT 1 FROM operations LIMIT 1").fetchone()
-            if used or receipt:
+            unit_receipt = self._conn.execute("SELECT 1 FROM unit_receipts LIMIT 1").fetchone()
+            if used or receipt or unit_receipt:
                 raise CheckpointConflict("durable checkpoint 缺失，但存在已领取任务/操作回执")
             return 0, None
 
@@ -270,6 +279,31 @@ class TaskStore:
             self._owned(conn, task_id, token, ("applying",))
             conn.execute("UPDATE tasks SET state='done',token=NULL,lease_until=NULL,"
                          "last_error='',updated_at=? WHERE id=?", (self.clock(), task_id))
+
+    def unit_receipt(self, unit_id):
+        with self._lock:
+            row = self._conn.execute("SELECT response FROM unit_receipts WHERE unit_id=?",
+                                     (unit_id,)).fetchone()
+            return json.loads(row[0]) if row else None
+
+    def apply_unit(self, unit_id, mutate, dump_state, handoffs, expected_revision):
+        """单元效果、调查交接、checkpoint 和回执原子提交；跨库 ack 另行执行。"""
+        with self.transaction() as conn:
+            current = conn.execute("SELECT revision FROM checkpoint WHERE id=1").fetchone()
+            if (current[0] if current else 0) != expected_revision:
+                raise CheckpointConflict("checkpoint 已推进；拒绝旧内存实例处理 L0")
+            old = conn.execute("SELECT response FROM unit_receipts WHERE unit_id=?",
+                               (unit_id,)).fetchone()
+            if old:
+                return json.loads(old[0]), expected_revision, True
+            response = mutate()
+            for kind, payload, t, key, merge in handoffs:
+                self._enqueue(conn, kind, payload, t, key=key, merge=merge,
+                              memory_next_id=response["next_memory_id"])
+            revision = self._write_checkpoint(conn, dump_state(), expected_revision)
+            conn.execute("INSERT INTO unit_receipts VALUES(?,?,?)",
+                         (unit_id, encode(response), self.clock()))
+        return response, revision, False
 
     def apply_operation(self, task_id, token, request, mutate, dump_state, expected_revision):
         request_json = encode(request)

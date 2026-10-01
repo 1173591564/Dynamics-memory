@@ -45,8 +45,9 @@ state.pkl；/save 更新 checkpoint 并导出 state.pkl。pickle 反序列化仍
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import copy
-from dataclasses import replace
+from dataclasses import asdict, replace
 import io
 import json
 import math
@@ -78,7 +79,7 @@ from .logstore import LogStore, entities_in
 from .semantics import normalize
 from .semantics.llm import LLMSemantics
 from .worker import SignalWorker
-from .taskstore import TaskStore, TaskQueueFull, CheckpointConflict
+from .taskstore import TaskStore, TaskQueueFull, CheckpointConflict, encode
 
 _RETRIEVAL_KEEP = 512   # retrieval 注册表上限（feedback 用，防无界增长）
 # [^>]* 单趟即可：匹配内部不含 '>'，嵌套 payload 被整体吃掉，
@@ -187,6 +188,11 @@ class MemoryService:
         self._t = 0
         self._unit_id = 0
         self._scene = ""
+        self._scene_t = -1
+        self._unit_busy = threading.Lock()
+        self._unit_stop = threading.Event()
+        self._unit_wake = threading.Event()
+        self._unit_thread: threading.Thread | None = None
         self._retrievals: dict[int, Retrieval] = {}
         self._next_retrieval = 0
         self._last_turn: dict | None = None   # 上一轮 {user, retrieval_id}
@@ -249,11 +255,9 @@ class MemoryService:
                                       memory_next_id=self.engine._next_id)
         return None
 
-    def _task_once(self, ctx, request, mutate):
-        """调用方持服务锁。业务效果 + checkpoint + 回执同一 SQLite 事务。
-        外部 embedding 调用可能重做；失败回滚内存时保留已有 Memory 的身份，
-        使在途语义 worker/检索登记持有的引用不悬空。
-        """
+    @contextmanager
+    def _rollback_effect(self):
+        """任务操作与单元效果共用的内存回滚；原 Memory/队列对象身份不变。"""
         self._ensure_healthy()
         eng = self.engine
         fields = ("mems", "tensions", "_next_id", "_consolidation_pending",
@@ -261,13 +265,15 @@ class MemoryService:
         original_mems = dict(eng.mems)
         backup = copy.deepcopy({k: getattr(eng, k) for k in fields})
         counters = {k: getattr(self, k) for k in _SERVICE_COUNTERS}
-        miss_counts = dict(self.miss_counts)
+        service = (self._t, self._unit_id, self._scene, self._scene_t,
+                   self._last_turn, dict(self.miss_counts))
+        q = eng.signals
+        queued = (type(q._items)(q._items), dict(q._by_key), q._next_id,
+                  q.n_emitted, q.n_dropped,
+                  [(sig, sig.payload, sig.t) for sig in q._items])
         revision = self._checkpoint_revision
         try:
-            out, next_revision, replayed = self.tasks.apply_operation(
-                ctx.task_id, ctx.lease_token, request, mutate, self._dump_state, revision)
-            self._checkpoint_revision = next_revision
-            return dict(out, replayed=replayed)
+            yield
         except BaseException:
             for mid, original in original_mems.items():
                 original.__dict__.clear()
@@ -277,11 +283,22 @@ class MemoryService:
                 setattr(eng, k, v)
             for k, v in counters.items():
                 setattr(self, k, v)
-            self.miss_counts = miss_counts
-            # SIGTERM/提交异常若落在 commit 与 Python 返回之间，不能再保存
-            # 回滚后的内存去覆盖已提交效果；置故障状态，要求重启读取 checkpoint。
+            self._t, self._unit_id, self._scene, self._scene_t, self._last_turn, self.miss_counts = service
+            q._items, q._by_key, q._next_id, q.n_emitted, q.n_dropped, old = queued
+            for sig, payload, t in old:
+                sig.payload, sig.t = payload, t
+            # 若提交成功但确认丢失，绝不能用回滚后的内存覆盖 DB checkpoint。
             self._check_checkpoint_error(revision)
             raise
+
+    def _task_once(self, ctx, request, mutate):
+        """调用方持服务锁；操作、checkpoint、回执同事务。"""
+        with self._rollback_effect():
+            out, next_revision, replayed = self.tasks.apply_operation(
+                ctx.task_id, ctx.lease_token, request, mutate,
+                self._dump_state, self._checkpoint_revision)
+            self._checkpoint_revision = next_revision
+            return dict(out, replayed=replayed)
 
     def _durable_propose(self, proposals, ctx):
         accepted, ids, rejected, replayed, applied = 0, [], [], 0, 0
@@ -344,70 +361,162 @@ class MemoryService:
 
     # ================================================== 主回路
     def observe(self, user_text: str, assistant_text: str) -> dict:
-        # 1) 锁内：L0 在数据库事务内分配 unit/t 并提交，再做扫描和抽取。
         with self._lock:
             self._ensure_healthy()
+            prev = self._last_turn
+            context = {}
+            if triggers.is_correction(user_text) and prev:
+                ret = self._retrievals.get(prev.get("retrieval_id", -1))
+                context = {"previous_user": prev["user"],
+                           "retrieved": [{"id": m.id, "t": m.birth, "text": m.text}
+                                         for m in (ret.selected if ret else [])]}
             scene = self._scene
             idx = self.log.append_unit(self._t, min_unit_id=self._unit_id,
-                                       user_text=user_text,
-                                       assistant_text=assistant_text, scene=scene)
+                                       user_text=user_text, assistant_text=assistant_text,
+                                       scene=scene, work_context=context)
             uid, t = idx["unit_id"], idx["t"]
             self._unit_id, self._t = uid + 1, t
-            reasons = triggers.scan_unit(user_text, assistant_text,
-                                         idx["new_entities"])
-            prev = self._last_turn
-            if triggers.is_correction(user_text) and prev:
-                # 用户在纠正上一轮 → 上一轮的记忆没接住（或接错）
-                ret = self._retrievals.get(prev.get("retrieval_id", -1))
-                self.engine.report_miss(
-                    prev["user"], t, hint=user_text[:300], source="correction",
-                    retrieval=ret,
-                    entities=tuple(e for e, _ in entities_in(prev["user"])))
-                self.n_missed += 1
             self._last_turn = {"user": user_text, "retrieval_id": None}
-        # 2) 锁外：被动 candgen（LLM）。失败不丢单元——L0 已落盘，
-        #    以 extract_due(candgen_failed) 交给调查员补抽
-        unit = InteractionUnit(id=uid, start_time=t, end_time=t,
-                               user_text=user_text,
-                               assistant_text=assistant_text,
-                               assistant_turns=1)
-        window = InteractionWindow(id=uid, start_unit_id=uid, end_unit_id=uid,
-                                   start_time=t, end_time=t, units=(unit,))
+        # 新单元已与 L0 待办同事务接受；即使其他处理器忙，也不会消失。
+        self._unit_wake.set()
+        completed = self.process_pending_units()
+        if uid in completed:
+            return completed[uid]
+        with self._lock:
+            return {"unit_id": uid, "pending": True, "candidates": 0,
+                    "scene": scene, "reasons": [],
+                    "pool": self.engine.pool_sizes(), "t": self._t, "worker": {}}
+
+    def process_pending_units(self, limit: int = 8) -> dict[int, dict]:
+        """按原 L0 顺序处理；同服务仅一个处理器。不得越过退避中的旧单元。"""
+        if not self._unit_busy.acquire(blocking=False):
+            return {}
+        completed = {}
         try:
-            gen = self.generator.generate(window, scene)
-            cands, new_scene = list(gen.candidates), gen.scene_name
-        except Exception as exc:          # noqa: BLE001
-            self.n_candgen_fail += 1
-            cands, new_scene = [], ""
-            reasons = list(dict.fromkeys(list(reasons) + ["candgen_failed"]))
-            print(f"[memory-sidecar] candgen 失败（unit {uid}，已留 L0，"
-                  f"交调查员补抽）: {type(exc).__name__}: {exc}",
-                  file=sys.stderr, flush=True)
-        # 3) 锁内：产物入池、发信号、推进时间
+            with self._lock:
+                self._ensure_healthy()
+            for uid in self.log.pending_units(limit):
+                work = self.log.work(uid)
+                if work["next_run_at"] > time.time() and self.tasks.unit_receipt(uid) is None:
+                    break
+                try:
+                    completed[uid] = self._process_unit(uid, work)
+                except Exception as exc:
+                    self.log.fail_work(uid, exc)
+                    raise
+        finally:
+            self._unit_busy.release()
+        return completed
+
+    def _process_unit(self, uid: int, work: dict) -> dict:
+        ctx = self.log.unit_context(uid)
+        unit = ctx["unit"]
+        t = unit["t"]
+        if work["result"] is None and self.tasks.unit_receipt(uid) is None:
+            reasons = triggers.scan_unit(unit["user_text"], unit["assistant_text"],
+                                         ctx["new_entities"])
+            u = InteractionUnit(uid, t, t, unit["user_text"], unit["assistant_text"],
+                                unit["assistant_turns"])
+            window = InteractionWindow(uid, uid, uid, t, t, (u,))
+            try:
+                gen = self.generator.generate(window, unit["scene"])
+                cands, scene, failure = [asdict(c) for c in gen.candidates], gen.scene_name, ""
+            except Exception as exc:  # noqa: BLE001  可恢复补抽，而非伪装合法空候选
+                cands, scene = [], ""
+                failure = f"{type(exc).__name__}: {exc}"[:500]
+                reasons = list(dict.fromkeys([*reasons, "candgen_failed"]))
+                print(f"[memory-sidecar] candgen 失败（unit {uid}，已留 L0，交调查员补抽）: "
+                      f"{failure}", file=sys.stderr, flush=True)
+            self.log.save_work_result(uid, encode({"candidates": cands, "scene": scene,
+                                                   "reasons": reasons, "failure": failure}))
+            work = self.log.work(uid)
+        result = json.loads(work["result"]) if work["result"] is not None else None
+        handoffs = []
         with self._lock:
             self._ensure_healthy()
-            self._scene = new_scene or self._scene
-            if reasons:
-                self.engine.report_unit(uid, t, scene=self._scene,
-                                        reasons=tuple(reasons),
-                                        entities=tuple(idx["entities"][:12]))
-            evs = [Event(self.semantics.fingerprint(normalize(c.text)),
-                         normalize(c.text), c.text, (uid,),
-                         salience=c.salience, scene=self._scene)
-                   for c in cands]
-            if evs:
-                self.engine.observe(evs, self._t)   # 提交时刻的 t，保单调
-            self.engine.step(self._t)
-            t_used = self._t
-            self._t += 1
-            pool = self.engine.pool_sizes()
-            scene_out = self._scene
-        # 4) 锁外：语义 worker（LLM 锁外、引擎锁内）；唤醒 agent worker
-        wstats = self.worker.process(t_used)
+            with self._rollback_effect():
+                old_emit = self.engine.signals.on_emit
+
+                def collect(kind, payload, at, key, merge):
+                    if kind in ("recall_miss", "extract_due"):
+                        handoffs.append((kind, payload, at, key, merge))
+                        return -1  # journal 接管，不让事务未提交的信号进入内存队列
+                    return old_emit(kind, payload, at, key, merge)
+
+                def mutate():
+                    self._unit_id = max(self._unit_id, uid + 1)
+                    self._t = max(self._t, t)
+                    # 每个单元只在一次 checkpoint 中落地；不让旧单元覆盖较新场景。
+                    scene = (result["scene"] or self._scene) if result else self._scene
+                    if t >= self._scene_t:
+                        self._scene, self._scene_t = scene, t
+                    previous = work["context"].get("previous_user") or ctx["previous_user"]
+                    if triggers.is_correction(unit["user_text"]) and previous:
+                        self.engine.report_miss(
+                            previous, t, hint=unit["user_text"][:300], source="correction",
+                            retrieved=work["context"].get("retrieved", []),
+                            entities=tuple(e for e, _ in entities_in(previous)))
+                        self.n_missed += 1
+                    reasons = result["reasons"] if result else []
+                    if reasons:
+                        self.engine.report_unit(uid, t, scene=self._scene,
+                                                reasons=tuple(reasons),
+                                                entities=tuple(ctx["entities"][:12]))
+                    evs = [Event(self.semantics.fingerprint(normalize(c["text"])),
+                                 normalize(c["text"]), c["text"], (uid,),
+                                 salience=c["salience"], scene=self._scene)
+                           for c in (result["candidates"] if result else [])]
+                    if evs:
+                        self.engine.observe(evs, t)
+                    self.engine.step(t)
+                    self._t = max(self._t, t + 1)
+                    if result and result["failure"]:
+                        self.n_candgen_fail += 1
+                    return {"unit_id": uid, "candidates": len(evs),
+                            "scene": self._scene, "reasons": list(reasons),
+                            "pool": self.engine.pool_sizes(), "t": self._t,
+                            "next_memory_id": self.engine._next_id}
+
+                self.engine.signals.on_emit = collect
+                try:
+                    response, revision, replayed = self.tasks.apply_unit(
+                        uid, mutate, self._dump_state, handoffs, self._checkpoint_revision)
+                    self._checkpoint_revision = revision
+                finally:
+                    self.engine.signals.on_emit = old_emit
+        # 回执先于跨库确认；确认失败则仍是 pending，重试只读回执。
+        self.log.finish_work(uid)
+        if replayed:
+            return {k: v for k, v in response.items() if k != "next_memory_id"} | {"worker": {}}
+        wstats = self.worker.process(t)
         self._kick()
-        return {"unit_id": uid, "candidates": len(evs), "scene": scene_out,
-                "reasons": list(reasons), "pool": pool, "t": self._t,
-                "worker": wstats}
+        return {k: v for k, v in response.items() if k != "next_memory_id"} | {"worker": wstats}
+
+    def start_unit_recovery(self) -> None:
+        if self._unit_thread is not None and self._unit_thread.is_alive():
+            return
+        self._unit_stop.clear()
+
+        def loop():
+            while not self._unit_stop.is_set():
+                try:
+                    self.process_pending_units()
+                except Exception as exc:  # noqa: BLE001  待办及错误已留库，下一轮重试
+                    print(f"[memory-sidecar] 单元恢复失败: {type(exc).__name__}: {exc}",
+                          file=sys.stderr, flush=True)
+                    if self._checkpoint_fault:
+                        break  # 只可重启加载权威 checkpoint，不能继续重试旧内存
+                self._unit_wake.wait(2)
+                self._unit_wake.clear()
+
+        self._unit_thread = threading.Thread(target=loop, name="memory-unit", daemon=True)
+        self._unit_thread.start()
+
+    def stop_unit_recovery(self, timeout: float = 5.0) -> None:
+        self._unit_stop.set()
+        self._unit_wake.set()
+        if self._unit_thread is not None:
+            self._unit_thread.join(timeout)
 
     def _context_lines(self, ret: Retrieval) -> list[tuple[str, object]]:
         prov_ids = {m.id for m in ret.provisional}
@@ -850,7 +959,7 @@ class MemoryService:
                     "rejected": self.n_rejected,
                     "candgen_fail": self.n_candgen_fail,
                     "miss_counts": dict(self.miss_counts),
-                    "log_units": self.log.count(),
+                    "log_units": self.log.count(), "units": self.log.work_stats(),
                     "agent": self.agent.stats() if self.agent else None,
                     "t": self._t}
 
@@ -866,7 +975,8 @@ class MemoryService:
                 "next_retrieval": self._next_retrieval,
                 "miss_counts": dict(self.miss_counts),
                 "service_counters": {k: getattr(self, k) for k in _SERVICE_COUNTERS},
-                "t": self._t, "unit_id": self._unit_id, "scene": self._scene}
+                "t": self._t, "unit_id": self._unit_id, "scene": self._scene,
+                "scene_t": self._scene_t}
 
     def _dump_state(self):
         self._ensure_healthy()
@@ -922,6 +1032,9 @@ class MemoryService:
                 raise ValueError(f"state.pkl 的 {key} 必须是 dict")
         if not isinstance(state["scene"], str):
             raise ValueError("state.pkl 的 scene 必须是字符串")
+        if (type(state.get("scene_t", state["t"] - 1)) is not int
+                or state.get("scene_t", state["t"] - 1) < -1):
+            raise ValueError("state.pkl 的 scene_t 必须是整数")
         if (not isinstance(state["consolidation_pending"], set)
                 or not all(nonnegative_int(i) for i in state["consolidation_pending"])):
             raise ValueError("state.pkl 的 consolidation_pending 必须是 id 集合")
@@ -970,6 +1083,7 @@ class MemoryService:
         self._t = state["t"]
         self._unit_id = state["unit_id"]
         self._scene = state["scene"]
+        self._scene_t = state.get("scene_t", state["t"] - 1)
 
 
 # ============================ HTTP ============================
@@ -1330,6 +1444,7 @@ def main() -> None:
         ap.error("--agent-retry-delay must be finite and non-negative")
 
     service = build_default_service(args.project, model=args.model, task_capacity=args.task_queue_cap)
+    service.start_unit_recovery()  # 即使 --no-agent，已提交 L0 也必须能恢复
     httpd = serve(service, args.port)
     port = httpd.server_address[1]
 
@@ -1366,6 +1481,7 @@ def main() -> None:
     except (KeyboardInterrupt, SystemExit):
         pass
     finally:
+        service.stop_unit_recovery()
         if agent is not None:
             agent.stop()
         service.save()
