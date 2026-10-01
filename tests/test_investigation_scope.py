@@ -106,7 +106,7 @@ def test_conflicts_resolve_and_supersedes_obey_same_bound(target):
                                      "ensure_tension": True, "entity_key": "injected"}, h)[0] == 403
             assert pickle.dumps((svc.engine.mems, svc.engine.tensions)) == before
             status, out = post("/propose", {"proposals": [
-                {"text": "old source cannot replace a future memory", "source_unit_ids": [0],
+                {"text": "handler.ts cannot replace a future memory", "source_unit_ids": [0],
                  "supersedes": [target]}]}, h)
             assert status == 200 and out["accepted"] == 0
             assert "future" in out["rejected"][0]["reason"]
@@ -190,8 +190,8 @@ def test_worker_final_json_after_budget_exhaustion_keeps_causality_and_origin():
         with pytest.raises(PermissionError):
             svc.log_search("handler.ts", signal_id=sid)
         return Investigation(proposals=[
-            {"text": "从历史证据修复", "source_unit_ids": [0]},
-            {"text": "不该接受的未来证据", "source_unit_ids": [1]}],
+            {"text": "从历史证据修复 handler.ts", "source_unit_ids": [0]},
+            {"text": "不该接受的 future 证据", "source_unit_ids": [1]}],
             verdicts=[(0, 1, "update")], diagnosis={"miss_type": "too_coarse"})
 
     agent = AgentWorker(svc, investigate, budget=Budget(tool_calls=0))

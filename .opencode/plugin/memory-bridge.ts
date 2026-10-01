@@ -2,8 +2,9 @@
  * memory-bridge：opencode ↔ 记忆引擎 sidecar 的桥（只服务主 agent 会话）：
  *
  * - 生命周期：启动时拉起 `python -m hybrid_memory.server`，退出时 /save + kill
- * - 捕获：chat.message 记用户输入；session.idle 时把 (user, assistant) 一轮
- *   交互 POST /observe（sidecar 先落 L0 日志、触发扫描，再 candgen 蒸馏）
+ * - 捕获：chat.message 记用户输入；session.idle 时先把 (user, assistant) 写入
+ *   outbox，再用同一 request-id POST /observe（sidecar 先落 L0 日志、触发扫描，
+ *   再 candgen 蒸馏）。超时、连接失败或进程退出后不换 id。
  * - 注入：experimental.chat.system.transform 时按当前用户输入 /search，
  *   结果以 <relevant-memories> 块注入（明确标注"不代表当前任务进程"）
  * - 记账：注入时记下 retrieval_id，回答完成后 POST /feedback 走 recognizer
@@ -17,7 +18,9 @@
  */
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
-import { resolve } from "node:path"
+import { randomUUID } from "node:crypto"
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
+import { dirname, join, resolve } from "node:path"
 
 const PORT = Number(process.env.MEMORY_BRIDGE_PORT ?? 17872)
 const BASE = `http://127.0.0.1:${PORT}`
@@ -65,13 +68,20 @@ export default (async ({ directory }) => {
   }
   // 工具通道要把 4xx 的 error 文本原样给 agent（预算用尽/参数错都是它该看到的）
   type Res = { ok: boolean; status: number; data: any }
-  const call = async (method: "GET" | "POST", path: string, body?: unknown): Promise<Res> => {
+  const call = async (
+    method: "GET" | "POST", path: string, body?: unknown,
+    opts?: { timeoutMs?: number; requestId?: string },
+  ): Promise<Res> => {
     if (authDead) return { ok: false, status: 401, data: { error: "sidecar 鉴权失败" } }
     try {
       const r = await fetch(BASE + path, {
         method,
-        headers: { "Content-Type": "application/json", ...(await headers()) },
+        headers: {
+          "Content-Type": "application/json", ...(await headers()),
+          ...(opts?.requestId ? { "X-Request-Id": opts.requestId } : {}),
+        },
         body: body === undefined ? undefined : JSON.stringify(body),
+        signal: opts?.timeoutMs ? AbortSignal.timeout(opts.timeoutMs) : undefined,
       })
       const ok = check(r)
       try {
@@ -297,9 +307,169 @@ export default (async ({ directory }) => {
   const pending = new Map<string, { user: string; retrievalId?: number }>()
   const textParts = new Map<string, { sessionID: string; messageID: string; text: string }>()
   const messageRoles = new Map<string, { sessionID: string; role: string }>()
-  // 在途的 observe/feedback：opencode 不等待事件回调，进程退出会掐断请求；
-  // dispose 必须先 await 它再 /save + kill
+  // 在途交付：opencode 不等待事件回调。回合在发送前写入 outbox，dispose
+  // await 这条链后再 /save + kill。超时或进程退出后，下次加载用同一 request-id 重投。
   let inflight: Promise<unknown> = Promise.resolve()
+  const outboxPath = join(directory, ".opencode", "memory", "bridge-outbox.json")
+  const REQUEST_ID = /^[A-Za-z0-9._:-]{8,80}$/
+  type CaptureTurn = {
+    observe_id: string
+    user_text: string
+    assistant_text: string
+    retrieval_id?: number
+    feedback_id?: string
+    observe_done: boolean
+    feedback_done: boolean
+    observe_terminal?: string
+    feedback_terminal?: string
+  }
+  const captureTimeout = () => {
+    const n = Number(process.env.MEMORY_BRIDGE_TIMEOUT_MS ?? 30_000)
+    return Number.isFinite(n) && n > 0 ? n : 30_000
+  }
+  const captureAttempts = () => {
+    const n = Number(process.env.MEMORY_BRIDGE_ATTEMPTS ?? 3)
+    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 3
+  }
+  const captureBackoff = () => {
+    const n = Number(process.env.MEMORY_BRIDGE_BACKOFF_MS ?? 200)
+    return Number.isFinite(n) && n >= 0 ? n : 200
+  }
+  const newRequestId = (prefix: string) => {
+    const id = `${prefix}-${randomUUID()}`
+    if (!REQUEST_ID.test(id)) throw new Error(`request id rejected: ${id}`)
+    return id
+  }
+  const isTurn = (value: unknown): value is CaptureTurn => {
+    if (!value || typeof value !== "object") return false
+    const t = value as CaptureTurn
+    return REQUEST_ID.test(t.observe_id)
+      && typeof t.user_text === "string" && typeof t.assistant_text === "string"
+      && typeof t.observe_done === "boolean" && typeof t.feedback_done === "boolean"
+      && (t.retrieval_id === undefined || typeof t.retrieval_id === "number")
+      && (t.feedback_id === undefined || REQUEST_ID.test(t.feedback_id))
+  }
+  const retain = (t: CaptureTurn) =>
+    Boolean(t.observe_terminal) || !t.observe_done || !(t.feedback_done || t.feedback_terminal)
+  let turns: CaptureTurn[] = []
+  const loadOutbox = (): CaptureTurn[] => {
+    try {
+      const parsed = JSON.parse(readFileSync(outboxPath, "utf8"))
+      const raw = Array.isArray(parsed?.turns) ? parsed.turns : null
+      if (!raw || raw.some((item: unknown) => !isTurn(item))) {
+        throw new Error("outbox schema")
+      }
+      return raw
+    } catch (e) {
+      const err = e as NodeJS.ErrnoException
+      if (err?.code === "ENOENT") return []
+      log(`outbox 无法读取，已隔离且不重放：${String(e)}`)
+      try { renameSync(outboxPath, `${outboxPath}.bad-${Date.now()}`) } catch { /* 留在原处，避免误删原文 */ }
+      return []
+    }
+  }
+  const persistOutbox = () => {
+    const dir = dirname(outboxPath)
+    mkdirSync(dir, { recursive: true })
+    const gi = join(dir, ".gitignore")
+    if (!existsSync(gi)) writeFileSync(gi, "*\n", { mode: 0o600 })
+    const tmp = `${outboxPath}.tmp`
+    writeFileSync(tmp, JSON.stringify({ version: 1, turns: turns.filter(retain) }), { mode: 0o600 })
+    renameSync(tmp, outboxPath)
+  }
+  try { turns = loadOutbox() } catch (e) { log(`outbox 加载失败：${String(e)}`) }
+  const schedule = (job: () => Promise<void>) => {
+    inflight = inflight.then(job, job)
+  }
+  const observeAck = (r: Res): "acked" | "retry" | "stop" => {
+    if (r.status === 401) return "stop"
+    if (r.data?.accepted === true && typeof r.data.unit_id === "number") return "acked"
+    if (r.ok && typeof r.data?.unit_id === "number") return "acked"
+    if (r.status === 400 || r.status === 409) return "stop"
+    return "retry"
+  }
+  const feedbackAck = (r: Res): "acked" | "retry" | "stop" => {
+    if (r.status === 401) return "stop"
+    if (r.data?.accepted === true || r.data?.replayed === true) return "acked"
+    if (r.ok && typeof r.data?.n_useful === "number") return "acked"
+    if (r.status === 409 && String(r.data?.error ?? "").includes("already")) return "acked"
+    if (r.status === 400 || r.status === 404 || r.status === 409) return "stop"
+    return "retry"
+  }
+  const attempt = async (path: "/observe" | "/feedback", body: Record<string, unknown>, requestId: string, judge: (r: Res) => "acked" | "retry" | "stop") => {
+    let last: Res = { ok: false, status: 0, data: { error: "not sent" } }
+    const attempts = captureAttempts()
+    for (let i = 0; i < attempts; i++) {
+      last = await call("POST", path, body, { timeoutMs: captureTimeout(), requestId })
+      const kind = judge(last)
+      log(`${path} ${requestId} → ${kind} ${last.status}`)
+      if (kind !== "retry") return { kind, res: last }
+      if (i + 1 < attempts && captureBackoff() > 0) await Bun.sleep(captureBackoff() * 2 ** i)
+    }
+    return { kind: "retry" as const, res: last }
+  }
+  let flushing = false
+  let flushAgain = false
+  let closing = false
+  const deliver = async (turn: CaptureTurn) => {
+    if (!turn.observe_done && !turn.observe_terminal) {
+      const sent = await attempt("/observe", {
+        user_text: turn.user_text, assistant_text: turn.assistant_text, request_id: turn.observe_id,
+      }, turn.observe_id, observeAck)
+      if (sent.kind === "acked") turn.observe_done = true
+      else if (sent.kind === "stop" && sent.res.status !== 401) turn.observe_terminal = `observe ${sent.res.status}`
+      persistOutbox()
+      if (!turn.observe_done) return
+    }
+    if (turn.observe_terminal || turn.feedback_done || turn.feedback_terminal) return
+    if (turn.retrieval_id === undefined) {
+      turn.feedback_done = true
+      persistOutbox()
+      return
+    }
+    if (!turn.feedback_id) {
+      turn.feedback_id = newRequestId("fb")
+      persistOutbox()
+    }
+    const sent = await attempt("/feedback", {
+      retrieval_id: turn.retrieval_id, question: turn.user_text, answer: turn.assistant_text,
+      request_id: turn.feedback_id,
+    }, turn.feedback_id, feedbackAck)
+    if (sent.kind === "acked") turn.feedback_done = true
+    else if (sent.kind === "stop" && sent.res.status !== 401) {
+      // 检索已不在或正文被拒：L0 已在，不能换 id 再记一次，也不能热循环。
+      turn.feedback_terminal = `feedback ${sent.res.status}`
+      log(`feedback 无法交付 ${turn.feedback_id} retrieval=${turn.retrieval_id} ${sent.res.status}`)
+    }
+    persistOutbox()
+  }
+  const flushOutbox = async () => {
+    if (!ready || authDead) return
+    if (flushing) { flushAgain = true; return }
+    flushing = true
+    try {
+      let blocked = false
+      do {
+        flushAgain = false
+        blocked = false
+        for (const turn of turns) {
+          if (turn.observe_terminal || (turn.observe_done && (turn.feedback_done || turn.feedback_terminal))) continue
+          await deliver(turn)
+          const stuck = (!turn.observe_done && !turn.observe_terminal)
+            || (turn.observe_done && !turn.feedback_done && !turn.feedback_terminal)
+          if (stuck) { blocked = true; break }
+        }
+      } while (!blocked && (flushAgain || turns.some((turn) =>
+        !turn.observe_terminal && !(turn.observe_done && (turn.feedback_done || turn.feedback_terminal)))))
+      turns = turns.filter(retain)
+      persistOutbox()
+    } catch (e) {
+      log(`flush 失败：${String(e)}`)
+    } finally {
+      flushing = false
+    }
+  }
+  if (ready && turns.length) schedule(() => flushOutbox())
 
   return {
     "chat.message": async ({ sessionID }, { parts }) => {
@@ -370,32 +540,32 @@ export default (async ({ directory }) => {
           log(`idle: no reply captured for session ${sid}`)
           return
         }
-        const retrievalId = p.retrievalId
-        // 链式而非覆写：dispose await inflight 必须等到最后一个在途回路，
-        // 否则提前 idle 的 observe/feedback 会被 proc.kill 截断丢数据
-        inflight = inflight.then(async () => {
-          log(`idle: observe turn (user=${p.user.length}ch, reply=${reply.length}ch)`)
-          const obs = await call("POST", "/observe", { user_text: p.user, assistant_text: reply })
-          log(`idle: observe → ${obs.ok ? JSON.stringify(obs.data) : errText(obs)}`)
-          if (obs.ok && retrievalId !== undefined) {
-            const fb = await call("POST", "/feedback", {
-              retrieval_id: retrievalId,
-              question: p.user,
-              answer: reply,
-            })
-            log(`idle: feedback → ${fb.ok ? JSON.stringify(fb.data) : errText(fb)}`)
-          }
-        })
+        const turn: CaptureTurn = {
+          observe_id: newRequestId("obs"),
+          user_text: p.user,
+          assistant_text: reply,
+          retrieval_id: p.retrievalId,
+          observe_done: false,
+          feedback_done: false,
+        }
+        // 先落盘再入链。事件回调不被等待，不能等 inflight 才持久化。
+        turns.push(turn)
+        try { persistOutbox() } catch (e) { log(`outbox 写入失败，本进程仍会用同一 id 发送：${String(e)}`) }
+        log(`idle: queued ${turn.observe_id} (user=${p.user.length}ch, reply=${reply.length}ch)`)
+        // dispose 已开始后不再发新请求，避免 /save 期间被 kill 截断；原文已在 outbox。
+        if (!closing) schedule(() => flushOutbox())
       }
     },
 
     tool: tools,
 
     dispose: async () => {
-      await inflight // 等捕获回路落地，再存盘收尾
-      const saved = await call("POST", "/save", {})
+      closing = true
+      await inflight // 等已排队的交付结束；每次尝试有超时，不会无限挂起
+      await flushOutbox() // 排空 await 期间已落盘、尚未发送的回合
+      const saved = await call("POST", "/save", {}, { timeoutMs: captureTimeout() })
       if (!saved.ok) log(`保存失败 ${errText(saved)}`)
-      proc?.kill() // 只杀自己拉起的 sidecar
+      proc?.kill() // 只杀自己拉起的 sidecar；未确认回合留在 outbox
     },
   }
 }) satisfies Plugin

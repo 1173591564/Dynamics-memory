@@ -46,7 +46,7 @@ def test_online_registration_is_atomic_and_legacy_units_are_not_replayed(tmp_pat
     assert log.append_unit(6, user_text="new", assistant_text="accepted")["unit_id"] == 4
     assert log.work(4)["state"] == "pending" and log.work(3) is None
     log.close()
-    svc = _svc(tmp_path, generator=Generator())
+    svc = _svc(tmp_path, generator=Generator(("accepted",)))
     try:
         assert svc.log.pending_units() == [4]
         assert svc.process_pending_units()[4]["candidates"] == 1
@@ -77,7 +77,7 @@ import os, sys
 sys.path.insert(0, 'tests')
 from test_observe_recovery import Generator
 from test_ouroboros import _svc
-svc = _svc(sys.argv[1], generator=Generator(('事实不可重复',)))
+svc = _svc(sys.argv[1], generator=Generator(('好的',)))
 stage = sys.argv[2]
 if stage == 'before_extract':
     svc.generator.generate = lambda *args: os._exit(17)
@@ -91,7 +91,7 @@ svc.observe('以后统一用 bun 跑脚本', '好的')
                          cwd=Path(__file__).resolve().parents[1], capture_output=True,
                          timeout=20)
     assert out.returncode == 17, out.stderr.decode()
-    gen = Generator(("事实不可重复",))
+    gen = Generator(("好的",))
     svc = _svc(tmp_path, generator=gen)
     try:
         row = svc.log.get(0)
@@ -116,7 +116,7 @@ svc.observe('以后统一用 bun 跑脚本', '好的')
 
 
 def test_saved_result_survives_full_queue_and_retries_without_new_model_call(tmp_path):
-    gen = Generator()
+    gen = Generator(("好的",))
     svc = _svc(tmp_path, generator=gen)
     try:
         svc.tasks.capacity = 1
@@ -140,7 +140,7 @@ def test_saved_result_survives_full_queue_and_retries_without_new_model_call(tmp
 
 
 def test_sql_failure_rolls_back_effect_and_volatile_signal_in_place(tmp_path, monkeypatch):
-    gen = Generator(("决策实体",))
+    gen = Generator(("好的",))
     svc = _svc(tmp_path, generator=gen)
     q = svc.engine.signals
     old = svc.engine.step
@@ -171,7 +171,7 @@ def test_sql_failure_rolls_back_effect_and_volatile_signal_in_place(tmp_path, mo
 
 def test_duplicate_processing_and_concurrent_observe_do_not_reapply(tmp_path):
     entered, release = threading.Event(), threading.Event()
-    gen = Generator()
+    gen = Generator(("脚本",))
     original = gen.generate
 
     def blocked(*args):
@@ -243,7 +243,7 @@ def test_correction_keeps_prior_retrieval_even_across_restart(tmp_path):
 
 
 def test_uncertain_effect_commit_requires_restart(tmp_path, monkeypatch):
-    svc = _svc(tmp_path, generator=Generator())
+    svc = _svc(tmp_path, generator=Generator(("好的",)))
     original = svc.tasks.apply_unit
 
     def commit_then_lie(*args):
@@ -259,7 +259,7 @@ def test_uncertain_effect_commit_requires_restart(tmp_path, monkeypatch):
             svc.save()
     finally:
         _close(svc)
-    restored = _svc(tmp_path, generator=Generator())
+    restored = _svc(tmp_path, generator=Generator(("好的",)))
     try:
         assert restored.process_pending_units()[0]["candidates"] == 1
         assert len(restored.engine.mems) == 1 and restored.engine.mems[0].evid == 1
@@ -268,7 +268,7 @@ def test_uncertain_effect_commit_requires_restart(tmp_path, monkeypatch):
 
 
 def test_handoff_sql_failure_keeps_entire_unit_retriable(tmp_path):
-    gen = Generator()
+    gen = Generator(("好的",))
     svc = _svc(tmp_path, generator=gen)
     svc.tasks._conn.execute("CREATE TRIGGER fail_handoff BEFORE INSERT ON tasks "
                             "WHEN NEW.kind='extract_due' "
@@ -289,7 +289,7 @@ def test_handoff_sql_failure_keeps_entire_unit_retriable(tmp_path):
 
 
 def test_ack_retry_after_later_checkpoint_does_not_repeat_effect(tmp_path, monkeypatch):
-    gen = Generator()
+    gen = Generator(("好的",))
     svc = _svc(tmp_path, generator=gen)
     original = svc.log.finish_work
 

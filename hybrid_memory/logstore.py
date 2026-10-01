@@ -31,6 +31,7 @@ from typing import Iterable
 import numpy as np
 
 from .embed.base import cosine
+from .taskstore import CaptureConflict
 
 # ---------------------------------------------------------------- 实体正则
 # 顺序即优先级；全部只覆盖 ASCII 类"硬实体"——这些在项目日志里最稳定、
@@ -125,6 +126,12 @@ CREATE TABLE IF NOT EXISTS unit_work (
     last_error TEXT NOT NULL DEFAULT '', next_run_at REAL NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS unit_work_order ON unit_work(state,unit_id);
+CREATE TABLE IF NOT EXISTS capture_receipts (
+    request_id TEXT PRIMARY KEY,
+    unit_id INTEGER NOT NULL REFERENCES units(id),
+    fingerprint TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
 """
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_#./+-]{2,}|[\u4e00-\u9fff]+")
@@ -192,22 +199,28 @@ class LogStore:
     def append_unit(self, t: int, *, user_text: str, assistant_text: str,
                     scene: str = "", assistant_turns: int = 1,
                     ts: float | None = None, min_unit_id: int = 0,
-                    work_context: dict | None = None) -> dict:
+                    work_context: dict | None = None,
+                    capture_id: str | None = None,
+                    capture_fingerprint: str | None = None) -> dict:
         """在线追加：数据库在写事务内分配 id/t，快照只提供不能回退的下界。
         返回 unit_id/t/entities/new_entities。原文和确定性索引一起提交，
         可选 embedding 在提交后执行。不同连接追加也不会复用已提交编号。
+        capture_id 与单元、待办在同一事务绑定；重放返回 replayed，不新分配 id。
         """
         return self.add_unit(None, t, user_text=user_text,
                              assistant_text=assistant_text, scene=scene,
                              assistant_turns=assistant_turns, ts=ts,
                              min_unit_id=min_unit_id, track_work=True,
-                             work_context=work_context)
+                             work_context=work_context, capture_id=capture_id,
+                             capture_fingerprint=capture_fingerprint)
 
     def add_unit(self, unit_id: int | None, t: int, *, user_text: str,
                  assistant_text: str, scene: str = "",
                  assistant_turns: int = 1, ts: float | None = None,
                  min_unit_id: int = 0, track_work: bool = False,
-                 work_context: dict | None = None) -> dict:
+                 work_context: dict | None = None,
+                 capture_id: str | None = None,
+                 capture_fingerprint: str | None = None) -> dict:
         """导入指定 id/t；在线 append 在同一事务内登记待处理工作。
 
         证据不可覆盖：同 id 同内容的重放为 no-op，不重建索引/向量、不重发
@@ -221,6 +234,17 @@ class LogStore:
             # RLock 只保护本连接；BEGIN IMMEDIATE 同时串行化跨连接的
             # 读游标/查重/插入，不能先在事务外取 MAX 再 INSERT。
             self._conn.execute("BEGIN IMMEDIATE")
+            if capture_id:
+                bound = self._conn.execute(
+                    "SELECT unit_id, fingerprint FROM capture_receipts WHERE request_id=?",
+                    (capture_id,)).fetchone()
+                if bound is not None:
+                    if bound[1] != capture_fingerprint:
+                        raise CaptureConflict(f"request_id {capture_id} 已绑定不同交互")
+                    existing_t = self._conn.execute(
+                        "SELECT t FROM units WHERE id=?", (bound[0],)).fetchone()
+                    return {"unit_id": bound[0], "t": existing_t[0], "replayed": True,
+                            "entities": [], "new_entities": []}
             if unit_id is None:
                 next_id, next_t = self.next_position()
                 unit_id = max(next_id, int(min_unit_id))
@@ -255,6 +279,11 @@ class LogStore:
             if track_work:
                 self._conn.execute("INSERT INTO unit_work(unit_id,context) VALUES(?,?)",
                                    (unit_id, json.dumps(work_context or {}, ensure_ascii=False)))
+            if capture_id:
+                self._conn.execute(
+                    "INSERT INTO capture_receipts(request_id, unit_id, fingerprint, created_at)"
+                    " VALUES(?,?,?,?)",
+                    (capture_id, unit_id, capture_fingerprint, time.time()))
         self._embed(unit_id, user_text, assistant_text)
         return {"unit_id": unit_id, "t": t,
                 "entities": [e for e, _ in ents], "new_entities": new}
@@ -274,6 +303,16 @@ class LogStore:
                 (int(unit_id), int(vec.size), vec.tobytes()))
 
     # ---- 在线单元工作日志（与 L0 同库；不回填升级前历史单元）----
+    def capture_receipt(self, request_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT request_id, unit_id, fingerprint, created_at FROM capture_receipts"
+                " WHERE request_id=?", (request_id,)).fetchone()
+        if row is None:
+            return None
+        return {"request_id": row[0], "unit_id": row[1], "fingerprint": row[2],
+                "created_at": row[3]}
+
     def work(self, unit_id: int) -> dict | None:
         with self._lock:
             row = self._conn.execute(

@@ -5,17 +5,21 @@
 token 持久化在 state_dir/.memory-token，插件侧同路径读取或经环境变量注入）：
 
   读记忆
-  GET  /health              → 状态（池规模/时间步/信号/agent），免鉴权
+  GET  /health              → 状态。ok 只表示没有 checkpoint fault；
+                              snapshot/units_pending/validation 分开报告，免鉴权
   GET  /recall?q=..&k=..    → {retrieval_id, context, selected}
   POST /search              → {query, k} 同 /recall（CJK 长查询走 body）
   GET  /conflicts           → 未决 tension 列表
   GET  /signals             → 调查/语义任务及 L0 单元积压与 worker 遥测
 
   写记忆（主回路）
-  POST /observe             → {user_text, assistant_text}：先落 L0 并建索引，
+  POST /observe             → {user_text, assistant_text, request_id?}：先落 L0 并建索引，
                               触发扫描 → extract_due / recall_miss；再 candgen
-                              蒸馏（失败不丢单元）；蒸馏产物进池
-  POST /feedback            → {retrieval_id, question, answer} 延迟记账
+                              蒸馏（失败不丢单元）；蒸馏产物进池。
+                              可选 request_id 与 L0 同事务绑定；已接受但效果未完成时
+                              仍返回 accepted/unit_id（容量不足为 503），不能无 id 重投。
+  POST /feedback            → {retrieval_id, question, answer, request_id?} 延迟记账。
+                              request_id 与效果同事务；响应丢失后重投返回原回执。
   POST /resolve             → {left, right, verdict, entity_key?} 裁决回报
   POST /miss                → {query, hint?, source?} 上报一次记忆缺失
                               （主 agent 用了 log_* 工具 = 记忆没接住）
@@ -48,6 +52,7 @@ import argparse
 from contextlib import contextmanager
 import copy
 from dataclasses import asdict, replace
+import hashlib
 import io
 import json
 import math
@@ -81,7 +86,7 @@ from .semantics.llm import LLMSemantics
 from .core import maintenance
 from .core.types import FeedbackSemantics, ConsolidationSemantics, is_visible
 from .taskstore import SEMANTIC_KINDS, TaskLeaseLost
-from .taskstore import TaskStore, TaskQueueFull, CheckpointConflict, encode
+from .taskstore import TaskStore, TaskQueueFull, CheckpointConflict, CaptureConflict, encode
 
 _RETRIEVAL_KEEP = 512   # retrieval 注册表上限（feedback 用，防无界增长）
 # [^>]* 单趟即可：匹配内部不含 '>'，嵌套 payload 被整体吃掉，
@@ -115,7 +120,8 @@ _COUNTERS = ("n_promote", "n_demote", "n_evict", "n_archive", "n_revive",
              "n_merge", "n_collision", "n_tension", "n_resolve", "n_agg",
              "n_consolidate", "n_shadow_dropped", "n_chain_broken")
 
-_SERVICE_COUNTERS = ("n_candgen_fail", "n_missed", "n_proposals", "n_rejected")
+_SERVICE_COUNTERS = ("n_candgen_fail", "n_missed", "n_proposals", "n_rejected",
+                     "n_ungrounded")
 
 _STATE_KEYS = {"mems", "tensions", "next_id", "consolidation_pending",
                "consolidation_deferred", "counters", "t", "unit_id", "scene"}
@@ -185,6 +191,8 @@ class MemoryService:
                                capacity=task_capacity)
         self._checkpoint_revision = 0
         self._checkpoint_fault = False
+        self._snapshot_status = "absent"
+        self._snapshot_quarantined = False
         self.token = self._load_or_create_token()
         self.agent = None                 # AgentWorker，attach_agent 挂上
         self._t = 0
@@ -204,6 +212,7 @@ class MemoryService:
         self.n_missed = 0
         self.n_proposals = 0
         self.n_rejected = 0
+        self.n_ungrounded = 0
         try:
             revision, checkpoint = self.tasks.checkpoint()
         except Exception as exc:
@@ -214,6 +223,7 @@ class MemoryService:
             try:
                 self._load(checkpoint)
                 self._checkpoint_revision = revision
+                self._snapshot_status = "loaded"
             except Exception as exc:
                 self.tasks.close()
                 self.log.close()
@@ -221,9 +231,13 @@ class MemoryService:
         elif self.state_path and self.state_path.exists():
             try:
                 self._load()
+                self._snapshot_status = "loaded"
             except Exception as exc:  # noqa: BLE001
                 # 损坏/恶意 state 不能让 sidecar 启动即死（桥会整体瘫痪）：
-                # 隔离坏文件后空启动，损失状态好过丢记忆服务
+                # 隔离坏文件后空启动，损失状态好过丢记忆服务。
+                # 隔离标记在本进程内保持，随后的 save 不能把它洗成干净加载。
+                self._snapshot_quarantined = True
+                self._snapshot_status = "quarantined"
                 corrupt = self.state_path.with_suffix(".corrupt")
                 try:
                     os.replace(self.state_path, corrupt)
@@ -232,6 +246,10 @@ class MemoryService:
                 print(f"[memory-sidecar] state.pkl 损坏已隔离为 "
                       f"{corrupt.name}（{exc}）——空启动",
                       file=sys.stderr, flush=True)
+        elif self._corrupt_file_exists():
+            # 上次隔离后没有留下可加载快照。重启不能把丢失显示成合法空目录。
+            self._snapshot_quarantined = True
+            self._snapshot_status = "quarantined"
         # L0 每轮提交，快照只在 save/退出时更新：正常旧快照、缺快照或坏
         # 快照都可能落后于日志。快照提供下界，绝不能让已提交证据复用 id/t。
         next_id, next_t = self.log.next_position()
@@ -239,6 +257,33 @@ class MemoryService:
         self._t = max(self._t, next_t)
         self.engine._next_id = max(self.engine._next_id, self.tasks.memory_next_id())
         self.engine.signals.on_emit = self._journal_signal
+
+    def _corrupt_file_exists(self) -> bool:
+        return bool(self.state_path and self.state_path.with_suffix(".corrupt").exists())
+
+    def health_view(self) -> dict:
+        """进程在不在，和数据有没有干净恢复，是两件事。
+
+        `ok` 只表示没有 checkpoint fault，插件据此复用进程。
+        `validation` 固定为 unverified：本进程不能自称远程或 L3 已验证。
+        """
+        with self._lock:
+            if self._snapshot_quarantined:
+                snapshot = "quarantined"
+            else:
+                snapshot = self._snapshot_status
+            return {"ok": not self._checkpoint_fault,
+                    "checkpoint_fault": self._checkpoint_fault,
+                    "snapshot": snapshot,
+                    "corrupt_file": self._corrupt_file_exists(),
+                    "units_pending": self.log.work_stats()["pending"],
+                    "validation": "unverified",
+                    "t": self._t,
+                    "mems": self.engine.pool_sizes(),
+                    "tensions": len(self.engine.tensions),
+                    "signals": sum(self.tasks.queued_counts().values()) + len(self.engine.signals),
+                    "log_units": self.log.count(),
+                    "agent": bool(self.agent)}
 
     def _ensure_healthy(self):
         if self._checkpoint_fault:
@@ -275,8 +320,12 @@ class MemoryService:
                 "texts": list(texts),
                 "question": payload["question"], "answer": payload["answer"]}
 
-    def _commit_sidecar_effect(self, mutate):
-        """sidecar 检索/反馈的记忆变更、语义信号及 checkpoint 同事务。"""
+    def _commit_sidecar_effect(self, mutate, *, capture=None):
+        """sidecar 检索/反馈的记忆变更、语义信号及 checkpoint 同事务。
+
+        capture 给出时，request-id 回执与效果同一事务。已有回执不执行 mutate，
+        返回值带 replayed，调用方不得再跑模型。
+        """
         with self._rollback_effect():
             old_registry = dict(self._retrievals)
             old_next = self._next_retrieval
@@ -300,9 +349,16 @@ class MemoryService:
                     finally:
                         q.on_emit = old_emit
 
-                result, revision = self.tasks.apply_effect(
-                    run, self._dump_state, self._checkpoint_revision)
+                if capture is None:
+                    result, revision = self.tasks.apply_effect(
+                        run, self._dump_state, self._checkpoint_revision)
+                    replayed = False
+                else:
+                    result, revision, replayed = self.tasks.apply_captured_effect(
+                        run, self._dump_state, self._checkpoint_revision, capture)
                 self._checkpoint_revision = revision
+                if replayed and isinstance(result, dict):
+                    result = dict(result, replayed=True, accepted=True)
                 return result
             except BaseException:
                 self._retrievals = old_registry
@@ -417,7 +473,11 @@ class MemoryService:
         return tok
 
     # ================================================== 主回路
-    def observe(self, user_text: str, assistant_text: str) -> dict:
+    def observe(self, user_text: str, assistant_text: str,
+                request_id: str | None = None) -> dict:
+        request_id = _validate_request_id(request_id)
+        fingerprint = _capture_fingerprint(
+            {"user_text": user_text, "assistant_text": assistant_text})
         with self._lock:
             self._ensure_healthy()
             prev = self._last_turn
@@ -428,21 +488,37 @@ class MemoryService:
                            "retrieved": [{"id": m.id, "t": m.birth, "text": m.text}
                                          for m in (ret.selected if ret else [])]}
             scene = self._scene
-            idx = self.log.append_unit(self._t, min_unit_id=self._unit_id,
-                                       user_text=user_text, assistant_text=assistant_text,
-                                       scene=scene, work_context=context)
+            idx = self.log.append_unit(
+                self._t, min_unit_id=self._unit_id, user_text=user_text,
+                assistant_text=assistant_text, scene=scene, work_context=context,
+                capture_id=request_id, capture_fingerprint=fingerprint)
             uid, t = idx["unit_id"], idx["t"]
-            self._unit_id, self._t = uid + 1, t
-            self._last_turn = {"user": user_text, "retrieval_id": None}
+            replayed = bool(idx.get("replayed"))
+            # 重放不得推进时钟或覆盖更新一轮的 last_turn。
+            if not replayed:
+                self._unit_id, self._t = uid + 1, t
+                self._last_turn = {"user": user_text, "retrieval_id": None}
         # 新单元已与 L0 待办同事务接受；即使其他处理器忙，也不会消失。
         self._unit_wake.set()
-        completed = self.process_pending_units()
+        try:
+            completed = self.process_pending_units()
+        except (TaskQueueFull, CheckpointConflict) as exc:
+            # L0 已提交。保留原异常类型，让直接调用方的既有 except 仍能匹配，
+            # HTTP 层据此附上 accepted/unit_id，避免客户端换成新请求再投一条。
+            exc.accepted = True
+            exc.unit_id = uid
+            exc.request_id = request_id
+            raise
         if uid in completed:
-            return completed[uid]
-        with self._lock:
-            return {"unit_id": uid, "pending": True, "candidates": 0,
-                    "scene": scene, "reasons": [],
-                    "pool": self.engine.pool_sizes(), "t": self._t, "worker": {}}
+            body = completed[uid]
+        elif (receipt := self.tasks.unit_receipt(uid)) is not None:
+            body = receipt
+        else:
+            with self._lock:
+                body = {"unit_id": uid, "pending": True, "candidates": 0,
+                        "scene": scene, "reasons": [],
+                        "pool": self.engine.pool_sizes(), "t": self._t, "worker": {}}
+        return _annotate_observe(body, uid, replayed=replayed, request_id=request_id)
 
     def process_pending_units(self, limit: int = 8) -> dict[int, dict]:
         """按原 L0 顺序处理；同服务仅一个处理器。不得越过退避中的旧单元。"""
@@ -519,10 +595,17 @@ class MemoryService:
                         self.engine.report_unit(uid, t, scene=self._scene,
                                                 reasons=tuple(reasons),
                                                 entities=tuple(ctx["entities"][:12]))
+                    blob = f"{unit['user_text']}\n{unit['assistant_text']}"
+                    grounded = []
+                    for cand in (result["candidates"] if result else []):
+                        if _content_grounded(cand.get("text", ""), blob):
+                            grounded.append(cand)
+                        else:
+                            self.n_ungrounded += 1
                     evs = [Event(self.semantics.fingerprint(normalize(c["text"])),
                                  normalize(c["text"]), c["text"], (uid,),
                                  salience=c["salience"], scene=self._scene)
-                           for c in (result["candidates"] if result else [])]
+                           for c in grounded]
                     if evs:
                         self.engine.observe(evs, t)
                     self.engine.step(t)
@@ -567,11 +650,10 @@ class MemoryService:
                     stamp = [tension.last_seen, tension.observations] if tension else None
                     jobs.append((left, right, args, stamp))
             elif kind == "feedback_pending":
-                ret = self._retrievals.get(payload["retrieval_id"])
-                if ret is None or [m.id for m in ret.selected] != payload["selected"]:
-                    raise ValueError("反馈来源检索已丢失或变更；拒绝错误记账")
-                texts = payload["texts"]
-                if len(texts) != len(ret.selected):
+                texts = payload.get("texts")
+                selected = payload.get("selected")
+                if (not isinstance(texts, list) or not isinstance(selected, list)
+                        or len(texts) != len(selected)):
                     raise ValueError("反馈文本快照与入选记忆不匹配")
             elif kind == "maintenance_due":
                 sources = [[i, m.last_seen, m.pool.value, m.superseded_by, m.aggregated_into]
@@ -603,9 +685,7 @@ class MemoryService:
             old_ret = None
             if row["kind"] == "feedback_pending":
                 old_ret = self._retrievals.get(row["payload"]["retrieval_id"])
-                if old_ret is None:
-                    raise ValueError("反馈来源检索丢失")
-                ret_fields = dict(old_ret.__dict__)
+                ret_fields = dict(old_ret.__dict__) if old_ret is not None else None
             try:
                 def mutate(conn, result):
                     q = self.engine.signals
@@ -637,19 +717,30 @@ class MemoryService:
                                                          merge=lambda old, new: old + [p for p in new if p not in old])
                             return {"resolved": self.engine.submit_verdicts(current, t)}
                         if kind == "feedback_pending":
-                            ret = self._retrievals[payload["retrieval_id"]]
-                            if ret.credited:
-                                return {"credited": 0}
-                            if len(result["used"]) != len(ret.selected):
+                            used = result["used"]
+                            selected = payload["selected"]
+                            if len(used) != len(selected):
                                 raise ValueError("feedback 结果长度不符")
-                            n = self.engine.submit_relevance(ret, result["used"], t)
-                            if (n == 0 and ret.selected and self.cfg.miss_on_recognizer_none):
-                                question = payload["question"]
-                                self.engine.report_miss(
-                                    question, t, source="recognizer_none", retrieval=ret,
-                                    entities=tuple(e for e, _ in entities_in(question)))
-                                self.n_missed += 1
-                            return {"credited": n, "recog_fail": bool(result["recog_fail"])}
+                            ret = self._retrievals.get(payload["retrieval_id"])
+                            shown = [m.id for m in ret.selected] if ret is not None else None
+                            if ret is not None and shown == selected:
+                                if ret.credited:
+                                    return {"credited": 0}
+                                n = self.engine.submit_relevance(ret, used, t)
+                                if (n == 0 and ret.selected and self.cfg.miss_on_recognizer_none):
+                                    question = payload["question"]
+                                    self.engine.report_miss(
+                                        question, t, source="recognizer_none", retrieval=ret,
+                                        entities=tuple(e for e, _ in entities_in(question)))
+                                    self.n_missed += 1
+                                return {"credited": n, "recog_fail": bool(result["recog_fail"])}
+                            # 注册表已退役或不再是当时展示的那一组。载荷 id 才是依据。
+                            n = self.engine.credit_shown(selected, used, t)
+                            if ret is not None:
+                                ret.credited = True
+                                ret.n_useful = n
+                            return {"credited": n, "recog_fail": bool(result["recog_fail"]),
+                                    "retired_source": True}
                         if result["event"] is None:
                             return {"reflected": 0}
                         sources = [[i, m.last_seen, m.pool.value, m.superseded_by, m.aggregated_into]
@@ -873,31 +964,64 @@ class MemoryService:
                               "origin": m.origin, "src": sorted(m.src)}
                              for m in ret.selected]}
 
-    def feedback(self, retrieval_id: int, question: str, answer: str) -> dict:
+    def feedback(self, retrieval_id: int, question: str, answer: str,
+                 request_id: str | None = None) -> dict:
+        request_id = _validate_request_id(request_id)
+        fingerprint = _capture_fingerprint({
+            "retrieval_id": retrieval_id, "question": question, "answer": answer})
         with self._lock:
             self._ensure_healthy()
             ret = self._retrievals.get(retrieval_id)
+            if request_id:
+                old = self.tasks.read_capture(request_id)
+                if old is not None:
+                    if old["fingerprint"] != fingerprint:
+                        raise CaptureConflict(f"request_id {request_id} 已绑定不同请求")
+                    # 回执已存在就不再跑模型；检索对象后来被挤出也不影响这次回放。
+                    return dict(old["response"], replayed=True, accepted=True,
+                                request_id=request_id)
             if ret is None:
                 return {"error": f"unknown retrieval_id {retrieval_id}"}
             if not ret.selected:
-                return {"n_useful": 0, "pending": False, "worker": {}}
+                response = {"n_useful": 0, "pending": False, "worker": {},
+                            "accepted": True, "retrieval_id": retrieval_id}
+                if request_id:
+                    stored, replayed = self.tasks.remember_capture(
+                        request_id, "feedback", fingerprint, response)
+                    response = dict(stored, accepted=True, request_id=request_id)
+                    if replayed:
+                        response["replayed"] = True
+                return response
             if ret.credited or ret.feedback_sent:
                 # 同一次检索重复反馈（插件重试/多会话共用）：幂等拒绝，
-                # 不让引擎的 RuntimeError 变成 500
+                # 不让引擎的 RuntimeError 变成 500。accepted 表示效果已存在，
+                # 不是邀请客户端换一个 request-id 再投。
                 return {"error": f"retrieval_id {retrieval_id} already "
                                  f"credited", "n_useful": ret.n_useful,
-                        "pending": ret.feedback_sent and not ret.credited}
+                        "pending": ret.feedback_sent and not ret.credited,
+                        "accepted": True}
             def mutate():
                 self.engine.feedback(ret, question, answer, self._t)
                 if self._last_turn is not None:
                     self._last_turn = {"user": question, "retrieval_id": retrieval_id}
-            self._commit_sidecar_effect(mutate)
+                return {"n_useful": 0, "pending": True, "accepted": True,
+                        "retrieval_id": retrieval_id,
+                        **({"request_id": request_id} if request_id else {})}
+            capture = ({"request_id": request_id, "kind": "feedback",
+                        "fingerprint": fingerprint} if request_id else None)
+            result = self._commit_sidecar_effect(mutate, capture=capture)
+            if isinstance(result, dict) and result.get("replayed"):
+                return result
+            base = result if isinstance(result, dict) else {}
         self._unit_wake.set()
-        wstats = self.process_semantic_tasks()  # 模型调用在服务锁外
+        try:
+            wstats = self.process_semantic_tasks()  # 模型调用在服务锁外
+        except Exception as exc:  # noqa: BLE001  效果已提交，不能把交付回执变成未接受
+            wstats = {"error": f"{type(exc).__name__}: {exc}"}
         with self._lock:
-            self._ensure_healthy()
-            return {"n_useful": ret.n_useful, "pending": not ret.credited,
-                    "worker": wstats}
+            return {**base, "n_useful": ret.n_useful, "pending": not ret.credited,
+                    "worker": wstats, "accepted": True,
+                    **({"request_id": request_id} if request_id else {})}
 
     def report_miss(self, query: str, hint: str = "",
                     source: str = "agent_tool") -> dict:
@@ -934,7 +1058,8 @@ class MemoryService:
     def resolve(self, left: int, right: int, verdict: str,
                 entity_key: str = "", ensure_tension: bool = False, *,
                 signal_id: str | None = None,
-                _context: InvestigationContext | None = None) -> dict:
+                _context: InvestigationContext | None = None,
+                _checkpoint: bool = True) -> dict:
         """裁决回报。ensure_tension=True（调查员/主 agent 主动裁决两条此前
         没被判为张力的记忆）时先登记 tension 再消解；entity_key 回填到双方。"""
         if verdict not in _VERDICTS:
@@ -947,20 +1072,26 @@ class MemoryService:
                            "ensure_tension": ensure_tension}
                 return self._task_once(ctx, request, lambda: self.resolve(
                     left, right, verdict, entity_key, ensure_tension,
-                    _context=replace(ctx, task_id=None, lease_token=None)))
+                    _context=replace(ctx, task_id=None, lease_token=None),
+                    _checkpoint=False))
             if ctx.before is not None:
                 eligible = self._causal_memory_ids(ctx.before)
                 if left not in eligible or right not in eligible:
                     raise CausalViolation("unknown_or_future_memory")
             a, b = self.engine.mems.get(left), self.engine.mems.get(right)
-            if ensure_tension and a is not None and b is not None:
-                self.engine.add_tension(left, right, self._t)
-            if entity_key:
-                for m in (a, b):
-                    if m is not None and not m.entity:
-                        m.entity = entity_key[:120]
-            n = self.engine.submit_verdicts([(left, right, verdict)], self._t)
-            return {"resolved": n, "t": self._t}
+            def mutate():
+                if ensure_tension and a is not None and b is not None:
+                    self.engine.add_tension(left, right, self._t)
+                if entity_key:
+                    for m in (a, b):
+                        if m is not None and not m.entity:
+                            m.entity = entity_key[:120]
+                n = self.engine.submit_verdicts([(left, right, verdict)], self._t)
+                return {"resolved": n, "t": self._t}
+            # 任务回执事务已经包住这次调用；再开事务会嵌套 BEGIN。
+            if _checkpoint:
+                return self._commit_sidecar_effect(mutate)
+            return mutate()
 
     # ================================================== 日志工具面
     def _admit(self, signal_id: str | None, before: int | None = None, *,
@@ -1078,6 +1209,16 @@ class MemoryService:
                     "elapsed_s": round(time.time() - bud["opened"], 1)}
 
     # ================================================== 操作面
+    def _cited_text(self, unit_ids) -> str:
+        parts = []
+        for uid in unit_ids:
+            row = self.log.get(uid)
+            if row is None:
+                continue
+            parts.append(row["user_text"])
+            parts.append(row["assistant_text"])
+        return "\n".join(parts)
+
     def _validate_proposal(self, p: dict, before: int | None) -> tuple[Event, list[int]]:
         text = p.get("text")
         if not isinstance(text, str) or not text.strip():
@@ -1095,6 +1236,8 @@ class MemoryService:
         bad = sorted(set(src) - set(known))
         if bad:
             raise ProposalRejected(f"unknown_or_future_source:{bad}")
+        if not _content_grounded(text, self._cited_text(src)):
+            raise ProposalRejected("ungrounded_content")
         ek = p.get("entity_key")
         sup = p.get("supersedes")
         if sup is None:
@@ -1215,6 +1358,7 @@ class MemoryService:
                 "consolidation_pending": self.engine._consolidation_pending,
                 "consolidation_deferred": self.engine._consolidation_deferred,
                 "counters": {k: getattr(self.engine, k) for k in _COUNTERS},
+                "shadow_pending": list(self.engine._shadow_pending),
                 "retrievals": self._retrievals,
                 "next_retrieval": self._next_retrieval,
                 "miss_counts": dict(self.miss_counts),
@@ -1244,6 +1388,8 @@ class MemoryService:
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, self.state_path)
+            if not self._snapshot_quarantined:
+                self._snapshot_status = "loaded"
         return {"saved": True, "mems": len(self.engine.mems)}
 
     def _load(self, checkpoint: bytes | None = None) -> None:
@@ -1286,6 +1432,9 @@ class MemoryService:
                or not all(nonnegative_int(i) for i in v)
                for k, v in state["consolidation_deferred"].items()):
             raise ValueError("state.pkl 的 consolidation_deferred 格式异常")
+        pending = state.get("shadow_pending", [])
+        if not _valid_shadow_pending(pending):
+            raise ValueError("state.pkl 的 shadow_pending 格式异常")
         if any(not nonnegative_int(i) or not isinstance(m, Memory)
                or m.id != i or not isinstance(m.pool, Pool)
                for i, m in state["mems"].items()):
@@ -1316,6 +1465,7 @@ class MemoryService:
         eng._next_id = max(state["next_id"], max(eng.mems, default=-1) + 1)
         eng._consolidation_pending = state["consolidation_pending"]
         eng._consolidation_deferred = state["consolidation_deferred"]
+        eng._shadow_pending = [_shadow_entry(item) for item in pending]
         for k, v in state["counters"].items():
             setattr(eng, k, v)
         self._retrievals = state["retrievals"]
@@ -1346,6 +1496,84 @@ class _HttpError(Exception):
     def __init__(self, code: int, msg: str):
         super().__init__(msg)
         self.code = code
+
+
+_REQUEST_ID_RE = re.compile(r"[A-Za-z0-9._:-]{8,80}")
+
+
+def _validate_request_id(value):
+    if value is None:
+        return None
+    if not isinstance(value, str) or _REQUEST_ID_RE.fullmatch(value) is None:
+        raise ValueError("request_id must be 8–80 characters of [A-Za-z0-9._:-]")
+    return value
+
+
+def _capture_fingerprint(fields: dict) -> str:
+    raw = json.dumps(fields, ensure_ascii=False, sort_keys=True,
+                     separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _content_grounded(proposal, source: str) -> bool:
+    """正文至少有一个可核对片段出现在所引原文中。
+
+    可核对片段是连续两个汉字，或长度 ≥ 4 的 ASCII/数字串。长度 ≥ 8 的标识
+    （脱敏占位 REDACTED 除外）必须全部出现，不能靠一个真片段夹带假标识。
+    没有任何可核对片段时拒绝：无法区分空话和编造。
+    """
+    if not isinstance(proposal, str) or not isinstance(source, str):
+        return False
+    prop = "".join(proposal.split())
+    src = "".join(source.split())
+    src_l = src.lower()
+    matched = False
+    for i in range(len(prop) - 1):
+        a, b = prop[i], prop[i + 1]
+        if "\u4e00" <= a <= "\u9fff" and "\u4e00" <= b <= "\u9fff" and prop[i:i + 2] in src:
+            matched = True
+            break
+    # 标识按原文切分。先去空白会把 “handler.ts cannot” 粘成一个假长标识。
+    tokens = re.findall(r"[A-Za-z0-9_]{4,}", proposal)
+    long = [tok for tok in tokens if len(tok) >= 8 and tok.lower() != "redacted"]
+    if any(tok.lower() not in src_l for tok in long):
+        return False
+    if any(tok.lower() in src_l for tok in tokens if tok.lower() != "redacted"):
+        matched = True
+    return matched
+
+
+def _valid_shadow_pending(pending) -> bool:
+    if not isinstance(pending, list):
+        return False
+    for item in pending:
+        if not isinstance(item, (list, tuple)) or len(item) != 4:
+            return False
+        key, mid, t_ret, rel = item
+        if not isinstance(key, (list, tuple)) or len(key) != 2:
+            return False
+        if any(type(i) is not int or i < 0 for i in (*key, mid, t_ret)):
+            return False
+        if not isinstance(rel, bool):
+            return False
+    return True
+
+
+def _shadow_entry(item) -> tuple:
+    key, mid, t_ret, rel = item
+    return (tuple(key), mid, t_ret, rel)
+
+
+def _annotate_observe(body: dict, unit_id: int, *, replayed: bool,
+                      request_id: str | None) -> dict:
+    out = {k: v for k, v in body.items() if k != "next_memory_id"}
+    out["accepted"] = True
+    out["unit_id"] = unit_id
+    if replayed:
+        out["replayed"] = True
+    if request_id:
+        out["request_id"] = request_id
+    return out
 
 
 def _opt_int(body: dict, key: str, *, positive: bool = False):
@@ -1415,15 +1643,8 @@ class _Handler(BaseHTTPRequestHandler):
         if sid is not None and path != "/health" and path not in _SIGNAL_PATHS:
             raise SignalClosed(f"调查员不允许访问 {path}")
         if path == "/health":
-            with svc._lock:   # pool_sizes 迭代 mems，与 observe 并发会炸
-                self._reply(503 if svc._checkpoint_fault else 200,
-                            {"ok": not svc._checkpoint_fault,
-                             "checkpoint_fault": svc._checkpoint_fault, "t": svc._t,
-                                  "mems": svc.engine.pool_sizes(),
-                                  "tensions": len(svc.engine.tensions),
-                                  "signals": sum(svc.tasks.queued_counts().values()) + len(svc.engine.signals),
-                                  "log_units": svc.log.count(),
-                                  "agent": bool(svc.agent)})
+            body = svc.health_view()
+            self._reply(503 if not body["ok"] else 200, body)
         elif path == "/recall":
             try:
                 k = int(q["k"]) if q.get("k") else None
@@ -1454,7 +1675,7 @@ class _Handler(BaseHTTPRequestHandler):
                 raise _HttpError(400, "user_text/assistant_text must be strings")
             if not user.strip() and not assistant.strip():
                 raise _HttpError(400, "empty turn")
-            self._reply(200, svc.observe(user, assistant))
+            self._reply(200, svc.observe(user, assistant, request_id=self._capture_id(body)))
         elif path == "/feedback":
             rid = _opt_int(body, "retrieval_id")
             if rid is None:
@@ -1462,10 +1683,12 @@ class _Handler(BaseHTTPRequestHandler):
             question, answer = body.get("question", ""), body.get("answer", "")
             if not isinstance(question, str) or not isinstance(answer, str):
                 raise _HttpError(400, "question/answer must be strings")
-            out = svc.feedback(rid, question, answer)
+            out = svc.feedback(rid, question, answer, request_id=self._capture_id(body))
             if "error" in out:
-                code = 409 if "already" in out["error"] else 404
-                raise _HttpError(code, out["error"])
+                if "already" in out["error"]:
+                    self._reply(409, out)
+                    return
+                raise _HttpError(404, out["error"])
             self._reply(200, out)
         elif path == "/resolve":
             left, right = _opt_int(body, "left"), _opt_int(body, "right")
@@ -1549,13 +1772,41 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._reply(404, {"error": f"no such path: {path}"})
 
+    def _capture_id(self, body: dict) -> str | None:
+        header = self.headers.get("X-Request-Id")
+        if header is not None:
+            header = header.strip()
+        if header == "":
+            raise _HttpError(400, "X-Request-Id must not be empty")
+        if "request_id" in body and not isinstance(body.get("request_id"), str):
+            raise _HttpError(400, "request_id must be a string")
+        body_id = body.get("request_id")
+        if body_id == "":
+            raise _HttpError(400, "request_id must not be empty")
+        if header and body_id and header != body_id:
+            raise _HttpError(400, "X-Request-Id and request_id disagree")
+        chosen = body_id or header or None
+        if chosen is None:
+            return None
+        try:
+            return _validate_request_id(chosen)
+        except ValueError as exc:
+            raise _HttpError(400, str(exc)) from exc
+
     def _run(self, path: str, q: dict, body: dict) -> None:
         try:
             self._dispatch(path, q, body)
         except _HttpError as exc:
             self._reply(exc.code, {"error": str(exc)})
+        except CaptureConflict as exc:
+            self._reply(409, {"error": str(exc)})
         except (TaskQueueFull, CheckpointConflict) as exc:
-            self._reply(503, {"error": str(exc)})
+            payload = {"error": str(exc)}
+            if getattr(exc, "accepted", False):
+                payload.update(accepted=True, pending=True, unit_id=exc.unit_id)
+                if getattr(exc, "request_id", None):
+                    payload["request_id"] = exc.request_id
+            self._reply(503, payload)
         except PermissionError as exc:          # 预算用尽
             self._reply(429, {"error": str(exc)})
         except (SignalClosed, CausalViolation) as exc:             # 信号号无效/已关闭
@@ -1711,9 +1962,12 @@ def main() -> None:
             service.attach_agent(agent)
             agent.start()
 
+    view = service.health_view()
     print(f"[memory-sidecar] http://127.0.0.1:{port} "
           f"project={Path(args.project).resolve()} "
           f"mems={len(service.engine.mems)} log_units={service.log.count()} "
+          f"snapshot={view['snapshot']} units_pending={view['units_pending']} "
+          f"validation={view['validation']} "
           f"agent={'on' if agent else 'off'}", flush=True)
 
     def _term(*_):          # 插件 kill 发 SIGTERM：走 finally 存盘

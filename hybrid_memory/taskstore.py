@@ -32,6 +32,10 @@ class TaskQueueFull(RuntimeError):
     pass
 
 
+class CaptureConflict(Exception):
+    """同一 request-id 已绑定不同正文。不得改绑，也不得当成新请求执行。"""
+
+
 def encode(value) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True,
                       separators=(",", ":"), allow_nan=False)
@@ -64,6 +68,10 @@ CREATE TABLE IF NOT EXISTS operations (
 );
 CREATE TABLE IF NOT EXISTS unit_receipts (
  unit_id INTEGER PRIMARY KEY, response TEXT NOT NULL, created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS capture_receipts (
+ request_id TEXT PRIMARY KEY, kind TEXT NOT NULL, fingerprint TEXT NOT NULL,
+ response TEXT NOT NULL, created_at REAL NOT NULL
 );
 """
 
@@ -308,6 +316,38 @@ class TaskStore:
                          (unit_id, encode(response), self.clock()))
         return response, revision, False
 
+    def read_capture(self, request_id):
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT kind, fingerprint, response FROM capture_receipts WHERE request_id=?",
+                (request_id,)).fetchone()
+        if row is None:
+            return None
+        return {"kind": row[0], "fingerprint": row[1], "response": json.loads(row[2])}
+
+    def _capture_hit(self, conn, capture):
+        old = conn.execute(
+            "SELECT fingerprint, response FROM capture_receipts WHERE request_id=?",
+            (capture["request_id"],)).fetchone()
+        if old is None:
+            return None
+        if old[0] != capture["fingerprint"]:
+            raise CaptureConflict(f"request_id {capture['request_id']} 已绑定不同请求")
+        return json.loads(old[1])
+
+    def remember_capture(self, request_id, kind, fingerprint, response):
+        """无引擎效果的接受回执。与查找同事务，避免空反馈在挤出检索后无法回放。"""
+        capture = {"request_id": request_id, "fingerprint": fingerprint}
+        with self.transaction() as conn:
+            old = self._capture_hit(conn, capture)
+            if old is not None:
+                return old, True
+            conn.execute(
+                "INSERT INTO capture_receipts(request_id, kind, fingerprint, response, created_at)"
+                " VALUES(?,?,?,?,?)",
+                (request_id, kind, fingerprint, encode(response), self.clock()))
+        return response, False
+
     def apply_effect(self, mutate, dump_state, expected_revision):
         """非单元 sidecar 改动、发射的任务和 checkpoint 共用一笔事务。"""
         with self.transaction() as conn:
@@ -317,6 +357,24 @@ class TaskStore:
             out = mutate(conn)
             revision = self._write_checkpoint(conn, dump_state(), expected_revision)
         return out, revision
+
+    def apply_captured_effect(self, mutate, dump_state, expected_revision, capture):
+        """效果、checkpoint 与 request-id 回执同事务。已有回执只返回，不执行 mutate。"""
+        with self.transaction() as conn:
+            current = conn.execute("SELECT revision FROM checkpoint WHERE id=1").fetchone()
+            if (current[0] if current else 0) != expected_revision:
+                raise CheckpointConflict("checkpoint 已推进；拒绝旧内存实例")
+            old = self._capture_hit(conn, capture)
+            if old is not None:
+                return old, expected_revision, True
+            out = mutate(conn)
+            revision = self._write_checkpoint(conn, dump_state(), expected_revision)
+            conn.execute(
+                "INSERT INTO capture_receipts(request_id, kind, fingerprint, response, created_at)"
+                " VALUES(?,?,?,?,?)",
+                (capture["request_id"], capture["kind"], capture["fingerprint"],
+                 encode(out), self.clock()))
+        return out, revision, False
 
     def recover_semantic_expired(self):
         now = self.clock()

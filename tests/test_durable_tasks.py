@@ -79,7 +79,7 @@ def test_apply_failure_keeps_result_and_rest_of_batch(tmp_path, monkeypatch):
 
 def test_partial_result_retry_does_not_repeat_first_effect_or_diagnosis(tmp_path, monkeypatch):
     svc = _queued(tmp_path)
-    second = {"text": "部署在 B 服务器", "source_unit_ids": [0]}
+    second = {"text": "端口 8080", "source_unit_ids": [0]}
     fake = _fake(proposals=[PROPOSAL, second], diagnosis={"miss_type": "too_coarse"})
     agent = AgentWorker(svc, fake)
     original = svc.engine.propose
@@ -366,7 +366,7 @@ def test_enqueue_failure_does_not_mutate_volatile_signal_or_claim_success():
 def test_normal_save_after_task_updates_authoritative_checkpoint(tmp_path):
     svc = _queued(tmp_path)
     AgentWorker(svc, _fake(proposals=[PROPOSAL])).process_once()
-    svc.propose([{"text": "新保存的独立事实", "source_unit_ids": [0]}])
+    svc.propose([{"text": "端口 8080 的独立记录", "source_unit_ids": [0]}])
     svc.save()
     # SQLite 已是事实源，兼容导出丢失不会使任务效果/后续 save 回退。
     (tmp_path / "state.pkl").unlink()
@@ -523,7 +523,7 @@ def test_pending_task_reserves_referenced_memory_ids_before_any_checkpoint(tmp_p
     restored = _svc(tmp_path)
     try:
         assert not restored.engine.mems
-        new = restored.propose([{"text": "完全不同的新条目", "source_unit_ids": [0]}])["new_ids"][0]
+        new = restored.propose([{"text": "port 8080", "source_unit_ids": [0]}])["new_ids"][0]
         assert new > old  # 持久任务的旧引用不能指到重用编号后的另一个事实
     finally:
         _close(restored)

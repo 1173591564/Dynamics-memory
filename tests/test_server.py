@@ -537,11 +537,11 @@ def test_restart_with_missing_stale_or_corrupt_snapshot_preserves_l0(tmp_path):
 
 def test_stale_snapshot_keeps_memory_sources_and_advances_from_log(tmp_path):
     svc = _service(tmp_path)
-    svc.observe("old_module.py", "old evidence")
+    svc.observe("old_module.py", "old evidence 部署在 B 服务器")
     rid = svc.recall("部署在哪")["retrieval_id"]
     svc.save()
     original = svc.log.get(0)
-    svc.observe("uncheckpointed.py", "evidence after snapshot")
+    svc.observe("uncheckpointed.py", "evidence after snapshot 部署在 B 服务器")
     svc.log.close()
     restored = _service(tmp_path, texts=())
     try:
@@ -620,7 +620,7 @@ def test_invalid_snapshot_does_not_publish_partially_loaded_memory(tmp_path):
 
     # 构造升级前的旧库：有快照与 L0，但没有新单元回执/checkpoint。
     svc = _service(tmp_path, texts=())
-    svc.log.add_unit(0, 0, user_text="old_module.py", assistant_text="evidence")
+    svc.log.add_unit(0, 0, user_text="old_module.py", assistant_text="evidence 部署在 B 服务器")
     svc.propose([{"text": "部署在 B 服务器", "source_unit_ids": [0]}])
     svc._unit_id, svc._t = 1, 1
     svc.save()
@@ -667,7 +667,7 @@ def test_complete_legacy_name_encoded_snapshot_restores(tmp_path, monkeypatch):
     from hybrid_memory.core.types import Pool
 
     svc = _service(tmp_path)
-    svc.observe("legacy.py", "original evidence")
+    svc.observe("legacy.py", "original evidence 部署在 B 服务器")
     rid = svc.recall("部署在哪")["retrieval_id"]
     with monkeypatch.context() as patch:
         patch.setattr(Pool, "__reduce_ex__",
@@ -709,7 +709,7 @@ def test_bad_http_ids_and_feedback_types_do_not_mutate_state():
 
 def test_proposal_bounds_and_malformed_supersedes_do_not_partially_apply():
     svc = _service(texts=())
-    svc.observe("q", "a")
+    svc.observe("部署在 B 服务器", "确认")
     good = {"text": "部署在 B 服务器", "source_unit_ids": [0]}
     with _http(svc) as (post, _, _server):
         assert post("/propose", {"proposals": [good] * 51})[0] == 400
@@ -725,7 +725,7 @@ def test_passive_sources_belong_to_actual_window_and_bad_json_schedules_repair()
     from hybrid_memory.candgen.chat import ChatGenerator
     svc = _service()
     svc.generator = ChatGenerator(lambda *_: '{"memories":[{"text":"fact","source_unit_ids":[999]}]}')
-    svc.observe("q", "a")
+    svc.observe("show", "fact is here")
     assert svc.engine.mems[0].src == frozenset({0})
     svc.generator = ChatGenerator(lambda *_: "invalid JSON")
     result = svc.observe("q2", "a2")
