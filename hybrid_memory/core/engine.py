@@ -95,6 +95,34 @@ class MemoryEngine:
                            "answer": answer}, t)
         return 0
 
+    def _current_representative(self, m: Memory) -> Memory | None:
+        """迟到信用记到当前代表。链断裂时不返回尸体，避免复活已退役条目。"""
+        target = maintenance.follow_chain(self, m)
+        if target.superseded_by is not None or target.aggregated_into is not None:
+            return None
+        return target
+
+    def _credit_hit(self, m: Memory, t: int) -> bool:
+        target = self._current_representative(m)
+        if target is None:
+            return False
+        target.last_hit = t
+        if target.pool is Pool.ARCHIVE:
+            target.pool = Pool.CANDIDATE if self.cfg.two_pool else Pool.MEMORY
+            self.n_revive += 1
+        target.hits += 1
+        target.d_hit += 1.0
+        return True
+
+    def credit_shown(self, memory_ids: list, used: list, t: int) -> int:
+        """注册表里的 Retrieval 已不在时，只按当时展示的 id 记账。"""
+        n = 0
+        for mid, flag in zip(memory_ids, used):
+            m = self.mems.get(mid)
+            if flag and m is not None and self._credit_hit(m, t):
+                n += 1
+        return n
+
     def submit_relevance(self, ret: Retrieval, used: list, t: int) -> int:
         """操作面：worker 回报 recognizer 结果（哪些入选记忆真被用上），
         发 useful-hit。语义与 feedback 的应用部分完全一致。"""
@@ -106,15 +134,8 @@ class MemoryEngine:
                 "（defer_credit=False 时 retrieve 就地结算，不应再回报）")
         n = 0
         for m, u in zip(ret.selected, used):
-            if not u:
-                continue
-            m.last_hit = t
-            if m.pool is Pool.ARCHIVE:
-                m.pool = Pool.CANDIDATE if self.cfg.two_pool else Pool.MEMORY
-                self.n_revive += 1
-            m.hits += 1
-            m.d_hit += 1.0
-            n += 1
+            if u and self._credit_hit(m, t):
+                n += 1
         ret.n_useful = n
         ret.credited = True
         return n
@@ -128,12 +149,16 @@ class MemoryEngine:
             self._shadow_pending.pop(0)
             self.n_shadow_dropped += 1
 
-    def _issue_shadow_credit(self, m: Memory, t_ret: int) -> None:
-        m.d_shadow += 1.0
-        m.last_hit = t_ret
-        if m.pool is Pool.ARCHIVE:
-            m.pool = Pool.CANDIDATE if self.cfg.two_pool else Pool.MEMORY
+    def _issue_shadow_credit(self, m: Memory, t_ret: int) -> bool:
+        target = self._current_representative(m)
+        if target is None:
+            return False
+        target.d_shadow += 1.0
+        target.last_hit = t_ret
+        if target.pool is Pool.ARCHIVE:
+            target.pool = Pool.CANDIDATE if self.cfg.two_pool else Pool.MEMORY
             self.n_revive += 1
+        return True
 
     def _settle_shadow(self, pair_key: tuple, verdict: str) -> int:
         """首个 verdict 到达时结算该对全部待结算 shadow 信用
@@ -147,8 +172,7 @@ class MemoryEngine:
                 keep.append(entry)
                 continue
             m = self.mems.get(mid)
-            if verdict != "synonym" and rel and m is not None:
-                self._issue_shadow_credit(m, t_ret)
+            if verdict != "synonym" and rel and m is not None and self._issue_shadow_credit(m, t_ret):
                 n += 1
         self._shadow_pending = keep
         return n

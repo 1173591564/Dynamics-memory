@@ -602,11 +602,10 @@ class MemoryService:
                     stamp = [tension.last_seen, tension.observations] if tension else None
                     jobs.append((left, right, args, stamp))
             elif kind == "feedback_pending":
-                ret = self._retrievals.get(payload["retrieval_id"])
-                if ret is None or [m.id for m in ret.selected] != payload["selected"]:
-                    raise ValueError("反馈来源检索已丢失或变更；拒绝错误记账")
-                texts = payload["texts"]
-                if len(texts) != len(ret.selected):
+                texts = payload.get("texts")
+                selected = payload.get("selected")
+                if (not isinstance(texts, list) or not isinstance(selected, list)
+                        or len(texts) != len(selected)):
                     raise ValueError("反馈文本快照与入选记忆不匹配")
             elif kind == "maintenance_due":
                 sources = [[i, m.last_seen, m.pool.value, m.superseded_by, m.aggregated_into]
@@ -638,9 +637,7 @@ class MemoryService:
             old_ret = None
             if row["kind"] == "feedback_pending":
                 old_ret = self._retrievals.get(row["payload"]["retrieval_id"])
-                if old_ret is None:
-                    raise ValueError("反馈来源检索丢失")
-                ret_fields = dict(old_ret.__dict__)
+                ret_fields = dict(old_ret.__dict__) if old_ret is not None else None
             try:
                 def mutate(conn, result):
                     q = self.engine.signals
@@ -672,19 +669,30 @@ class MemoryService:
                                                          merge=lambda old, new: old + [p for p in new if p not in old])
                             return {"resolved": self.engine.submit_verdicts(current, t)}
                         if kind == "feedback_pending":
-                            ret = self._retrievals[payload["retrieval_id"]]
-                            if ret.credited:
-                                return {"credited": 0}
-                            if len(result["used"]) != len(ret.selected):
+                            used = result["used"]
+                            selected = payload["selected"]
+                            if len(used) != len(selected):
                                 raise ValueError("feedback 结果长度不符")
-                            n = self.engine.submit_relevance(ret, result["used"], t)
-                            if (n == 0 and ret.selected and self.cfg.miss_on_recognizer_none):
-                                question = payload["question"]
-                                self.engine.report_miss(
-                                    question, t, source="recognizer_none", retrieval=ret,
-                                    entities=tuple(e for e, _ in entities_in(question)))
-                                self.n_missed += 1
-                            return {"credited": n, "recog_fail": bool(result["recog_fail"])}
+                            ret = self._retrievals.get(payload["retrieval_id"])
+                            shown = [m.id for m in ret.selected] if ret is not None else None
+                            if ret is not None and shown == selected:
+                                if ret.credited:
+                                    return {"credited": 0}
+                                n = self.engine.submit_relevance(ret, used, t)
+                                if (n == 0 and ret.selected and self.cfg.miss_on_recognizer_none):
+                                    question = payload["question"]
+                                    self.engine.report_miss(
+                                        question, t, source="recognizer_none", retrieval=ret,
+                                        entities=tuple(e for e, _ in entities_in(question)))
+                                    self.n_missed += 1
+                                return {"credited": n, "recog_fail": bool(result["recog_fail"])}
+                            # 注册表已退役或不再是当时展示的那一组。载荷 id 才是依据。
+                            n = self.engine.credit_shown(selected, used, t)
+                            if ret is not None:
+                                ret.credited = True
+                                ret.n_useful = n
+                            return {"credited": n, "recog_fail": bool(result["recog_fail"]),
+                                    "retired_source": True}
                         if result["event"] is None:
                             return {"reflected": 0}
                         sources = [[i, m.last_seen, m.pool.value, m.superseded_by, m.aggregated_into]
@@ -1002,7 +1010,8 @@ class MemoryService:
     def resolve(self, left: int, right: int, verdict: str,
                 entity_key: str = "", ensure_tension: bool = False, *,
                 signal_id: str | None = None,
-                _context: InvestigationContext | None = None) -> dict:
+                _context: InvestigationContext | None = None,
+                _checkpoint: bool = True) -> dict:
         """裁决回报。ensure_tension=True（调查员/主 agent 主动裁决两条此前
         没被判为张力的记忆）时先登记 tension 再消解；entity_key 回填到双方。"""
         if verdict not in _VERDICTS:
@@ -1015,20 +1024,26 @@ class MemoryService:
                            "ensure_tension": ensure_tension}
                 return self._task_once(ctx, request, lambda: self.resolve(
                     left, right, verdict, entity_key, ensure_tension,
-                    _context=replace(ctx, task_id=None, lease_token=None)))
+                    _context=replace(ctx, task_id=None, lease_token=None),
+                    _checkpoint=False))
             if ctx.before is not None:
                 eligible = self._causal_memory_ids(ctx.before)
                 if left not in eligible or right not in eligible:
                     raise CausalViolation("unknown_or_future_memory")
             a, b = self.engine.mems.get(left), self.engine.mems.get(right)
-            if ensure_tension and a is not None and b is not None:
-                self.engine.add_tension(left, right, self._t)
-            if entity_key:
-                for m in (a, b):
-                    if m is not None and not m.entity:
-                        m.entity = entity_key[:120]
-            n = self.engine.submit_verdicts([(left, right, verdict)], self._t)
-            return {"resolved": n, "t": self._t}
+            def mutate():
+                if ensure_tension and a is not None and b is not None:
+                    self.engine.add_tension(left, right, self._t)
+                if entity_key:
+                    for m in (a, b):
+                        if m is not None and not m.entity:
+                            m.entity = entity_key[:120]
+                n = self.engine.submit_verdicts([(left, right, verdict)], self._t)
+                return {"resolved": n, "t": self._t}
+            # 任务回执事务已经包住这次调用；再开事务会嵌套 BEGIN。
+            if _checkpoint:
+                return self._commit_sidecar_effect(mutate)
+            return mutate()
 
     # ================================================== 日志工具面
     def _admit(self, signal_id: str | None, before: int | None = None, *,
@@ -1283,6 +1298,7 @@ class MemoryService:
                 "consolidation_pending": self.engine._consolidation_pending,
                 "consolidation_deferred": self.engine._consolidation_deferred,
                 "counters": {k: getattr(self.engine, k) for k in _COUNTERS},
+                "shadow_pending": list(self.engine._shadow_pending),
                 "retrievals": self._retrievals,
                 "next_retrieval": self._next_retrieval,
                 "miss_counts": dict(self.miss_counts),
@@ -1354,6 +1370,9 @@ class MemoryService:
                or not all(nonnegative_int(i) for i in v)
                for k, v in state["consolidation_deferred"].items()):
             raise ValueError("state.pkl 的 consolidation_deferred 格式异常")
+        pending = state.get("shadow_pending", [])
+        if not _valid_shadow_pending(pending):
+            raise ValueError("state.pkl 的 shadow_pending 格式异常")
         if any(not nonnegative_int(i) or not isinstance(m, Memory)
                or m.id != i or not isinstance(m.pool, Pool)
                for i, m in state["mems"].items()):
@@ -1384,6 +1403,7 @@ class MemoryService:
         eng._next_id = max(state["next_id"], max(eng.mems, default=-1) + 1)
         eng._consolidation_pending = state["consolidation_pending"]
         eng._consolidation_deferred = state["consolidation_deferred"]
+        eng._shadow_pending = [_shadow_entry(item) for item in pending]
         for k, v in state["counters"].items():
             setattr(eng, k, v)
         self._retrievals = state["retrievals"]
@@ -1431,6 +1451,27 @@ def _capture_fingerprint(fields: dict) -> str:
     raw = json.dumps(fields, ensure_ascii=False, sort_keys=True,
                      separators=(",", ":"), allow_nan=False)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _valid_shadow_pending(pending) -> bool:
+    if not isinstance(pending, list):
+        return False
+    for item in pending:
+        if not isinstance(item, (list, tuple)) or len(item) != 4:
+            return False
+        key, mid, t_ret, rel = item
+        if not isinstance(key, (list, tuple)) or len(key) != 2:
+            return False
+        if any(type(i) is not int or i < 0 for i in (*key, mid, t_ret)):
+            return False
+        if not isinstance(rel, bool):
+            return False
+    return True
+
+
+def _shadow_entry(item) -> tuple:
+    key, mid, t_ret, rel = item
+    return (tuple(key), mid, t_ret, rel)
 
 
 def _annotate_observe(body: dict, unit_id: int, *, replayed: bool,
