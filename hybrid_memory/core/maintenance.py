@@ -3,7 +3,7 @@
 V ← V·e^(−λ) + η·hit + η_s·shadow（可选 Ψ_div 冗余门乘在 η 项上）
 → promote/demote（滞回 θ_p>θ_d）→ 容量驱逐 → 闲置归档
 → tension 消解：synonym→merge（V=η_c·和）、update→新替旧、
-  contradiction→异 scope 互免压制 / 同 scope 双方降权、collision→留痕。
+  contradiction→异 scope 条件化聚合 / 同 scope 双方降权并待裁决聚合、collision→留痕。
 """
 from __future__ import annotations
 
@@ -27,8 +27,6 @@ def _retention_scale(m, cfg) -> float:
 
 def run_maintenance(eng, t: int) -> None:
     cfg = eng.cfg
-    active = [m for m in eng.mems.values() if m.pool is not Pool.ARCHIVE]
-
     for m in eng.mems.values():
         discount_to(m, t, cfg)
         gain = cfg.eta * m.d_hit

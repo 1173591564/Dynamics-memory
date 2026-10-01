@@ -46,10 +46,9 @@ def maybe_consolidate(eng, t: int) -> None:
              and deferred.get(scene) != frozenset(m.id for m in items)]
 
     # 信号发射（唯一通路）：每步至多一条——取最近有更新、预算最高、
-    # scene 字典序决胜的组，ids 取排序后 top-max_items（worker 收到的
-    # 就是旧同步回调的同一输入）。发射即把该 scene 的当前输入签名记入
-    # deferred：同签名不重复发射，新源加入后签名变化自动恢复
-    # （语义同旧"回调失败不重复尝试"）。产物经 add_reflection 回报入库。
+    # scene 字典序决胜的组，ids 取排序后 top-max_items。发射即把当前
+    # 输入签名记入 deferred：同签名不重复发射，新源加入后自动恢复。
+    # 产物经 add_reflection 回报入库。
     if not ready:
         return
     scene, items, signature = max(
@@ -66,8 +65,7 @@ def maybe_consolidate(eng, t: int) -> None:
 
 
 def admit_reflection(eng, event, chosen, t: int) -> Memory:
-    """reflection 入库：嵌入、novelty 计算、建档、清理 pending/deferred。
-    同步回调路径与操作面 add_reflection 共用。"""
+    """add_reflection 入库：嵌入、novelty 计算、建档、清理 pending/deferred。"""
     cfg = eng.cfg
     key = eng.semantics.embedding_key(event.belief_id, event.value)
     vec = eng.emb.embed([event.text], keys=[key])[0]

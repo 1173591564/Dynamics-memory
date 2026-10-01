@@ -1,11 +1,8 @@
 """follow_chain 回归：id=0 作为链目标、环/断链防御、经 step 的端到端触发。"""
-import os
-import sys
 
 import numpy as np
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hybrid_memory.config import Cfg
 from hybrid_memory.core import maintenance

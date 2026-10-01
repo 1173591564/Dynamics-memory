@@ -1,7 +1,7 @@
 """cand-gen 契约：窗口进，原子 memory 候选出；支持跨窗情境携带。"""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Protocol
 
 from ..interaction import InteractionWindow

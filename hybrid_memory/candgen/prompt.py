@@ -7,6 +7,7 @@ v2 借鉴 tdb-memory MemoryCore l1-extraction：
 from __future__ import annotations
 
 import json
+import math
 import re
 
 from ..interaction import InteractionWindow
@@ -75,70 +76,80 @@ def serialize_window(window: InteractionWindow, prev_scene: str = "") -> str:
     return head + "\n\n".join(parts)
 
 
-def priority_to_salience(priority, default: float = 0.5) -> float:
-    if isinstance(priority, bool) or not isinstance(priority, (int, float)):
+def parse_salience(value, default: float = 0.5) -> float:
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or isinstance(value, float) and not math.isfinite(value)):
         return default
-    return max(0.0, min(1.0, (float(priority) - 60.0) / 40.0))
+    return float(max(0, min(1, value)))
 
 
-def _candidate_from(item: dict) -> MemoryCandidate | None:
+def priority_to_salience(priority, default: float = 0.5) -> float:
+    if (isinstance(priority, bool) or not isinstance(priority, (int, float))
+            or isinstance(priority, float) and not math.isfinite(priority)):
+        return default
+    return (max(60, min(100, priority)) - 60) / 40
+
+
+def parse_ids(values) -> list[int]:
+    """模型/旧缓存的 ID 列表：兼容十进制字符串和整值浮点，不截断小数。
+    只保留非负 SQLite INTEGER 范围，避免 bool、NaN 和超大整数污染溯源。
+    """
+    if not isinstance(values, (list, tuple)):
+        return []
+    out = []
+    for value in values:
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, str):
+            if not value.strip().isdecimal():
+                continue
+        elif not (isinstance(value, int) or isinstance(value, float) and value.is_integer()):
+            continue
+        try:
+            uid = int(value)
+        except ValueError:
+            continue
+        if 0 <= uid <= 2**63 - 1:
+            out.append(uid)
+    return out
+
+
+def parse_candidate(item: dict | str) -> MemoryCandidate | None:
+    if isinstance(item, str):
+        item = {"text": item}
+    if not isinstance(item, dict):
+        return None
     text = item.get("content", item.get("text"))
     if not isinstance(text, str) or not text.strip():
         return None
     src = item.get("source_unit_ids") or item.get("source_message_ids") or ()
-    salience = item.get("salience")
-    if isinstance(salience, bool) or not isinstance(salience, (int, float)):
-        salience = priority_to_salience(item.get("priority"))
-    else:
-        salience = max(0.0, min(1.0, float(salience)))
+    salience = parse_salience(item.get("salience"),
+                              priority_to_salience(item.get("priority")))
     return MemoryCandidate(
         text=redact_secrets(text.strip()),
         type=str(item.get("type", "")),
-        priority=item.get("priority") if isinstance(item.get("priority"), int) else None,
-        source_unit_ids=tuple(int(x) for x in src
-                              if isinstance(x, (int, float))),
+        priority=item.get("priority") if type(item.get("priority")) is int else None,
+        source_unit_ids=tuple(parse_ids(src)),
         salience=salience,
     )
 
 
 def parse_generation(text: str) -> CandidateGeneration:
-    """解析 v2 对象 {"scene_name","memories":[...]}；兼容 v1 裸数组。"""
-    # v2: 找第一个 JSON 对象
-    start = text.find("{")
-    while start != -1:
+    """解析 v2/v1，容忍围栏/前言；无合法载荷抛 ValueError，不伪装成空结果。"""
+    decoder = json.JSONDecoder()
+    offset = 0
+    while (match := re.search(r"[\[{]", text[offset:])) is not None:
+        offset += match.start()
         try:
-            obj, _ = json.JSONDecoder().raw_decode(text[start:])
+            obj, end = decoder.raw_decode(text, offset)
         except json.JSONDecodeError:
-            start = text.find("{", start + 1)
+            offset += 1
             continue
-        if isinstance(obj, dict) and isinstance(obj.get("memories"), list):
-            cands = [c for it in obj["memories"]
-                     if isinstance(it, dict)
-                     for c in [_candidate_from(it)] if c]
+        offset = end  # 不把无效 envelope 内的 metadata/source 数组当作候选
+        scene = str(obj.get("scene_name", "")) if isinstance(obj, dict) else ""
+        items = obj.get("memories") if isinstance(obj, dict) else obj
+        if isinstance(items, list):
             return CandidateGeneration(
-                candidates=tuple(cands),
-                scene_name=str(obj.get("scene_name", "")))
-        start = text.find("{", start + 1)
-    # v1 兼容：裸数组
-    return CandidateGeneration(candidates=tuple(parse_candidates(text)))
-
-
-def parse_candidates(text: str) -> list[MemoryCandidate]:
-    """v1 兼容：从输出中抽第一个 JSON 数组。"""
-    start = text.find("[")
-    while start != -1:
-        try:
-            obj, _ = json.JSONDecoder().raw_decode(text[start:])
-        except json.JSONDecodeError:
-            start = text.find("[", start + 1)
-            continue
-        if isinstance(obj, list):
-            out: list[MemoryCandidate] = []
-            for item in obj:
-                if isinstance(item, dict):
-                    c = _candidate_from(item)
-                    if c:
-                        out.append(c)
-            return out
-        start = text.find("[", start + 1)
-    return []
+                tuple(c for item in items if isinstance(item, dict)
+                      and (c := parse_candidate(item)) is not None), scene)
+    raise ValueError("no valid candidate generation JSON")

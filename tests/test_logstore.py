@@ -1,11 +1,8 @@
 """L0 日志层测试：实体抽取、混合检索、因果上界、回展预算、持久化。全程无网络。"""
-import os
-import sys
 
 import numpy as np
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hybrid_memory.logstore import LogStore, entities_in
 
@@ -155,3 +152,107 @@ def test_persists_to_sqlite_file_and_reopens(tmp_path):
     assert s2.count() == 3
     assert s2.get(1)["assistant_text"].startswith("合了")
     assert [h["unit_id"] for h in s2.timeline("#42")] == [1]
+
+
+# ---------------------------------------------------------------- 证据不可覆盖 / 在线分配
+@pytest.mark.parametrize("change", [
+    {"user_text": "new_module.py"}, {"assistant_text": "changed"},
+    {"t": 9}, {"scene": "other"}, {"assistant_turns": 2}, {"ts": 456.0},
+])
+def test_duplicate_id_with_different_evidence_is_rejected(change):
+    s = LogStore()
+    original = dict(t=3, user_text="old_module.py", assistant_text="original",
+                    scene="project", assistant_turns=1, ts=123.0)
+    try:
+        s.add_unit(7, **original)
+        with pytest.raises(ValueError, match="unit 7"):
+            s.add_unit(7, **(original | change))
+        assert s.get(7) == {"id": 7, **original}
+        assert s.count() == 1
+        assert s.timeline("old_module.py")[0]["snippet"].startswith("old_module.py")
+        assert not s.search("new_module.py")
+        s._conn.execute("INSERT INTO units_fts(units_fts, rank) VALUES ('integrity-check', 1)")
+    finally:
+        s.close()
+
+
+def test_exact_reimport_preserves_timestamp_indexes_and_embedding():
+    class Emb:
+        calls = 0
+
+        def embed(self, texts, keys=None):
+            self.calls += 1
+            return np.array([[1.0, 0.0]], dtype=np.float32)
+
+    emb = Emb()
+    s = LogStore(embedder=emb)
+    try:
+        args = dict(user_text="handler.ts", assistant_text="original", scene="s")
+        s.add_unit(0, 2, **args)
+        before = s.get(0)
+        again = s.add_unit(0, 2, **args)  # 未显式给 ts：重试不生成新的落盘时间
+        assert s.get(0) == before
+        assert again["new_entities"] == []
+        assert emb.calls == 1
+        assert s.mention_counts(["handler.ts"]) == {"handler.ts": 1}
+        s._conn.execute("INSERT INTO units_fts(units_fts, rank) VALUES ('integrity-check', 1)")
+    finally:
+        s.close()
+
+
+def test_append_allocates_above_database_and_snapshot_floors(tmp_path):
+    s = LogStore(tmp_path / "log.sqlite")
+    try:
+        assert s.next_position() == (0, 0)
+        s.add_unit(7, 42, user_text="old", assistant_text="evidence")
+        assert s.next_position() == (8, 43)
+        first = s.append_unit(0, user_text="new", assistant_text="a")
+        assert (first["unit_id"], first["t"]) == (8, 43)
+        second = s.append_unit(100, min_unit_id=20, user_text="newer", assistant_text="b")
+        assert (second["unit_id"], second["t"]) == (20, 100)
+        assert s.next_position() == (21, 101)
+        assert s.get(7)["user_text"] == "old"
+    finally:
+        s.close()
+
+
+def test_parallel_connections_allocate_distinct_ids_and_times(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+
+    stores = [LogStore(tmp_path / "log.sqlite") for _ in range(4)]
+    barrier = threading.Barrier(len(stores))
+
+    def write(i):
+        barrier.wait(timeout=5)
+        return [stores[i].append_unit(0, user_text=f"writer-{i}-{j}",
+                                      assistant_text="answer") for j in range(5)]
+
+    try:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            rows = [r for batch in pool.map(write, range(4)) for r in batch]
+        assert sorted(r["unit_id"] for r in rows) == list(range(20))
+        assert sorted(r["t"] for r in rows) == list(range(20))
+        assert stores[0].count() == 20
+        assert len({stores[0].get(i)["user_text"] for i in range(20)}) == 20
+    finally:
+        for s in stores:
+            s.close()
+
+
+def test_failed_index_write_rolls_back_unit_and_allocation():
+    import sqlite3
+
+    s = LogStore()
+    try:
+        s._conn.execute("CREATE TRIGGER fail_mentions BEFORE INSERT ON mentions "
+                        "BEGIN SELECT RAISE(ABORT, 'index failed'); END")
+        with pytest.raises(sqlite3.IntegrityError, match="index failed"):
+            s.append_unit(0, user_text="handler.ts", assistant_text="a")
+        assert s.count() == 0
+        s._conn.execute("DROP TRIGGER fail_mentions")
+        row = s.append_unit(0, user_text="handler.ts", assistant_text="a")
+        assert (row["unit_id"], row["t"]) == (0, 0)
+        assert s.search("handler.ts")[0]["unit_id"] == 0
+    finally:
+        s.close()

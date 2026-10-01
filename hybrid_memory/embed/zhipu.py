@@ -19,6 +19,18 @@ class ZhipuEmbeddingError(RuntimeError):
     pass
 
 
+def _unit_vectors(vectors):
+    """先缩放再求范数，避免有限值溢出/下溢；禁止零向量流入引擎。"""
+    vectors = np.asarray(vectors, dtype=np.float64)
+    if not np.isfinite(vectors).all():
+        raise ZhipuEmbeddingError("non-finite embedding")
+    scale = np.max(np.abs(vectors), axis=-1, keepdims=True)
+    if np.any(scale == 0):
+        raise ZhipuEmbeddingError("zero embedding (possibly cancelled chunks)")
+    vectors = vectors / scale
+    return (vectors / np.linalg.norm(vectors, axis=-1, keepdims=True)).astype(np.float32)
+
+
 class ZhipuEmbedder(Embedder):
     ENDPOINT = os.environ.get(
         "ZAI_BASE_URL", "https://open.bigmodel.cn/api/paas/v4").rstrip("/") + "/embeddings"
@@ -86,10 +98,11 @@ class ZhipuEmbedder(Embedder):
             key = self._cache_key(chunk)
             hit = self.cache.get(key) if self.cache is not None else None
             if hit is not None:
-                norm = np.linalg.norm(hit)
-                if (hit.shape == (dim,) and np.isfinite(hit).all() and norm > 0):
-                    vectors[idx] = (hit / norm).astype(np.float32)
-                else:
+                try:
+                    if hit.shape != (dim,):
+                        raise ZhipuEmbeddingError("invalid cached dimensions")
+                    vectors[idx] = _unit_vectors(hit)
+                except ZhipuEmbeddingError:
                     hit = None
             if hit is None:
                 key_to_indices.setdefault(key, []).append(idx)
@@ -113,8 +126,7 @@ class ZhipuEmbedder(Embedder):
         out = np.zeros((len(texts), dim), dtype=np.float64)
         for (text_idx, length), vec in zip(spans, vectors):
             out[text_idx] += length * vec
-        out /= np.linalg.norm(out, axis=1)[:, None]
-        return out.astype(np.float32)
+        return _unit_vectors(out)
 
     def _cache_key(self, text: str) -> str:
         raw = f"{self.model}\0{self.dimensions}\0{text}".encode("utf-8")
@@ -159,7 +171,7 @@ class ZhipuEmbedder(Embedder):
         usage = payload.get("usage")
         if isinstance(usage, dict):
             tokens = usage.get("prompt_tokens")
-            if isinstance(tokens, (int, float)):
+            if type(tokens) is int and tokens >= 0:
                 self.last_prompt_tokens += int(tokens)
         data = payload.get("data")
         if not isinstance(data, list) or len(data) != n:
@@ -171,23 +183,18 @@ class ZhipuEmbedder(Embedder):
                 raise ZhipuEmbeddingError("invalid data item")
             index = entry.get("index")
             embedding = entry.get("embedding")
-            if not isinstance(index, int) or index in seen:
+            if type(index) is not int or index in seen:
                 raise ZhipuEmbeddingError("invalid data index")
             seen.add(index)
             if not isinstance(embedding, list):
                 raise ZhipuEmbeddingError("invalid embedding")
             try:
                 vec = np.asarray(embedding, dtype=np.float64)
-            except (TypeError, ValueError) as exc:
+            except (TypeError, ValueError, OverflowError) as exc:
                 raise ZhipuEmbeddingError("invalid embedding") from exc
             if vec.shape != (self.dimensions,):
                 raise ZhipuEmbeddingError("invalid embedding dimensions")
-            if not np.isfinite(vec).all():
-                raise ZhipuEmbeddingError("non-finite embedding")
-            norm = np.linalg.norm(vec)
-            if norm == 0:
-                raise ZhipuEmbeddingError("zero embedding")
-            items.append((index, (vec / norm).astype(np.float32)))
+            items.append((index, _unit_vectors(vec)))
         if seen != set(range(n)):
             raise ZhipuEmbeddingError("non-contiguous data index")
         items.sort(key=lambda item: item[0])

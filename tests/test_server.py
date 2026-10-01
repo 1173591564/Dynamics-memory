@@ -1,14 +1,13 @@
 """sidecar 服务测试：端点逻辑、HTTP 往返、状态持久化。全程无网络。"""
+from contextlib import contextmanager
 import json
 import os
-import sys
 import threading
 import urllib.request
 
 import numpy as np
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hybrid_memory.candgen.base import CandidateGeneration, MemoryCandidate
 from hybrid_memory.config import Cfg
@@ -67,7 +66,7 @@ def test_recall_returns_context_and_registry():
 
 def _engine_fingerprint(svc):
     eng = svc.engine
-    mems = sorted((m.id, m.pool.name, round(m.v, 9), m.shortlisted, m.hits,
+    mems = sorted((m.id, m.pool.name, round(m.v, 9), m.hits, m.d_hit,
                    m.suppressed_by, m.last_hit) for m in eng.mems.values())
     return (mems, sorted(eng.tensions), len(eng.signals),
             len(eng._shadow_pending), svc._next_retrieval, svc._t)
@@ -148,112 +147,50 @@ def test_state_persists_across_restart(tmp_path):
 
 def test_http_roundtrip(tmp_path):
     svc = _service(tmp_path)
-    httpd = serve(svc, 0)
-    port = httpd.server_address[1]
-    t = threading.Thread(target=httpd.serve_forever, daemon=True)
-    t.start()
-    base = f"http://127.0.0.1:{port}"
-    auth = {"Authorization": f"Bearer {svc.token}"}
-
-    def get(path):
-        req = urllib.request.Request(base + path, headers=auth)
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return json.loads(r.read().decode("utf-8"))
-
-    def post(path, obj):
-        req = urllib.request.Request(
-            base + path, data=json.dumps(obj).encode("utf-8"),
-            headers={"Content-Type": "application/json", **auth},
-            method="POST")
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return json.loads(r.read().decode("utf-8"))
-
-    try:
-        assert get("/health")["ok"] is True
-        out = post("/observe", {"user_text": "部署在哪",
-                                "assistant_text": "已改到 B 服务器"})
-        assert out["candidates"] == 1
-        rec = get("/recall?q=%E9%83%A8%E7%BD%B2%E5%9C%A8%E5%93%AA")
-        assert "部署在 B 服务器" in rec["context"]
-        assert post("/save", {})["saved"] is True
-    finally:
-        httpd.shutdown()
-        httpd.server_close()
+    with _http(svc) as (post, get, _):
+        status, health = get("/health")
+        assert status == 200 and health["ok"] is True
+        status, out = post("/observe", {"user_text": "部署在哪",
+                                      "assistant_text": "已改到 B 服务器"})
+        assert status == 200 and out["candidates"] == 1
+        status, rec = get("/recall?q=%E9%83%A8%E7%BD%B2%E5%9C%A8%E5%93%AA")
+        assert status == 200 and "部署在 B 服务器" in rec["context"]
+        status, out = post("/save", {})
+        assert status == 200 and out["saved"] is True
 
 
 def test_http_auth_and_method_guards(tmp_path):
     svc = _service(tmp_path)
-    httpd = serve(svc, 0)
-    port = httpd.server_address[1]
-    t = threading.Thread(target=httpd.serve_forever, daemon=True)
-    t.start()
-    base = f"http://127.0.0.1:{port}"
-
-    def raw(req):
-        try:
-            with urllib.request.urlopen(req, timeout=10) as r:
-                return r.status
-        except urllib.error.HTTPError as e:
-            return e.code
-
-    try:
+    with _http(svc) as (post, get, httpd):
         # /health 免鉴权；其余端点无 token 一律 401
-        assert raw(urllib.request.Request(base + "/health")) == 200
-        assert raw(urllib.request.Request(base + "/recall?q=x")) == 401
+        base = f"http://127.0.0.1:{httpd.server_address[1]}"
+        with urllib.request.urlopen(base + "/health", timeout=10) as r:
+            assert r.status == 200
+        import pytest
+        with pytest.raises(urllib.error.HTTPError) as err:
+            urllib.request.urlopen(base + "/recall?q=x", timeout=10)
+        assert err.value.code == 401
+        err.value.close()
         # 写端点经 GET 不可达（CSRF img 向量）
-        auth = {"Authorization": f"Bearer {svc.token}"}
-        assert raw(urllib.request.Request(base + "/save", headers=auth)) == 405
-        assert raw(urllib.request.Request(base + "/observe", headers=auth)) == 405
-        # POST 缺 JSON Content-Type → 415
-        req = urllib.request.Request(
-            base + "/save", data=b"{}", headers=auth, method="POST")
-        assert raw(req) == 415
-        # 正常调用仍通
-        req = urllib.request.Request(
-            base + "/save", data=b"{}",
-            headers={"Content-Type": "application/json", **auth},
-            method="POST")
-        assert raw(req) == 200
-        # token 持久化：state_dir 落盘 .memory-token
+        assert get("/save")[0] == 405
+        assert get("/observe")[0] == 405
+        # 缺有效 JSON Content-Type → 415
+        assert post("/save", {}, {"Content-Type": "application/x-www-form-urlencoded"})[0] == 415
+        assert post("/save", {})[0] == 200
         assert (tmp_path / ".memory-token").read_text().strip() == svc.token
-    finally:
-        httpd.shutdown()
-        httpd.server_close()
 
 
 def test_http_body_and_k_guards(tmp_path):
     svc = _service(tmp_path)
-    httpd = serve(svc, 0)
-    port = httpd.server_address[1]
-    t = threading.Thread(target=httpd.serve_forever, daemon=True)
-    t.start()
-    base = f"http://127.0.0.1:{port}"
-    auth = {"Authorization": f"Bearer {svc.token}"}
-
-    def raw(req):
-        try:
-            with urllib.request.urlopen(req, timeout=10) as r:
-                return r.status
-        except urllib.error.HTTPError as e:
-            return e.code
-
-    def post(path, obj):
-        return raw(urllib.request.Request(
-            base + path, data=json.dumps(obj).encode("utf-8"),
-            headers={"Content-Type": "application/json", **auth},
-            method="POST"))
-
-    try:
-        get = lambda p: raw(urllib.request.Request(base + p, headers=auth))
-        assert get("/recall?q=x&k=abc") == 400
-        assert get("/recall?q=x&k=0") == 400
-        assert post("/search", {"query": "x", "k": 0}) == 400
-        assert post("/search", {"query": "x", "k": "3"}) == 400
-        assert post("/search", {"query": "x", "k": True}) == 400
-        # 4MiB+1 → 413（声明大 Content-Length 但不发体：服务端在 header
-        # 阶段即拒绝；真发 4MB 体会被服务端 RST，Windows 客户端先崩）
+    with _http(svc) as (post, get, httpd):
+        assert get("/recall?q=x&k=abc")[0] == 400
+        assert get("/recall?q=x&k=0")[0] == 400
+        assert post("/search", {"query": "x", "k": 0})[0] == 400
+        assert post("/search", {"query": "x", "k": "3"})[0] == 400
+        assert post("/search", {"query": "x", "k": True})[0] == 400
+        # header 阶段即拒绝，避免发完整大 body 被 RST 掩盖断言。
         import http.client
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        conn = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1], timeout=10)
         conn.putrequest("POST", "/observe")
         conn.putheader("Content-Type", "application/json")
         conn.putheader("Authorization", f"Bearer {svc.token}")
@@ -261,54 +198,25 @@ def test_http_body_and_k_guards(tmp_path):
         conn.endheaders()
         assert conn.getresponse().status == 413
         conn.close()
-    finally:
-        httpd.shutdown()
-        httpd.server_close()
 
 
 def test_http_field_and_body_validation(tmp_path):
     svc = _service(tmp_path)
-    httpd = serve(svc, 0)
-    port = httpd.server_address[1]
-    t = threading.Thread(target=httpd.serve_forever, daemon=True)
-    t.start()
-    base = f"http://127.0.0.1:{port}"
-    auth = {"Authorization": f"Bearer {svc.token}"}
-
-    def raw(req):
-        try:
-            with urllib.request.urlopen(req, timeout=10) as r:
-                return r.status
-        except urllib.error.HTTPError as e:
-            return e.code
-
-    def post(path, data, headers=auth):
-        return raw(urllib.request.Request(
-            base + path, data=data,
-            headers={"Content-Type": "application/json", **headers},
-            method="POST"))
-
-    try:
-        get = lambda p: raw(urllib.request.Request(base + p, headers=auth))
-        # 空查询 → 400（embedder 对空串抛错，不能漏成 500）
-        assert get("/recall") == 400
-        assert post("/search", b"{}") == 400
-        # 非法 verdict 不能静默落 else=collision 消费 tension
-        assert post("/resolve", b'{"left":0,"right":1,"verdict":"updtae"}') == 400
-        assert post("/resolve", b'{"left":0,"right":1,"verdict":null}') == 400
-        # int 字段不可解析 → 400 不是 500
-        assert post("/feedback", b'{"retrieval_id":"x"}') == 400
-        assert post("/resolve", b'{"left":"a","right":1,"verdict":"update"}') == 400
-        # 畸形 JSON / 非对象 body → 400 不是 500
-        assert post("/observe", b"{not json") == 400
-        assert post("/observe", b"[1,2]") == 400
-        assert post("/observe", b"null") == 400
-        # wrong token → 401（且 POST 在 read body 前被拦）
-        assert post("/save", b"{}",
-                    {"Authorization": "Bearer wrong"}) == 401
-        # 负 Content-Length → 400（不能 read(-5) 挂死线程）
+    with _http(svc) as (post, get, httpd):
+        assert get("/recall")[0] == 400
+        assert post("/search", b"{}")[0] == 400
+        # 非法 verdict、int、JSON body → 400，不得变 500 或静默消费 tension。
+        assert post("/resolve", b'{"left":0,"right":1,"verdict":"updtae"}')[0] == 400
+        assert post("/resolve", b'{"left":0,"right":1,"verdict":null}')[0] == 400
+        assert post("/feedback", b'{"retrieval_id":"x"}')[0] == 400
+        assert post("/resolve", b'{"left":"a","right":1,"verdict":"update"}')[0] == 400
+        assert post("/observe", b"{not json")[0] == 400
+        assert post("/observe", b"[1,2]")[0] == 400
+        assert post("/observe", b"null")[0] == 400
+        assert post("/save", b"{}", {"Authorization": "Bearer wrong"})[0] == 401
+        # 负 Content-Length 不能 read(-5) 挂死线程。
         import http.client
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        conn = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1], timeout=10)
         conn.putrequest("POST", "/observe")
         conn.putheader("Content-Type", "application/json")
         conn.putheader("Authorization", f"Bearer {svc.token}")
@@ -316,9 +224,6 @@ def test_http_field_and_body_validation(tmp_path):
         conn.endheaders()
         assert conn.getresponse().status == 400
         conn.close()
-    finally:
-        httpd.shutdown()
-        httpd.server_close()
 
 
 def test_empty_token_file_regenerates(tmp_path):
@@ -379,8 +284,9 @@ def test_memory_text_cannot_break_context_tag():
 
 
 # ================================================== 衔尾蛇：日志工具面 / 提议 / 信号
+@contextmanager
 def _http(svc):
-    """起一个测试 HTTP 服务，返回 (post, get, shutdown)。post/get 返回 (status, json)。"""
+    """共用 HTTP 往返/错误解码；退出时关闭服务。post/get 返回 (status, json)。"""
     httpd = serve(svc, 0)
     port = httpd.server_address[1]
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
@@ -399,19 +305,21 @@ def _http(svc):
 
     def post(path, body, extra=None):
         return call(urllib.request.Request(
-            base + path, data=json.dumps(body).encode("utf-8"),
+            base + path, data=body if isinstance(body, bytes) else json.dumps(body).encode("utf-8"),
             headers={"Content-Type": "application/json",
                      "Authorization": f"Bearer {svc.token}", **(extra or {})},
             method="POST"))
 
-    def get(path):
+    def get(path, extra=None):
         return call(urllib.request.Request(
-            base + path, headers={"Authorization": f"Bearer {svc.token}"}))
+            base + path, headers={"Authorization": f"Bearer {svc.token}",
+                                  **(extra or {})}))
 
-    def shutdown():
+    try:
+        yield post, get, httpd
+    finally:
         httpd.shutdown()
         httpd.server_close()
-    return post, get, shutdown
 
 
 def test_observe_writes_l0_and_emits_extract_due():
@@ -419,7 +327,7 @@ def test_observe_writes_l0_and_emits_extract_due():
     out = svc.observe("以后统一用 bun 跑脚本，见 scripts/run.ts", "好的")
     assert set(out["reasons"]) == {"decision", "new_entity"}
     assert svc.log.count() == 1 and svc.log.get(0)["user_text"].startswith("以后")
-    assert svc.engine.signals.peek_kinds() == {"extract_due": 1}
+    assert svc.signals()["queued"] == {"extract_due": 1}
     assert svc.observe("在吗", "在")["reasons"] == []      # 闲聊只留 L0
 
 
@@ -430,11 +338,11 @@ def test_correction_reports_miss_with_the_retrieval_used():
     svc.observe("部署在哪", "在 B 服务器")                  # 回答完 observe
     svc.feedback(rid, "部署在哪", "在 B 服务器")            # 再 feedback（插件顺序）
     svc.observe("不对，上周已经迁到 C 服务器了", "收到")      # 下一轮开口纠正
-    sig = svc.engine.signals.take(("recall_miss",))[0]
-    assert sig.payload["q"] == "部署在哪"
-    assert sig.payload["sources"] == ["correction"]
-    assert sig.payload["retrieved"][0]["text"] == "部署在 B 服务器"   # 带上当时召回的
-    assert sig.payload["hints"][0].startswith("不对")
+    sig = svc.tasks.list_tasks(kinds=("recall_miss",))[0]
+    assert sig["payload"]["q"] == "部署在哪"
+    assert sig["payload"]["sources"] == ["correction"]
+    assert sig["payload"]["retrieved"][0]["text"] == "部署在 B 服务器"   # 带上当时召回的
+    assert sig["payload"]["hints"][0].startswith("不对")
     assert svc.n_missed == 1
 
 
@@ -454,7 +362,7 @@ def test_recognizer_none_miss_is_opt_in():
         rid = svc.recall("部署在哪")["retrieval_id"]
         out = svc.feedback(rid, "部署在哪", "不知道")
         assert out["n_useful"] == 0
-        assert ("recall_miss" in svc.engine.signals.peek_kinds()) is flag
+        assert ("recall_miss" in svc.signals()["queued"]) is flag
 
 
 def test_log_tools_over_http(tmp_path):
@@ -462,8 +370,9 @@ def test_log_tools_over_http(tmp_path):
     svc = _service(tmp_path)
     svc.observe("PR #42 合了吗，改的是 proxy/handler.ts", "合了，commit a1b2c3d4e5。")
     svc.observe("handler.ts 里 hermes 是什么", "form agent。")
-    post, get, shutdown = _http(svc)
-    try:
+    svc.open_budget("sig-1", tool_calls=3, window_chars=40, before=1, origin="repair")
+    with _http(svc) as (post, get, _):
+        # 主 agent（无信号）：不计量，看得到全部
         st, out = post("/log/search", {"query": "handler.ts"})
         assert st == 200 and {h["unit_id"] for h in out["hits"]} == {0, 1}
         st, out = post("/log/timeline", {"entity": "handler.ts"})
@@ -476,8 +385,9 @@ def test_log_tools_over_http(tmp_path):
         assert post("/log/window", {"unit_ids": list(range(21))})[0] == 400
         assert post("/log/stats", {"group_by": "user"})[0] == 400
         assert post("/log/search", {})[0] == 400
-    finally:
-        shutdown()
+        usage = svc.close_budget("sig-1")
+        assert usage["calls"] == 0 and usage["window_used"] == 0
+        assert get("/signals")[1]["open_budgets"] == []
 
 
 def test_log_tools_signal_budget_and_causal_bound(tmp_path):
@@ -507,8 +417,7 @@ def test_propose_validates_and_stamps_origin(tmp_path):
     svc = _service(tmp_path)
     svc.observe("端口是多少", "8080，token 是 sk-abcdefghijklmnopqrstuvwxyz123456")
     svc.observe("以后呢", "以后改 9090")
-    post, get, shutdown = _http(svc)
-    try:
+    with _http(svc) as (post, get, _):
         body = {"proposals": [
             {"text": "服务端口是 8080，token 为 sk-abcdefghijklmnopqrstuvwxyz123456。",
              "source_unit_ids": [0], "entity_key": "port"},   # 通过（脱敏）
@@ -543,23 +452,20 @@ def test_propose_validates_and_stamps_origin(tmp_path):
         assert post("/propose", {"proposals": "x"})[0] == 400
         st, out = get("/signals")
         assert out["proposals"] == 2 and out["rejected"] == 5
-    finally:
-        shutdown()
 
 
 def test_miss_and_diagnose_endpoints(tmp_path):
     svc = _service(tmp_path)
-    post, get, shutdown = _http(svc)
-    try:
+    with _http(svc) as (post, get, _):
         st, out = post("/miss", {"query": "handler.ts 的 hermes 是什么", "hint": "log_search",
                                  "source": "agent_tool"})
         assert st == 200 and out["queued"] == 1
         st, out = post("/miss", {"query": "handler.ts 的 hermes 是什么", "source": "weird"})
         assert st == 200 and out["queued"] == 1                    # 同问题合并
         assert post("/miss", {"query": "   "})[0] == 400
-        sig = svc.engine.signals.take(("recall_miss",))[0]
-        assert sig.payload["sources"] == ["agent_tool", "external"]
-        assert "handler.ts" in sig.payload["entities"]
+        sig = svc.tasks.list_tasks(kinds=("recall_miss",))[0]
+        assert sig["payload"]["sources"] == ["agent_tool", "external"]
+        assert "handler.ts" in sig["payload"]["entities"]
         st, out = post("/diagnose", {"miss_type": "never_logged", "note": "没记过"})
         assert st == 200 and out["miss_counts"] == {"never_logged": 1}
         assert post("/diagnose", {"miss_type": "nonsense"})[0] == 400
@@ -568,21 +474,16 @@ def test_miss_and_diagnose_endpoints(tmp_path):
         st, out = get("/signals")
         assert out["missed"] == 2 and out["miss_counts"] == {"never_logged": 1}
         assert out["log_units"] == 0 and out["agent"] is None
-    finally:
-        shutdown()
 
 
 def test_feedback_double_call_is_409_over_http(tmp_path):
     svc = _service(tmp_path)
     svc.observe("部署在哪", "已改到 B 服务器")
     rid = svc.recall("部署在哪")["retrieval_id"]
-    post, get, shutdown = _http(svc)
-    try:
+    with _http(svc) as (post, get, _):
         assert post("/feedback", {"retrieval_id": rid, "question": "部署在哪", "answer": "B"})[0] == 200
         assert post("/feedback", {"retrieval_id": rid, "question": "部署在哪", "answer": "B"})[0] == 409
         assert post("/feedback", {"retrieval_id": 999, "question": "x", "answer": "y"})[0] == 404
-    finally:
-        shutdown()
 
 
 def test_old_state_without_origin_and_entity_migrates(tmp_path):
@@ -605,3 +506,238 @@ def test_old_state_without_origin_and_entity_migrates(tmp_path):
     assert m.origin == "passive" and m.entity == ""
     assert svc2.miss_counts == {} and svc2.n_missed == 0
     assert svc2.recall("部署在哪")["selected"][0]["origin"] == "passive"
+
+
+# ---------------------------------------------------------------- 重启时保护 L0
+
+def test_restart_with_missing_stale_or_corrupt_snapshot_preserves_l0(tmp_path):
+    for mode in ("missing", "stale", "corrupt"):
+        directory = tmp_path / mode
+        svc = _service(directory, texts=())
+        if mode == "stale":
+            svc.save()  # 快照落后于随后提交的日志
+        svc.observe("old_module.py 的历史证据", "original")
+        original = svc.log.get(0)
+        svc.log.close()  # 模拟未保存新快照就结束
+        if mode == "corrupt":
+            (directory / "state.pkl").write_bytes(b"broken snapshot")
+        restored = _service(directory, texts=())
+        try:
+            assert restored._unit_id == 1 and restored._t == 1
+            result = restored.observe("new_module.py 的新交互", "new answer")
+            assert result["unit_id"] == 1
+            assert restored.log.count() == 2
+            assert restored.log.get(0) == original
+            assert restored.log.get(1)["t"] == 1
+            assert [h["unit_id"] for h in restored.log.timeline("old_module.py")] == [0]
+            assert [h["unit_id"] for h in restored.log.search("new_module.py")] == [1]
+        finally:
+            restored.log.close()
+
+
+def test_stale_snapshot_keeps_memory_sources_and_advances_from_log(tmp_path):
+    svc = _service(tmp_path)
+    svc.observe("old_module.py", "old evidence")
+    rid = svc.recall("部署在哪")["retrieval_id"]
+    svc.save()
+    original = svc.log.get(0)
+    svc.observe("uncheckpointed.py", "evidence after snapshot")
+    svc.log.close()
+    restored = _service(tmp_path, texts=())
+    try:
+        assert restored._unit_id == 2 and restored._t == 2
+        mem = next(iter(restored.engine.mems.values()))
+        assert mem.src == {0}
+        assert restored._retrievals[rid].selected[0] is mem
+        assert restored.observe("next.py", "answer")["unit_id"] == 2
+        assert restored.log.get(0) == original
+        assert restored.log.get(1)["user_text"] == "uncheckpointed.py"
+        assert restored.log.count() == 3
+    finally:
+        restored.log.close()
+
+
+def test_snapshot_cursors_ahead_of_log_are_not_rewound(tmp_path):
+    svc = _service(tmp_path, texts=())
+    svc.observe("old", "answer")
+    svc._unit_id, svc._t = 20, 100
+    svc.save()
+    svc.log.close()
+    restored = _service(tmp_path, texts=())
+    try:
+        assert (restored._unit_id, restored._t) == (20, 100)
+        assert restored.observe("new", "answer")["unit_id"] == 20
+        assert restored.log.get(20)["t"] == 100
+    finally:
+        restored.log.close()
+
+
+def test_observe_refreshes_cursors_even_when_log_advances_after_startup(tmp_path):
+    from hybrid_memory.logstore import LogStore
+
+    svc = _service(tmp_path, texts=())
+    other = LogStore(tmp_path / "log.sqlite")
+    try:
+        other.add_unit(40, 80, user_text="external.py", assistant_text="old evidence")
+        assert svc.observe("new.py", "answer")["unit_id"] == 41
+        assert svc.log.get(41)["t"] == 81
+        assert svc._t == 82
+        assert svc.log.get(40)["user_text"] == "external.py"
+    finally:
+        other.close()
+        svc.log.close()
+
+
+def test_l0_is_committed_before_candgen_even_with_allocated_ids(tmp_path):
+    import sqlite3
+
+    svc = _service(tmp_path, texts=())
+
+    committed = []
+
+    class CheckGenerator:
+        def generate(self, window, prev_scene=""):
+            with sqlite3.connect(tmp_path / "log.sqlite") as conn:
+                row = conn.execute("SELECT id, t, user_text FROM units").fetchone()
+            assert row == (window.units[0].id, window.start_time, "hello")
+            committed.append(row)  # observe 会吞 generator 的异常；在调用后验证到达此处
+            raise RuntimeError("expected candgen outage")
+
+    svc.generator = CheckGenerator()
+    try:
+        result = svc.observe("hello", "world")
+        assert committed == [(0, 0, "hello")]
+        assert result["unit_id"] == 0
+        assert svc.log.count() == 1
+        assert svc.signals()["queued"] == {"extract_due": 1}
+    finally:
+        svc.log.close()
+
+
+def test_invalid_snapshot_does_not_publish_partially_loaded_memory(tmp_path):
+    import pickle
+
+    svc = _service(tmp_path)
+    svc.observe("old_module.py", "evidence")
+    svc.save()
+    svc.log.close()
+    path = tmp_path / "state.pkl"
+    with path.open("rb") as f:
+        state = pickle.load(f)
+    # 这个字段在老加载流程的最后才消费，不能让前面恢复的 mems 泄漏出来。
+    state["service_counters"] = []
+    with path.open("wb") as f:
+        pickle.dump(state, f, protocol=4)
+    restored = _service(tmp_path, texts=())
+    try:
+        assert not restored.engine.mems
+        assert not restored._retrievals
+        assert (restored._unit_id, restored._t) == (1, 1)
+        assert restored.observe("new_module.py", "answer")["unit_id"] == 1
+        assert restored.log.get(0)["user_text"] == "old_module.py"
+    finally:
+        restored.log.close()
+
+
+def test_snapshot_counters_cannot_replace_service_internals(tmp_path):
+    import pickle
+
+    svc = _service(tmp_path, texts=())
+    svc.save()
+    svc.log.close()
+    path = tmp_path / "state.pkl"
+    with path.open("rb") as f:
+        state = pickle.load(f)
+    state["service_counters"] = {"_lock": 0}
+    with path.open("wb") as f:
+        pickle.dump(state, f, protocol=4)
+    restored = _service(tmp_path, texts=())
+    try:
+        assert (tmp_path / "state.corrupt").exists()
+        assert restored.observe("hello", "world")["unit_id"] == 0
+    finally:
+        restored.log.close()
+
+
+def test_complete_legacy_name_encoded_snapshot_restores(tmp_path, monkeypatch):
+    from hybrid_memory.core.types import Pool
+
+    svc = _service(tmp_path)
+    svc.observe("legacy.py", "original evidence")
+    rid = svc.recall("部署在哪")["retrieval_id"]
+    with monkeypatch.context() as patch:
+        patch.setattr(Pool, "__reduce_ex__",
+                      lambda self, protocol: (getattr, (Pool, self.name)))
+        svc.save()
+    svc.log.close()
+    assert b"getattr" in (tmp_path / "state.pkl").read_bytes()
+    restored = _service(tmp_path, texts=())
+    try:
+        assert not (tmp_path / "state.corrupt").exists()
+        mem = next(iter(restored.engine.mems.values()))
+        assert mem.pool is Pool.CANDIDATE
+        assert restored._retrievals[rid].selected[0] is mem
+        assert restored.observe("next.py", "answer")["unit_id"] == 1
+        restored.save()  # 旧编码恢复后再保存会变成稳定值编码
+        assert b"getattr" not in (tmp_path / "state.pkl").read_bytes()
+    finally:
+        restored.log.close()
+
+
+def test_bad_http_ids_and_feedback_types_do_not_mutate_state():
+    import pickle
+    svc = _service()
+    svc.observe("q", "a")
+    rid = svc.recall("部署在哪")["retrieval_id"]
+    before = pickle.dumps(svc._state())
+    with _http(svc) as (post, _, _server):
+        for value in (False, 0.9, "0", None, float("inf"), 2**100):
+            assert post("/feedback", {"retrieval_id": value})[0] == 400
+            assert post("/resolve", {"left": value, "right": 1,
+                                      "verdict": "update", "ensure_tension": True})[0] == 400
+        assert post("/log/window", {"unit_ids": [2**100]})[0] == 400
+        assert post("/log/search", {"query": "q", "before": 2**100})[0] == 400
+        assert post("/save", {}, {"Authorization": "Bearer ÿ"})[0] == 401
+        assert post("/feedback", {"retrieval_id": rid, "question": []})[0] == 400
+        assert post("/resolve", {"left": 0, "right": 1, "ensure_tension": "false"})[0] == 400
+    assert pickle.dumps(svc._state()) == before
+
+
+def test_proposal_bounds_and_malformed_supersedes_do_not_partially_apply():
+    svc = _service(texts=())
+    svc.observe("q", "a")
+    good = {"text": "部署在 B 服务器", "source_unit_ids": [0]}
+    with _http(svc) as (post, _, _server):
+        assert post("/propose", {"proposals": [good] * 51})[0] == 400
+        for invalid in (4, 0, False, {}):
+            status, out = post("/propose", {"proposals": [dict(good, supersedes=invalid)]})
+            assert status == 200 and out["accepted"] == 0
+    assert not svc.engine.mems
+    assert svc.propose([dict(good, salience=float("nan"))])["accepted"] == 1
+    assert svc.engine.mems[0].salience == 0.5
+
+
+def test_passive_sources_belong_to_actual_window_and_bad_json_schedules_repair():
+    from hybrid_memory.candgen.chat import ChatGenerator
+    svc = _service()
+    svc.generator = ChatGenerator(lambda *_: '{"memories":[{"text":"fact","source_unit_ids":[999]}]}')
+    svc.observe("q", "a")
+    assert svc.engine.mems[0].src == frozenset({0})
+    svc.generator = ChatGenerator(lambda *_: "invalid JSON")
+    result = svc.observe("q2", "a2")
+    assert "candgen_failed" in result["reasons"] and svc.n_candgen_fail == 1
+    assert svc.tasks.queued_counts()["extract_due"] >= 1
+
+
+def test_http_passive_budget_keeps_checkpoint_unchanged(tmp_path):
+    svc = _service(tmp_path)
+    svc.observe("部署在哪", "已改到 B 服务器")
+    svc.save()
+    before, revision = svc._dump_state(), svc.tasks.checkpoint()[0]
+    with _http(svc) as (post, get, _):
+        full = get("/recall?q=%E9%83%A8%E7%BD%B2%E5%9C%A8%E5%93%AA&passive=1")[1]
+        assert full["retrieval_id"] is None and full["tokens"] > 0
+        status, empty = post("/search", {"query": "test", "passive": True, "budget_tokens": 0})
+        assert status == 200 and empty["tokens"] == 0 and empty["selected"] == []
+        assert post("/search", {"query": "test", "passive": "false"})[0] == 400
+    assert svc._dump_state() == before and svc.tasks.checkpoint()[0] == revision

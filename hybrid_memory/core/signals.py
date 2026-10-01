@@ -1,12 +1,8 @@
-"""引擎 → LLM 信号队列（P1 影子模式）。
+"""引擎信号的有界内存队列，支持可选的持久化发射回调。
 
-引擎在"有活可干"的时刻发射信号，worker（后续实现）拉取信号、
-自主调 LLM、再经引擎操作面回报。P1 阶段引擎照旧同步调用 semantics，
-信号并行发射——用于验证信号面完备性，不改变任何现有行为。
-
-有界：队满丢最旧 + n_dropped 计数，绝不静默。
-合并：key 非空的信号按 (kind, key) 去重/合并（如 conflict_pending
-累积成一批、maintenance_due 按 scene 只留最新签名）。
+裸引擎仍是易失队列；sidecar 为调查信号注入 SQLite journal，直接持久化。
+调查信号由 journal 接管，不再进入内存队列；其他语义信号仍易失。
+同 (kind, key) 在内存中去重合并。持久任务是否可合并由 journal 自己判断。
 """
 from __future__ import annotations
 
@@ -24,8 +20,9 @@ class Signal:
 
 
 class SignalQueue:
-    def __init__(self, cap: int = 256):
+    def __init__(self, cap: int = 256, on_emit=None):
         self.cap = max(1, int(cap))
+        self.on_emit = on_emit
         self._items: deque[Signal] = deque()
         self._by_key: dict[tuple[str, str], Signal] = {}
         self._next_id = 0
@@ -36,7 +33,12 @@ class SignalQueue:
              merge=None) -> Signal:
         """key 非空且同类已存在 → merge(旧, 新) 原地更新并刷新 t；
         否则入队；队满丢最旧。"""
+        # journal 同步序列化 payload（不修改原对象），返回任务 id 即接管。
+        task_id = (self.on_emit(kind, payload, t, key, merge)
+                   if self.on_emit is not None else None)
         self.n_emitted += 1
+        if task_id is not None:
+            return Signal(kind, payload, t, key, task_id)
         if key:
             exist = self._by_key.get((kind, key))
             if exist is not None:
@@ -67,8 +69,8 @@ class SignalQueue:
         """只摘走指定种类的信号，其余原位保留（顺序不变）。
 
         多消费者共用一个队列时用它而不是 drain+回队：语义 worker 拿
-        conflict/feedback/maintenance，agent worker 拿 recall_miss/extract_due，
-        互不干扰、不重排。"""
+        conflict/feedback/maintenance，其余信号留给其他消费者。sidecar 的
+        agent worker 直接从 SQLite 领取任务，不消费此内存队列。"""
         kinds = set(kinds)
         out, keep = [], deque()
         for sig in self._items:

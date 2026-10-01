@@ -1,16 +1,13 @@
 """衔尾蛇回路测试：信号（recall_miss / extract_due）→ 调查员 → 提议入库。
 
-调查员用假实现（不碰 LLM），只验证引擎—服务—worker 之间的契约：
+调查员用假实现（不碰 LLM/opencode），只验证引擎—服务—worker 之间的契约：
 去重与合并、消费者隔离、载荷形状、解析鲁棒性、失败重试与放弃、日预算、
 提议校验与来源标签。全程无网络。
 """
 import json
-import os
-import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hybrid_memory.agent.investigator import (Budget, Investigation,
                                               build_payload,
@@ -120,7 +117,7 @@ def test_correction_triggers_repair_and_recall_improves():
     r1 = svc.recall("hermes 是什么类型的 agent")
     assert r1["n"] == 0                                    # 被动抽取漏了
     svc.observe("不对，后来把 hermes 移出 _headerOnlyAgents 了", "收到，改为 form agent。")
-    assert svc.engine.signals.peek_kinds()["recall_miss"] == 1
+    assert svc.signals()["queued"]["recall_miss"] == 1
 
     fake = _fake(proposals=[{"text": "hermes 在 proxy/handler.ts 里已移出 _headerOnlyAgents，现为 form agent。",
                              "kind": "work_fact", "salience": 0.8,
@@ -140,7 +137,7 @@ def test_correction_triggers_repair_and_recall_improves():
     assert len(mems) == 1 and mems[0].origin == "repair" and mems[0].entity == "hermes"
     assert svc.recall("hermes 是什么类型的 agent")["n"] == 1
     assert svc.miss_counts == {"dropped_by_candgen": len(fake.calls)}
-    assert svc.engine.signals.peek_kinds().get("recall_miss") is None
+    assert svc.signals()["queued"].get("recall_miss") is None
 
 
 def test_extract_due_uses_extract_origin_and_causal_bound():
@@ -171,10 +168,10 @@ def test_investigator_failure_requeues_then_gives_up(capsys):
         return None                                        # 解析失败/异常都走这里
     agent = AgentWorker(svc, flaky, max_attempts=2)
     s1 = agent.process_once()
-    assert s1["failed"] == 1 and svc.engine.signals.peek_kinds() == {"recall_miss": 1}
+    assert s1["failed"] == 1 and svc.signals()["queued"] == {"recall_miss": 1}
     s2 = agent.process_once()
     assert s2["failed"] == 1 and agent.n_gave_up == 1
-    assert svc.engine.signals.peek_kinds() == {}          # 放弃，不再重排
+    assert svc.signals()["queued"] == {}          # 放弃，不再重排
     assert len(calls) == 2
     assert "放弃" in capsys.readouterr().err
 
@@ -191,7 +188,7 @@ def test_investigator_exception_is_contained():
     assert svc.signals()["open_budgets"] == []             # 预算已关
 
 
-def test_daily_cap_pauses_and_keeps_signals():
+def test_daily_cap_pauses_and_keeps_signals(monkeypatch):
     svc = _svc()
     svc.report_miss("a", source="external")
     svc.report_miss("b", source="external")
@@ -200,8 +197,22 @@ def test_daily_cap_pauses_and_keeps_signals():
     agent = AgentWorker(svc, fake, daily_cap=2)
     stats = agent.process_once()
     assert stats["run"] == 2 and stats["deferred"] == 1
-    assert agent.paused_until and svc.engine.signals.peek_kinds() == {"recall_miss": 1}
+    assert agent.stats()["paused_until"] and svc.signals()["queued"] == {"recall_miss": 1}
     assert agent.process_once()["run"] == 0               # 仍在暂停
+    import datetime
+    from hybrid_memory.agent import loop
+    tomorrow = datetime.date.today() + datetime.timedelta(days=1)
+
+    class NextDay(datetime.date):
+        @classmethod
+        def today(cls):
+            return tomorrow
+
+    monkeypatch.setattr(loop._dt, "date", NextDay)
+    assert agent.stats()["paused_until"] == ""
+    assert agent.stats()["runs_today"] == 0
+    assert agent.process_once()["run"] == 1
+
 
 
 def test_recent_dedupe_skips_same_question():
@@ -222,11 +233,13 @@ def test_max_signals_defers_rest():
     agent = AgentWorker(svc, _fake(diagnosis={"miss_type": "no_miss"}))
     stats = agent.process_once(max_signals=1)
     assert stats["run"] == 1 and stats["deferred"] == 2
-    assert svc.engine.signals.peek_kinds() == {"recall_miss": 2}
+    assert svc.signals()["queued"] == {"recall_miss": 2}
 
 
 def test_verdicts_from_investigator_are_applied():
     svc = _svc()
+    # 裁决双方的来源也必须是因果界内的真实证据，不能使用悬空 src=(0,)。
+    svc.log.add_unit(0, 0, user_text="部署变更", assistant_text="从 A 到 B")
     a = svc.engine.propose([_ev("部署在 A 服务器", origin="extract")], 0)[0]
     b = svc.engine.propose([_ev("部署在 B 服务器", origin="extract")], 0)[0]
     svc.report_miss("部署在哪", source="external")
@@ -242,7 +255,7 @@ def test_candgen_failure_keeps_unit_and_flags_extract_due():
     out = svc.observe("在吗", "在的")                      # 闲聊：原本不会触发
     assert out["candidates"] == 0 and "candgen_failed" in out["reasons"]
     assert svc.n_candgen_fail == 1 and svc.log.count() == 1
-    assert svc.engine.signals.peek_kinds() == {"extract_due": 1}
+    assert svc.signals()["queued"] == {"extract_due": 1}
 
 
 def test_agent_worker_thread_start_stop():
@@ -281,21 +294,30 @@ def test_repair_memories_survive_restart(tmp_path):
     assert json.loads(lines[0])["miss_type"] == "dropped_by_candgen"
 
 
-# ---------------------------------------------------------------- InlineInvestigator（进程内调查员，假 LLM）
-def _tool_msg(name, args, cid="c1"):
-    return {"role": "assistant", "content": "",
-            "tool_calls": [{"id": cid, "type": "function",
-                            "function": {"name": name,
-                                         "arguments": json.dumps(args, ensure_ascii=False)}}]}
+# ---------------------------------------------------------------- 进程内调查员（假传输）
+
+
+
+
+def test_investigation_malformed_collections_and_ids_do_not_crash_or_retarget():
+    assert parse_investigation('{"proposals":true,"verdicts":4}').proposals == []
+    inv = parse_investigation(json.dumps({
+        "proposals": [{"text": "fact", "source_unit_ids": [0, "²", 1.2, True],
+                       "salience": float("nan")}],
+        "verdicts": [{"left": x, "right": 2, "verdict": "update"}
+                     for x in (True, 1.9, float("inf"), 2**64, "0")]}))
+    assert inv.proposals[0]["source_unit_ids"] == [0]
+    assert inv.proposals[0]["salience"] == 0.5
+    assert inv.verdicts == [(0, 2, "update")]
 
 
 def test_inline_investigator_tool_loop_end_to_end(tmp_path):
     """recall_miss → AgentWorker → 进程内 function-calling 循环：
     log_search 真的打到服务层（按 signal_id 记账）→ 最终 JSON → propose 入库。
     调查过程不产生任何 observe（火墙天然成立）。"""
-    from hybrid_memory.agent.inline import TOOLS, InlineInvestigator
+    from hybrid_memory.agent.inline import InlineInvestigator
     svc = _svc(tmp_path)
-    svc.observe("端口改了吗", "服务端口从 8080 改成了 9090。")
+    svc.log.add_unit(0, 0, user_text="端口改了吗", assistant_text="服务端口从 8080 改成了 9090。")
     svc.report_miss("服务端口是多少", source="correction")
     seen = []
 
@@ -317,16 +339,16 @@ def test_inline_investigator_tool_loop_end_to_end(tmp_path):
             ensure_ascii=False)}
 
     inv = InlineInvestigator(svc, chat_fn=fake_chat)
-    w = AgentWorker(svc, inv, kinds=("recall_miss",), budget=Budget(tool_calls=4))
+    w = AgentWorker(svc, inv, budget=Budget(tool_calls=4))
     n_units = svc.log.count()
     st = w.process_once()
     assert st["run"] == 1 and st["accepted"] == 1 and st["diagnosed"] == 1
     assert svc.log.count() == n_units                     # 调查没被 observe
     m = [m for m in svc.engine.mems.values() if m.origin == "repair"]
     assert len(m) == 1 and "9090" in m[0].text and m[0].entity == "port"
-    diag = json.loads((tmp_path / "diagnoses.jsonl").read_text(
-        encoding="utf-8").splitlines()[-1])
+    diag = svc.tasks.list_tasks(states=("done",))[0]["result"]
     assert diag["usage"]["calls"] == 1                    # 服务端按信号计量
+
 
 
 def test_inline_investigator_budget_and_turn_cap():
@@ -336,7 +358,7 @@ def test_inline_investigator_budget_and_turn_cap():
     svc = _svc()
     svc.observe("a", "b")
     sid = "recall_miss-x-1"
-    svc.open_budget(sid, tool_calls=1, window_chars=100, before=None)
+    svc.open_budget(sid, tool_calls=1, window_chars=100, before=1)
     calls = []
 
     def greedy(messages, tools):
@@ -355,6 +377,7 @@ def test_inline_investigator_budget_and_turn_cap():
     assert inv2({"signal_id": "s"}) is None and inv2.n_failed == 1
 
 
+
 def test_inline_investigator_llm_error_and_model_compat():
     from hybrid_memory.agent.inline import InlineInvestigator
     from hybrid_memory.llm import ZhipuChatError
@@ -364,3 +387,11 @@ def test_inline_investigator_llm_error_and_model_compat():
     inv = InlineInvestigator(_svc(), chat_fn=down, model="zhipu-env/glm-5.3-flash")
     assert inv({"signal_id": "s"}) is None and inv.n_failed == 1
     assert inv.model == "glm-5.3-flash"                   # 兼容旧 provider/model 写法
+
+
+
+def _tool_msg(name, args, cid="c1"):
+    return {"role": "assistant", "content": "",
+            "tool_calls": [{"id": cid, "type": "function",
+                            "function": {"name": name,
+                                         "arguments": json.dumps(args, ensure_ascii=False)}}]}

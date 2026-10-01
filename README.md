@@ -7,7 +7,7 @@
 把连续、嘈杂、前后矛盾的项目交互，蒸馏成一个不会堆成"史山"的记忆库。<br/>
 新会话里一句"接着搞"，agent 就知道进行到哪、上次卡在哪。
 
-![tests](https://img.shields.io/badge/tests-211%20passed-brightgreen?style=flat-square)
+![tests](https://img.shields.io/badge/tests-302%20passed-brightgreen?style=flat-square)
 ![engine](https://img.shields.io/badge/engine-LLM--free-blue?style=flat-square)
 ![status](https://img.shields.io/badge/status-research%20preview-orange?style=flat-square)
 
@@ -23,7 +23,7 @@
 pip install numpy pytest
 cp .env.example .env          # ZAI_API_KEY=...
 
-python -m pytest tests/                          # 187 passed
+python -m pytest tests/                          # 302 passed
 python -m hybrid_memory.server --project <dir>   # 或被 opencode 插件自动拉起
 ```
 
@@ -103,6 +103,9 @@ flowchart LR
 - **火墙**——调查员是 sidecar 进程内的 function-calling 循环
   （`agent/inline.py`），只有 6 个只读工具，不经过 opencode、不调 observe，
   它的工作天然不会被记成记忆；写入只走最终 JSON → 服务端校验
+
+调查任务、重试和幂等写回使用 SQLite；恢复契约见 [持久任务说明](docs/durable-tasks.md)，
+因果与预算边界见 [调查上下文](docs/investigation-context.md)。
 
 ## 记忆动力学
 

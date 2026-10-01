@@ -28,22 +28,20 @@ def _lex_tokens(text: str) -> set[str]:
     return toks
 
 
-def _lexical_scores(eng, q: Query) -> dict[int, float]:
+def lexical_scores(query: str, texts: dict[int, str]) -> dict[int, float]:
     """IDF 加权的 query 项覆盖率：记忆包含的稀有 query 词越多分越高。
 
     ASCII 标识符（PR号/hash/文件名）与中文 bigram 各占一路；
     权重 = log((N+1)/(df+0.5))，分母为 query 全部 token 的权重和。
     """
-    qtok = _lex_tokens(q.text)
+    qtok = _lex_tokens(query)
     if not qtok:
         return {}
     toks_by_id: dict[int, set[str]] = {}
     df: dict[str, int] = {}
-    for m in eng.mems.values():
-        if not is_visible(m):
-            continue   # 死/隐藏记忆不进 DF，否则压 IDF 抬门槛
-        mt = _lex_tokens(m.text)
-        toks_by_id[m.id] = mt
+    for mid, text in texts.items():
+        mt = _lex_tokens(text)
+        toks_by_id[mid] = mt
         for tok in mt:
             df[tok] = df.get(tok, 0) + 1
     n = max(len(toks_by_id), 1)
@@ -72,7 +70,8 @@ def run_retrieve(eng, q_emb: np.ndarray, q: Query, t: int) -> Retrieval:
     cfg = eng.cfg
     ret = Retrieval()
 
-    lex = _lexical_scores(eng, q) if cfg.lex_weight > 0 else {}
+    lex = (lexical_scores(q.text, {m.id: m.text for m in eng.mems.values()
+                                   if is_visible(m)}) if cfg.lex_weight > 0 else {})
     scored = []
     for m in eng.mems.values():
         if (not is_visible(m)
@@ -84,7 +83,7 @@ def run_retrieve(eng, q_emb: np.ndarray, q: Query, t: int) -> Retrieval:
             s += cfg.lex_weight * lex.get(m.id, 0.0)
         quality = s + _prior(m, cfg)
         fresh = cfg.fresh_alpha * math.exp(-cfg.lam * (t - m.birth))
-        scored.append((quality + fresh, quality, s, m))
+        scored.append((quality + fresh, quality, m))
     scored.sort(key=lambda x: x[0], reverse=True)
     shortlist = scored[: cfg.shortlist_n]
 
@@ -93,8 +92,7 @@ def run_retrieve(eng, q_emb: np.ndarray, q: Query, t: int) -> Retrieval:
     def _try_select(m: Memory) -> bool:
         rival = max(selected, key=lambda r: cosine(m.emb, r.emb), default=None)
         rsim = cosine(m.emb, rival.emb) if rival else 0.0
-        if (cfg.suppression_on and rival is not None and rsim > cfg.tau_sim
-                and m.niche_pair != rival.id):
+        if cfg.suppression_on and rival is not None and rsim > cfg.tau_sim:
             ret.suppressed.append((m.id, rival.id))
             m.suppressed_by = rival.id
             m.shadow_hits += 1
@@ -122,11 +120,10 @@ def run_retrieve(eng, q_emb: np.ndarray, q: Query, t: int) -> Retrieval:
     # 置信门控本身不是负面证据，不发 shadow credit。
     low_conf: list[tuple[float, Memory]] = []
     best_trusted_quality: float | None = None
-    for _, quality, s, m in shortlist:
+    for _, quality, m in shortlist:
         if len(selected) == cfg.k:
             break
         if quality < cfg.theta:
-            m.shortlisted += 1
             continue
         if cfg.confidence_on and projected(m, cfg) < cfg.theta_conf:
             low_conf.append((quality, m))

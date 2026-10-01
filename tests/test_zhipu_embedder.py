@@ -3,7 +3,6 @@ import json
 import math
 import os
 import sqlite3
-import sys
 import tempfile
 from http.client import RemoteDisconnected
 from pathlib import Path
@@ -12,7 +11,6 @@ from urllib.error import HTTPError
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hybrid_memory.embed.cache import SqliteEmbeddingCache
 from hybrid_memory.embed.zhipu import ZhipuEmbedder, ZhipuEmbeddingError
@@ -195,9 +193,40 @@ def test_chat_retries_remote_disconnected():
     assert calls == [1]
 
 
-if __name__ == "__main__":
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    for f in fns:
-        f()
-        print(f"{f.__name__} ok")
-    print("all zhipu embedder tests passed")
+def test_extreme_embeddings_are_finite_unit_vectors_and_cancelled_chunks_fail(tmp_path):
+    cache = SqliteEmbeddingCache(tmp_path / "emb.sqlite")
+    for scale in (1e308, 1e-320):
+        emb = ZhipuEmbedder(dimensions=256, http_post=lambda req, _: respond(
+            req, lambda text, dims: one_hot(0, dims, scale)))
+        assert emb.embed(["x"])[0, 0] == 1
+    offline = ZhipuEmbedder(dimensions=256, cache=cache, offline=True)
+    cache.put(offline._cache_key("x"), np.array(one_hot(0, 256, 1e38), dtype=np.float32))
+    assert offline.embed(["x"])[0, 0] == 1
+    emb = ZhipuEmbedder(dimensions=256, max_chars=1, http_post=lambda req, _: respond(
+        req, lambda text, dims: one_hot(0, dims, 1 if text == "a" else -1)))
+    expect(ZhipuEmbeddingError, lambda: emb.embed(["ab"]), "zero embedding")
+
+
+def test_malformed_chat_response_uses_transport_error_contract():
+    from hybrid_memory.llm import ZhipuChatError, chat
+    from io import BytesIO
+    for content in (None, 1, [], {}):
+        raw = json.dumps({"choices": [{"message": {"content": content}}]}).encode()
+        with patch("hybrid_memory.llm.urlopen", return_value=BytesIO(raw)):
+            expect(ZhipuChatError, lambda: chat(api_key="test", max_retries=0), "invalid chat response")
+
+
+def test_invalid_chat_cache_is_miss_and_failed_replace_keeps_previous(tmp_path, monkeypatch):
+    import pytest
+    from hybrid_memory import llm
+    for broken in ('{"out":', '[]', 'null', '{"out":4}'):
+        (tmp_path / "key.json").write_text(broken)
+        assert llm._cache_lookup(tmp_path, "key") is None
+    llm._cache_store(tmp_path, "key", "ok")
+    def fail(*_):
+        raise OSError("replace failed")
+    monkeypatch.setattr(llm.os, "replace", fail)
+    with pytest.raises(OSError, match="replace failed"):
+        llm._cache_store(tmp_path, "key", "new")
+    assert llm._cache_lookup(tmp_path, "key") == "ok"
+    assert not list(tmp_path.glob("*.tmp"))

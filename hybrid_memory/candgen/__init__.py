@@ -3,14 +3,13 @@
 后端只承诺 CandidateGenerator 协议；在线默认 ChatGenerator。
 """
 from .base import (CandidateGeneration, CandidateGenerator, MemoryCandidate)
-from .prompt import (parse_candidates, parse_generation, priority_to_salience,
+from .prompt import (parse_generation, priority_to_salience,
                      redact_secrets, serialize_window)
 
 __all__ = [
     "CandidateGeneration",
     "CandidateGenerator",
     "MemoryCandidate",
-    "parse_candidates",
     "parse_generation",
     "priority_to_salience",
     "redact_secrets",

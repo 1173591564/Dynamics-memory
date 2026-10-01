@@ -7,9 +7,8 @@ from .prompt import INSTRUCTION, parse_generation, serialize_window
 
 
 class ChatGenerator:
-    def __init__(self, chat_fn, model: str = "glm-5.3-flash"):
+    def __init__(self, chat_fn):
         self._chat = chat_fn
-        self.model = model
 
     def generate(self, window: InteractionWindow,
                  prev_scene: str = "") -> CandidateGeneration:

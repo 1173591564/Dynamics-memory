@@ -1,6 +1,6 @@
 """最小智谱 chat 客户端（标准库 urllib）：reader / 未来的 LLM judge 共用。
 
-cache_dir 非 None 时按 (model,system,user,temperature) 做 JSONL 磁盘缓存，
+cache_dir 非 None 时按 (model,system,user,temperature) 做 JSON 磁盘缓存，
 实验重跑不再重复调远程。
 """
 from __future__ import annotations
@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import time
+import tempfile
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -47,7 +48,7 @@ def _post_chat(key: str, body: dict, timeout: float, max_retries: int) -> dict:
             raise ZhipuChatError(f"transport: {type(exc).__name__}") from exc
     try:
         msg = json.loads(raw)["choices"][0]["message"]
-    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
         raise ZhipuChatError("invalid chat response") from exc
     if not isinstance(msg, dict):
         raise ZhipuChatError("invalid chat response")
@@ -70,13 +71,23 @@ def chat_messages(messages: list, *, tools: list | None = None,
 
 
 def _cache_lookup(cache_dir: Path, ck: str) -> str | None:
-    path = cache_dir / f"{ck}.json"
-    if path.exists():
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))["out"]
-        except (json.JSONDecodeError, KeyError, OSError):
-            return None
-    return None
+    try:
+        out = json.loads((cache_dir / f"{ck}.json").read_text(encoding="utf-8"))["out"]
+        return out if isinstance(out, str) else None
+    except (ValueError, KeyError, TypeError, OSError):
+        return None
+
+
+
+def _cache_store(cache_dir: Path, ck: str, out: str) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(dir=cache_dir, prefix=".chat-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"out": out}, f, ensure_ascii=False)
+        os.replace(name, cache_dir / f"{ck}.json")
+    finally:
+        Path(name).unlink(missing_ok=True)
 
 
 def chat(api_key: str | None = None, model: str = "glm-5.3-flash",
@@ -103,7 +114,5 @@ def chat(api_key: str | None = None, model: str = "glm-5.3-flash",
         raise ZhipuChatError("invalid chat response")
     out = out.strip()
     if cache_dir is not None and ck is not None:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        (cache_dir / f"{ck}.json").write_text(
-            json.dumps({"out": out}, ensure_ascii=False), encoding="utf-8")
+        _cache_store(cache_dir, ck, out)
     return out

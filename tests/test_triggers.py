@@ -1,10 +1,7 @@
 """触发扫描：零 LLM 的确定性判断，宁可漏发也不把闲聊推给调查员。"""
-import os
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hybrid_memory.triggers import LONG_TURN_CHARS, is_correction, scan_unit
 

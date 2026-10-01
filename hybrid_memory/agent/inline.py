@@ -65,6 +65,15 @@ def _hits(hits: list) -> str:
         f"{h['snippet']}" for h in hits)
 
 
+def _positive_int(args, name, default):
+    value = args.get(name)
+    if value is None:
+        return default
+    if type(value) is not int or value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
 class InlineInvestigator:
     """可调用对象：payload dict → Investigation | None（失败），供 AgentWorker 调用。"""
 
@@ -90,24 +99,24 @@ class InlineInvestigator:
         if name == "log_search":
             return _hits(svc.log_search(str(args.get("query", "")),
                                         scene=args.get("scene") or None,
-                                        k=int(args.get("k") or 8),
+                                        k=_positive_int(args, "k", 8),
                                         signal_id=sid)["hits"])
         if name == "log_timeline":
             r = svc.log_timeline(str(args.get("entity", "")),
-                                 limit=int(args.get("limit") or 30), signal_id=sid)
+                                 limit=_positive_int(args, "limit", 30), signal_id=sid)
             return f"{r['entity']} 时间线（{r['n']} 处）：\n{_hits(r['timeline'])}"
         if name == "log_stats":
             gb = args.get("group_by", "scene")
             if gb not in ("scene", "entity", "week"):
                 return "group_by 必须是 scene | entity | week"
-            r = svc.log_stats(gb, limit=int(args.get("limit") or 30), signal_id=sid)
+            r = svc.log_stats(gb, limit=_positive_int(args, "limit", 30), signal_id=sid)
             return (f"共 {r['units_total']} 个单元\n"
                     + "\n".join(json.dumps(x, ensure_ascii=False) for x in r["rows"]))
         if name == "log_window":
-            ids = [int(i) for i in (args.get("unit_ids") or [])
-                   if isinstance(i, (int, float)) and not isinstance(i, bool)][:20]
-            if not ids:
-                return "unit_ids 必须是非空整数列表"
+            ids = args.get("unit_ids")
+            if (not isinstance(ids, list) or not 1 <= len(ids) <= 20
+                    or not all(type(i) is int and 0 <= i < 2**63 for i in ids)):
+                raise ValueError("unit_ids must be a non-empty integer list (≤20)")
             r = svc.log_window(ids, max_chars=args.get("max_chars"), signal_id=sid)
             parts = [f"### unit {u['unit_id']} (t={u['t']})"
                      f"{' [已截断]' if u.get('truncated') else ''}\n"
@@ -122,13 +131,11 @@ class InlineInvestigator:
                 tail.append(f"剩余回展预算: {r['budget_left']} 字")
             return "\n\n".join(parts) + (f"\n\n（{'；'.join(tail)}）" if tail else "")
         if name == "memory_search":
-            svc._charge_call(sid)
-            rec = svc.recall(str(args.get("query", "")))
+            rec = svc.recall(str(args.get("query", "")), signal_id=sid)
             return "\n".join(f"[id={m['id']} | t={m['birth']}] {m['text']}"
                              for m in rec["selected"]) or "（无相关记忆）"
         if name == "memory_conflicts":
-            svc._charge_call(sid)
-            cs = svc.conflicts()["conflicts"]
+            cs = svc.conflicts(signal_id=sid)["conflicts"]
             return "\n".join(f"[{c['left']} vs {c['right']}] {c['left_text']} ⚔ "
                              f"{c['right_text']}" for c in cs) or "（无未决冲突）"
         return f"未知工具 {name}"
