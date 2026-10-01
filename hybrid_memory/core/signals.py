@@ -1,7 +1,7 @@
 """引擎信号的有界内存队列，支持可选的持久化发射回调。
 
-裸引擎仍是易失队列；sidecar 为调查信号注入 SQLite journal，直接持久化。
-调查信号由 journal 接管，不再进入内存队列；其他语义信号仍易失。
+裸引擎仍是易失队列；sidecar 在引擎效果事务中持久交接调查与
+feedback/conflict/maintenance 语义信号；thin_recall 遥测仍易失。
 同 (kind, key) 在内存中去重合并。持久任务是否可合并由 journal 自己判断。
 """
 from __future__ import annotations
@@ -68,9 +68,8 @@ class SignalQueue:
     def take(self, kinds) -> list[Signal]:
         """只摘走指定种类的信号，其余原位保留（顺序不变）。
 
-        多消费者共用一个队列时用它而不是 drain+回队：语义 worker 拿
-        conflict/feedback/maintenance，其余信号留给其他消费者。sidecar 的
-        agent worker 直接从 SQLite 领取任务，不消费此内存队列。"""
+        裸引擎多消费者共用队列时用它而不是 drain+回队；sidecar 的
+        调查与语义 worker 都从 SQLite 领取，不消费这些持久信号的内存镜像。"""
         kinds = set(kinds)
         out, keep = [], deque()
         for sig in self._items:

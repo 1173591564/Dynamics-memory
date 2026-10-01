@@ -9,7 +9,7 @@ token 持久化在 state_dir/.memory-token，插件侧同路径读取或经环�
   GET  /recall?q=..&k=..    → {retrieval_id, context, selected}
   POST /search              → {query, k} 同 /recall（CJK 长查询走 body）
   GET  /conflicts           → 未决 tension 列表
-  GET  /signals             → 信号队列与 agent worker 遥测
+  GET  /signals             → 调查/语义任务及 L0 单元积压与 worker 遥测
 
   写记忆（主回路）
   POST /observe             → {user_text, assistant_text}：先落 L0 并建索引，
@@ -38,7 +38,7 @@ token 持久化在 state_dir/.memory-token，插件侧同路径读取或经环�
 passive=True 在独立引擎视图上检索；budget_tokens 限制整行上下文。
 
 状态：<project>/.opencode/memory/ 下 log.sqlite（L0）与 tasks.sqlite
-（调查任务/产物/回执/checkpoint）。有 SQLite checkpoint 时以它为准，否则兼容
+（调查和语义任务/产物/回执/checkpoint）。有 SQLite checkpoint 时以它为准，否则兼容
 state.pkl；/save 更新 checkpoint 并导出 state.pkl。pickle 反序列化仍走白名单。
 依赖注入（cfg/emb/semantics/generator/logstore）便于测试。
 """
@@ -78,7 +78,9 @@ from .investigation_context import (CausalViolation, InvestigationContext,
 from .logstore import LogStore, entities_in
 from .semantics import normalize
 from .semantics.llm import LLMSemantics
-from .worker import SignalWorker
+from .core import maintenance
+from .core.types import FeedbackSemantics, ConsolidationSemantics, is_visible
+from .taskstore import SEMANTIC_KINDS, TaskLeaseLost
 from .taskstore import TaskStore, TaskQueueFull, CheckpointConflict, encode
 
 _RETRIEVAL_KEEP = 512   # retrieval 注册表上限（feedback 用，防无界增长）
@@ -173,8 +175,8 @@ class MemoryService:
         self.generator = generator
         self.engine = MemoryEngine(cfg, emb, semantics)
         self._lock = threading.RLock()
-        # 语义 worker 持服务锁：引擎读写锁内、LLM 锁外（不再卡 /search）
-        self.worker = SignalWorker(self.engine, semantics, lock=self._lock)
+        # sidecar 的语义工作由 SQLite 领取，裸 MemoryEngine 仍使用内存 SignalWorker。
+        self._semantic_busy = threading.Lock()
         self.state_path = (Path(state_dir) / "state.pkl"
                            if state_dir else None)
         self.log = logstore or LogStore(
@@ -254,6 +256,61 @@ class MemoryService:
             return self.tasks.enqueue(kind, payload, t, key=key, merge=merge,
                                       memory_next_id=self.engine._next_id)
         return None
+
+    def _signal_payload(self, kind, payload):
+        """仅存稳定 id/JSON；绝不把 Retrieval/Memory 实例放进任务表。"""
+        if kind == "conflict_pending":
+            # SQLite JSON 会把 tuple 变成 list；在 merge 前规整，避免跨轮去重失效。
+            return [list(pair) for pair in payload]
+        if kind != "feedback_pending":
+            return payload
+        ret = payload["retrieval"]
+        rid = next((i for i, v in self._retrievals.items() if v is ret), None)
+        if rid is None:
+            raise ValueError("feedback retrieval 不在服务注册表")
+        texts = getattr(ret, "presented_texts", ())  # 旧快照的 Retrieval 无此字段
+        if len(texts) != len(ret.selected):
+            texts = tuple(m.text for m in ret.selected)
+        return {"retrieval_id": rid, "selected": [m.id for m in ret.selected],
+                "texts": list(texts),
+                "question": payload["question"], "answer": payload["answer"]}
+
+    def _commit_sidecar_effect(self, mutate):
+        """sidecar 检索/反馈的记忆变更、语义信号及 checkpoint 同事务。"""
+        with self._rollback_effect():
+            old_registry = dict(self._retrievals)
+            old_next = self._next_retrieval
+            old_rets = [(ret, dict(ret.__dict__)) for ret in old_registry.values()]
+            try:
+                def run(conn):
+                    q = self.engine.signals
+                    old_emit = q.on_emit
+
+                    def collect(kind, payload, t, key, merge):
+                        if kind in SEMANTIC_KINDS or kind in ("recall_miss", "extract_due"):
+                            return self.tasks._enqueue(
+                                conn, kind, self._signal_payload(kind, payload), t,
+                                key=key, merge=merge,
+                                memory_next_id=self.engine._next_id)
+                        return old_emit(kind, payload, t, key, merge)
+
+                    q.on_emit = collect
+                    try:
+                        return mutate()
+                    finally:
+                        q.on_emit = old_emit
+
+                result, revision = self.tasks.apply_effect(
+                    run, self._dump_state, self._checkpoint_revision)
+                self._checkpoint_revision = revision
+                return result
+            except BaseException:
+                self._retrievals = old_registry
+                self._next_retrieval = old_next
+                for ret, fields in old_rets:
+                    ret.__dict__.clear()
+                    ret.__dict__.update(fields)
+                raise
 
     @contextmanager
     def _rollback_effect(self):
@@ -438,9 +495,9 @@ class MemoryService:
                 old_emit = self.engine.signals.on_emit
 
                 def collect(kind, payload, at, key, merge):
-                    if kind in ("recall_miss", "extract_due"):
-                        handoffs.append((kind, payload, at, key, merge))
-                        return -1  # journal 接管，不让事务未提交的信号进入内存队列
+                    if kind in SEMANTIC_KINDS or kind in ("recall_miss", "extract_due"):
+                        handoffs.append((kind, self._signal_payload(kind, payload), at, key, merge))
+                        return -1  # 同任务库事务交接，不进易失队列
                     return old_emit(kind, payload, at, key, merge)
 
                 def mutate():
@@ -488,9 +545,186 @@ class MemoryService:
         self.log.finish_work(uid)
         if replayed:
             return {k: v for k, v in response.items() if k != "next_memory_id"} | {"worker": {}}
-        wstats = self.worker.process(t)
+        wstats = self.process_semantic_tasks()
         self._kick()
         return {k: v for k, v in response.items() if k != "next_memory_id"} | {"worker": wstats}
+
+    # ================================================== 持久语义任务
+    def _semantic_model(self, row):
+        """只读取判定输入；调用外部语义模型时不持服务锁。"""
+        kind, payload = row["kind"], row["payload"]
+        with self._lock:
+            self._ensure_healthy()
+            if kind == "conflict_pending":
+                jobs = []
+                for left, right in payload:
+                    a, b = self.engine.mems.get(left), self.engine.mems.get(right)
+                    if a is not None and b is not None:
+                        a, b = maintenance.follow_chain(self.engine, a), maintenance.follow_chain(self.engine, b)
+                    args = ((a.belief_id, a.value, b.belief_id, b.value)
+                            if a is not None and b is not None and a.id != b.id else None)
+                    tension = self.engine.tensions.get(tuple(sorted((left, right))))
+                    stamp = [tension.last_seen, tension.observations] if tension else None
+                    jobs.append((left, right, args, stamp))
+            elif kind == "feedback_pending":
+                ret = self._retrievals.get(payload["retrieval_id"])
+                if ret is None or [m.id for m in ret.selected] != payload["selected"]:
+                    raise ValueError("反馈来源检索已丢失或变更；拒绝错误记账")
+                texts = payload["texts"]
+                if len(texts) != len(ret.selected):
+                    raise ValueError("反馈文本快照与入选记忆不匹配")
+            elif kind == "maintenance_due":
+                sources = [[i, m.last_seen, m.pool.value, m.superseded_by, m.aggregated_into]
+                           for i in payload["ids"] if (m := self.engine.mems.get(i)) is not None]
+                mems = sorted((copy.deepcopy(m) for i in payload["ids"]
+                               if (m := self.engine.mems.get(i)) is not None
+                               and is_visible(m) and not m.pending_review and m.kind == "fact"),
+                              key=lambda m: (m.birth, m.id))
+        if kind == "conflict_pending":
+            return {"verdicts": [[a, b, self.semantics.judge(*args) if args else "pending", stamp]
+                                 for a, b, args, stamp in jobs]}
+        if kind == "feedback_pending":
+            fn = self.semantics.relevant_set if isinstance(self.semantics, FeedbackSemantics) else None
+            used = fn(texts, payload["question"], payload["answer"]) if fn else [True] * len(texts)
+            failed = used is None or len(used) != len(texts)
+            if failed:
+                used = [True] * len(texts)
+            return {"used": [bool(u) for u in used], "recog_fail": failed}
+        if kind == "maintenance_due":
+            if (not isinstance(self.semantics, ConsolidationSemantics)
+                    or len(mems) < self.cfg.consolidation_min_items):
+                return {"event": None, "sources": sources}
+            event = self.semantics.consolidate(mems, row["t"])
+            return {"event": asdict(event) if event is not None else None, "sources": sources}
+        raise ValueError(f"未知语义任务 {kind}")
+
+    def _apply_semantic(self, row):
+        with self._lock, self._rollback_effect():
+            old_ret = None
+            if row["kind"] == "feedback_pending":
+                old_ret = self._retrievals.get(row["payload"]["retrieval_id"])
+                if old_ret is None:
+                    raise ValueError("反馈来源检索丢失")
+                ret_fields = dict(old_ret.__dict__)
+            try:
+                def mutate(conn, result):
+                    q = self.engine.signals
+                    old_emit = q.on_emit
+
+                    def collect(kind, payload, t, key, merge):
+                        if kind in SEMANTIC_KINDS or kind in ("recall_miss", "extract_due"):
+                            return self.tasks._enqueue(
+                                conn, kind, self._signal_payload(kind, payload), t,
+                                key=key, merge=merge, memory_next_id=self.engine._next_id)
+                        return old_emit(kind, payload, t, key, merge)
+
+                    q.on_emit = collect
+                    try:
+                        kind, payload, t = row["kind"], row["payload"], row["t"]
+                        if kind == "conflict_pending":
+                            current, stale = [], []
+                            for left, right, verdict, stamp in result["verdicts"]:
+                                tension = self.engine.tensions.get(tuple(sorted((left, right))))
+                                if tension is None:
+                                    continue
+                                if stamp != [tension.last_seen, tension.observations]:
+                                    stale.append([left, right])
+                                else:
+                                    current.append((left, right, verdict))
+                            if stale:
+                                self.engine.signals.emit("conflict_pending", stale, t,
+                                                         key="conflict",
+                                                         merge=lambda old, new: old + [p for p in new if p not in old])
+                            return {"resolved": self.engine.submit_verdicts(current, t)}
+                        if kind == "feedback_pending":
+                            ret = self._retrievals[payload["retrieval_id"]]
+                            if ret.credited:
+                                return {"credited": 0}
+                            if len(result["used"]) != len(ret.selected):
+                                raise ValueError("feedback 结果长度不符")
+                            n = self.engine.submit_relevance(ret, result["used"], t)
+                            if (n == 0 and ret.selected and self.cfg.miss_on_recognizer_none):
+                                question = payload["question"]
+                                self.engine.report_miss(
+                                    question, t, source="recognizer_none", retrieval=ret,
+                                    entities=tuple(e for e, _ in entities_in(question)))
+                                self.n_missed += 1
+                            return {"credited": n, "recog_fail": bool(result["recog_fail"])}
+                        if result["event"] is None:
+                            return {"reflected": 0}
+                        sources = [[i, m.last_seen, m.pool.value, m.superseded_by, m.aggregated_into]
+                                   for i in payload["ids"] if (m := self.engine.mems.get(i)) is not None]
+                        if sources != result["sources"] or len(sources) != len(payload["ids"]):
+                            eligible = [i for i in payload["ids"] if (m := self.engine.mems.get(i))
+                                        and is_visible(m) and not m.pending_review and m.kind == "fact"]
+                            if len(eligible) >= self.cfg.consolidation_min_items:
+                                self.engine.signals.emit("maintenance_due",
+                                                         {"scene": payload["scene"], "ids": eligible}, t,
+                                                         key=f"maint:{payload['scene']}",
+                                                         merge=lambda old, new: new)
+                            return {"reflected": 0}
+                        self.engine.add_reflection(Event(**result["event"]), payload["ids"], t)
+                        return {"reflected": 1}
+                    finally:
+                        q.on_emit = old_emit
+
+                out, revision = self.tasks.complete_semantic(
+                    row["id"], row["token"], mutate,
+                    self._dump_state, self._checkpoint_revision)
+                self._checkpoint_revision = revision
+                self._kick()
+                return out
+            except BaseException:
+                if old_ret is not None:
+                    old_ret.__dict__.clear()
+                    old_ret.__dict__.update(ret_fields)
+                raise
+
+    def process_semantic_tasks(self, limit: int = 8) -> dict:
+        """先持久化模型结果，再事务性应用；队列失败可见且独立于调查员。"""
+        stats = {"judged": 0, "resolved": 0, "credited": 0,
+                 "reflected": 0, "thin": 0, "recog_fail": 0, "errors": 0}
+        if not self._semantic_busy.acquire(blocking=False):
+            return stats
+        try:
+            with self._lock:
+                stats["thin"] = len(self.engine.signals.take(("thin_recall",)))
+            self.tasks.recover_semantic_expired()
+            for item in self.tasks.list_tasks(states=("pending", "ready"), kinds=SEMANTIC_KINDS)[:limit]:
+                row = None
+                try:
+                    with self._lock:
+                        self._ensure_healthy()
+                        row = self.tasks.claim_semantic(item["id"], item["version"])
+                    if row is None:
+                        continue
+                    if row["state"] == "running":
+                        result = self._semantic_model(row)
+                        if row["kind"] == "conflict_pending":
+                            stats["judged"] += len(result["verdicts"])
+                        self.tasks.store_semantic_result(row["id"], row["token"], result)
+                        with self._lock:
+                            self._ensure_healthy()
+                            row = self.tasks.claim_semantic(row["id"], row["version"])
+                        if row is None:
+                            continue
+                    out = self._apply_semantic(row)
+                    for key in ("resolved", "credited", "reflected", "recog_fail"):
+                        stats[key] += out.get(key, 0)
+                except Exception as exc:  # noqa: BLE001
+                    stats["errors"] += 1
+                    if row is not None:
+                        try:
+                            self.tasks.retry_semantic(row["id"], row["token"], exc)
+                        except TaskLeaseLost:
+                            pass  # 产物已落库或其他领取者获权，不覆盖它
+                    print(f"[memory-sidecar] 语义任务 {item['id']} 待重试: "
+                          f"{type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+                    if self._checkpoint_fault:
+                        break
+            return stats
+        finally:
+            self._semantic_busy.release()
 
     def start_unit_recovery(self) -> None:
         if self._unit_thread is not None and self._unit_thread.is_alive():
@@ -499,13 +733,16 @@ class MemoryService:
 
         def loop():
             while not self._unit_stop.is_set():
-                try:
-                    self.process_pending_units()
-                except Exception as exc:  # noqa: BLE001  待办及错误已留库，下一轮重试
-                    print(f"[memory-sidecar] 单元恢复失败: {type(exc).__name__}: {exc}",
-                          file=sys.stderr, flush=True)
+                for process in (self.process_pending_units, self.process_semantic_tasks):
                     if self._checkpoint_fault:
-                        break  # 只可重启加载权威 checkpoint，不能继续重试旧内存
+                        break  # 只可重启加载权威 checkpoint
+                    try:
+                        process()
+                    except Exception as exc:  # noqa: BLE001  持久待办下一轮重试
+                        print(f"[memory-sidecar] 恢复失败: {type(exc).__name__}: {exc}",
+                              file=sys.stderr, flush=True)
+                if self._checkpoint_fault:
+                    break
                 self._unit_wake.wait(2)
                 self._unit_wake.clear()
 
@@ -589,22 +826,31 @@ class MemoryService:
         qv = self.emb.embed([q])[0]
         with self._lock:
             self._ensure_healthy()
-            if k is not None:
-                old_k, self.cfg.k = self.cfg.k, k
-                try:
+            def mutate():
+                if k is not None:
+                    old_k, self.cfg.k = self.cfg.k, k
+                    try:
+                        ret = self.engine.retrieve(qv, Query(-1, q), self._t)
+                    finally:
+                        self.cfg.k = old_k
+                else:
                     ret = self.engine.retrieve(qv, Query(-1, q), self._t)
-                finally:
-                    self.cfg.k = old_k
-            else:
-                ret = self.engine.retrieve(qv, Query(-1, q), self._t)
-            rid = self._next_retrieval
-            self._next_retrieval += 1
-            self._retrievals[rid] = ret
-            while len(self._retrievals) > _RETRIEVAL_KEEP:
-                self._retrievals.pop(min(self._retrievals))
-            # 不在这里把 retrieval 关联到 _last_turn：/search 发生在回答
-            # 之前，此刻 _last_turn 还是上一轮；关联由 /feedback 完成
-            return self._recall_result(ret, rid, budget_tokens)
+                rid = self._next_retrieval
+                self._next_retrieval += 1
+                self._retrievals[rid] = ret
+                while len(self._retrievals) > _RETRIEVAL_KEEP:
+                    # 已持久接受的反馈不能因为后续检索挤出引用对象。
+                    evictable = [i for i, r in self._retrievals.items()
+                                 if not r.feedback_sent or r.credited]
+                    if not evictable:
+                        break
+                    self._retrievals.pop(min(evictable))
+                # /search 发生在回答前；/feedback 再关联上一轮。
+                return self._recall_result(ret, rid, budget_tokens)
+
+            out = self._commit_sidecar_effect(mutate)
+            self._unit_wake.set()
+            return out
 
     def _recall_result(self, ret: Retrieval, rid: int | None,
                        budget_tokens: int | None = None) -> dict:
@@ -619,6 +865,7 @@ class MemoryService:
                 kept.append(memory)
         # 延迟反馈只给实际送入上下文的记忆记账。
         ret.selected = kept
+        ret.presented_texts = tuple(m.text for m in kept)
         return {"retrieval_id": rid, "context": "\n".join(lines),
                 "n": len(kept), "tokens": used,
                 "selected": [{"id": m.id, "text": m.text,
@@ -632,29 +879,25 @@ class MemoryService:
             ret = self._retrievals.get(retrieval_id)
             if ret is None:
                 return {"error": f"unknown retrieval_id {retrieval_id}"}
+            if not ret.selected:
+                return {"n_useful": 0, "pending": False, "worker": {}}
             if ret.credited or ret.feedback_sent:
                 # 同一次检索重复反馈（插件重试/多会话共用）：幂等拒绝，
                 # 不让引擎的 RuntimeError 变成 500
                 return {"error": f"retrieval_id {retrieval_id} already "
-                                 f"credited", "n_useful": ret.n_useful}
-            self.engine.feedback(ret, question, answer, self._t)
-            # 记下"这一轮用了哪次检索"，纠正检测时能把已召回内容带给调查员
-            if self._last_turn is not None:
-                self._last_turn = {"user": question, "retrieval_id": retrieval_id}
-            t = self._t
-        wstats = self.worker.process(t)   # 排空 feedback_pending 等信号（LLM 锁外）
+                                 f"credited", "n_useful": ret.n_useful,
+                        "pending": ret.feedback_sent and not ret.credited}
+            def mutate():
+                self.engine.feedback(ret, question, answer, self._t)
+                if self._last_turn is not None:
+                    self._last_turn = {"user": question, "retrieval_id": retrieval_id}
+            self._commit_sidecar_effect(mutate)
+        self._unit_wake.set()
+        wstats = self.process_semantic_tasks()  # 模型调用在服务锁外
         with self._lock:
             self._ensure_healthy()
-            # recognizer 说一条都没用上 → 记忆没接住这个问题
-            if (ret.credited and ret.n_useful == 0 and ret.selected
-                    and self.cfg.miss_on_recognizer_none):
-                self.engine.report_miss(question, t, source="recognizer_none",
-                                        retrieval=ret,
-                                        entities=tuple(
-                                            e for e, _ in entities_in(question)))
-                self.n_missed += 1
-                self._kick()
-            return {"n_useful": ret.n_useful, "worker": wstats}
+            return {"n_useful": ret.n_useful, "pending": not ret.credited,
+                    "worker": wstats}
 
     def report_miss(self, query: str, hint: str = "",
                     source: str = "agent_tool") -> dict:
@@ -954,7 +1197,8 @@ class MemoryService:
             return {"queued": self.tasks.queued_counts() | q.peek_kinds(), "n_emitted": q.n_emitted,
                     "n_dropped": q.n_dropped,
                     "open_budgets": sorted(self._budgets),
-                    "tasks": self.tasks.stats(), "checkpoint_fault": self._checkpoint_fault,
+                    "tasks": self.tasks.stats(), "semantic": self.tasks.semantic_stats(),
+                    "checkpoint_fault": self._checkpoint_fault,
                     "missed": self.n_missed, "proposals": self.n_proposals,
                     "rejected": self.n_rejected,
                     "candgen_fail": self.n_candgen_fail,
