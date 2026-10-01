@@ -15,7 +15,7 @@ worker 拉取、调 semantics（judge / relevant_set / consolidate——
 LLM 调用一律在锁外——否则一次几秒的裁判会把 /search 卡死。
 不传 lock 时退化为无锁单线程（实验脚本）。
 
-同步实现：process(t) 一次排空自己那部分队列。agent runtime（opencode 等）
+同步实现：process(t) 一次排空自己那部分队列。外部 agent runtime
 可不经过本类：直接 drain_signals + 自己的裁判 + submit_*——
 memory_conflicts / memory_resolve 工具就是这个模式。
 无 worker 时信号有界堆积、n_dropped 计数，引擎照常运转。

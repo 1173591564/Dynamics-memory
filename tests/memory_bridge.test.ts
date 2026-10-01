@@ -7,8 +7,6 @@ const schema: any = new Proxy(() => schema, { get: () => schema })
 mock.module("@opencode-ai/plugin", () => ({
   tool: Object.assign((definition: any) => definition, { schema }),
 }))
-process.env.MEMORY_BRIDGE_ROLE = "main"
-process.env.MEMORY_BRIDGE_TOKEN = "test-token"
 const { default: bridge } = await import("../.opencode/plugin/memory-bridge.ts")
 
 type Reply = { status: number; data?: unknown; raw?: string }
@@ -30,6 +28,9 @@ beforeEach(() => {
   ])
   requests = []
   spyOn(console, "error").mockImplementation(() => {})
+  spyOn(Bun, "file").mockImplementation(() => ({
+    exists: async () => true, text: async () => "test-token",
+  }) as any)
   spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const path = new URL(String(input)).pathname
     requests.push({ path, body: init?.body ? JSON.parse(String(init.body)) : undefined })

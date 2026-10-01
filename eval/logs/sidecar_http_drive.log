@@ -1,0 +1,134 @@
+health: (200, {'ok': True, 't': 0, 'mems': {'C': 0, 'M': 0, 'A': 0}, 'tensions': 0, 'signals': 0, 'log_units': 0, 'agent': False})
+
+── turn 0: 我们这个记忆项目现在用什么向量模型？
+   search 200: n=0
+   observe 200: cands=2 reasons=['decision', 'new_entity'] pool={'C': 2, 'M': 0, 'A': 0} worker={'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 1, 'recog_fail': 0, 'errors': 0}
+
+── turn 1: M 池容量设多少合适
+   search 200: n=2
+   - [t=0] 目前决定采用智谱 embedding-3，维度 2048。
+   - [t=0] sqlite3 里。
+   observe 200: cands=1 reasons=['decision', 'new_entity'] pool={'C': 3, 'M': 0, 'A': 0} worker={'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 1, 'recog_fail': 0, 'errors': 0}
+   feedback 200: {'n_useful': 0, 'worker': {'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 0, 'recog_fail': 0, 'errors': 0}}
+
+── turn 2: 跑一下测试
+   search 200: n=3
+   - [t=1] 已决定把 cap_m 设为 40，θp=1.
+   - [t=0] 目前决定采用智谱 embedding-3，维度 2048。
+   - [t=0] sqlite3 里。
+   observe 200: cands=1 reasons=['quant'] pool={'C': 4, 'M': 0, 'A': 0} worker={'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 1, 'recog_fail': 0, 'errors': 0}
+   feedback 200: {'n_useful': 0, 'worker': {'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 0, 'recog_fail': 0, 'errors': 0}}
+
+── turn 3: LoCoMo 结果怎么样
+   search 200: n=4
+   - [t=2] pytest 全部通过，共 211 个测试，用时 6 秒。
+   - [t=0] 目前决定采用智谱 embedding-3，维度 2048。
+   - [t=0] sqlite3 里。
+   - [t=1] 已决定把 cap_m 设为 40，θp=1.
+   observe 200: cands=3 reasons=[] pool={'C': 7, 'M': 0, 'A': 0} worker={'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 1, 'recog_fail': 0, 'errors': 0}
+   feedback 200: {'n_useful': 0, 'worker': {'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 0, 'recog_fail': 0, 'errors': 0}}
+
+── turn 4: 我的 key 是 sk-abcdefghijklmnopqrstuvwx123 帮我配一下
+   search 200: n=5
+   - [t=2] pytest 全部通过，共 211 个测试，用时 6 秒。
+   - [t=0] 目前决定采用智谱 embedding-3，维度 2048。
+   - [t=1] 已决定把 cap_m 设为 40，θp=1.
+   - [t=0] sqlite3 里。
+   - [t=3] LoCoMo 上 acc 只有 0.
+   observe 200: cands=1 reasons=['new_entity'] pool={'C': 8, 'M': 0, 'A': 0} worker={'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 0, 'recog_fail': 0, 'errors': 0}
+   feedback 200: {'n_useful': 0, 'worker': {'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 0, 'recog_fail': 0, 'errors': 0}}
+
+── turn 5: 今天天气不错
+   search 200: n=4
+   - [t=3] 29，原因是蒸馏丢细节。
+   - [t=0] 目前决定采用智谱 embedding-3，维度 2048。
+   - [t=2] pytest 全部通过，共 211 个测试，用时 6 秒。
+   - [t=0] sqlite3 里。
+   observe 200: cands=0 reasons=[] pool={'C': 8, 'M': 0, 'A': 0} worker={'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 1, 'recog_fail': 0, 'errors': 0}
+   feedback 200: {'n_useful': 0, 'worker': {'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 0, 'recog_fail': 0, 'errors': 0}}
+
+── turn 6: cap_m 还是太大了，改小
+   search 200: n=5
+   - [t=1] 已决定把 cap_m 设为 40，θp=1.
+   - [t=3] LoCoMo 上 acc 只有 0.
+   - [t=3] 29，原因是蒸馏丢细节。
+   - [t=3] evidence recall 只有 0.
+   - [t=2] pytest 全部通过，共 211 个测试，用时 6 秒。
+   observe 200: cands=1 reasons=['decision'] pool={'C': 9, 'M': 0, 'A': 0} worker={'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 0, 'recog_fail': 0, 'errors': 0}
+   feedback 200: {'n_useful': 1, 'worker': {'judged': 0, 'resolved': 0, 'credited': 1, 'reflected': 0, 'thin': 0, 'recog_fail': 0, 'errors': 0}}
+
+── turn 7: 调查员卡在哪了
+   search 200: n=5
+   - [t=0] sqlite3 里。
+   - [t=2] pytest 全部通过，共 211 个测试，用时 6 秒。
+   - [t=3] 29，原因是蒸馏丢细节。
+   - [t=3] LoCoMo 上 acc 只有 0.
+   - [t=4] env，key 是 [REDACTED]，注意不要提交。
+   observe 200: cands=1 reasons=[] pool={'C': 10, 'M': 0, 'A': 0} worker={'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 0, 'recog_fail': 0, 'errors': 0}
+   feedback 200: {'n_useful': 0, 'worker': {'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 0, 'recog_fail': 0, 'errors': 0}}
+
+── turn 8: M 池容量现在是多少？
+   search 200: n=5
+   - [t=0] 目前决定采用智谱 embedding-3，维度 2048。
+   - [t=4] env，key 是 [REDACTED]，注意不要提交。
+   - [t=2] pytest 全部通过，共 211 个测试，用时 6 秒。
+   - [t=1] 已决定把 cap_m 设为 40，θp=1.
+   - [t=3] LoCoMo 上 acc 只有 0.
+   - ⚠️未决冲突：[t=6] 已决定把 cap_m 改为 8，θp 保持 1.（与 t=1 条目冲突）
+   observe 200: cands=1 reasons=[] pool={'C': 11, 'M': 0, 'A': 0} worker={'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 0, 'recog_fail': 0, 'errors': 0}
+   feedback 200: {'n_useful': 0, 'worker': {'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 0, 'recog_fail': 0, 'errors': 0}}
+
+── turn 9: 不对，你记错了，已经改成 8 了
+   search 200: n=5
+   - [t=6] 已决定把 cap_m 改为 8，θp 保持 1.
+   - [t=3] 29，原因是蒸馏丢细节。
+   - [t=8] cap_m 是 40。
+   - [t=4] env，key 是 [REDACTED]，注意不要提交。
+   - [t=2] pytest 全部通过，共 211 个测试，用时 6 秒。
+   - ⚠️未决冲突：[t=1] 已决定把 cap_m 设为 40，θp=1.（与 t=6 条目冲突）
+   - ⚠️未决冲突：[t=1] 已决定把 cap_m 设为 40，θp=1.（与 t=8 条目冲突）
+   observe 200: cands=1 reasons=['correction', 'decision'] pool={'C': 12, 'M': 0, 'A': 0} worker={'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 0, 'recog_fail': 0, 'errors': 0}
+   feedback 200: {'n_useful': 0, 'worker': {'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 0, 'recog_fail': 0, 'errors': 0}}
+
+── turn 10: PR 123 合了吗
+   search 200: n=5
+   - [t=0] 目前决定采用智谱 embedding-3，维度 2048。
+   - [t=9] 抱歉，cap_m 现在是 8。
+   - [t=4] env，key 是 [REDACTED]，注意不要提交。
+   - [t=0] sqlite3 里。
+   - [t=3] LoCoMo 上 acc 只有 0.
+   observe 200: cands=1 reasons=['new_entity'] pool={'C': 13, 'M': 0, 'A': 0} worker={'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 0, 'recog_fail': 0, 'errors': 0}
+   feedback 200: {'n_useful': 0, 'worker': {'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 0, 'recog_fail': 0, 'errors': 0}}
+
+── turn 11: 下一步做什么
+   search 200: n=1
+   - [t=0] 目前决定采用智谱 embedding-3，维度 2048。
+   observe 200: cands=2 reasons=['decision', 'quant'] pool={'C': 15, 'M': 0, 'A': 0} worker={'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 1, 'recog_fail': 0, 'errors': 0}
+   feedback 200: {'n_useful': 0, 'worker': {'judged': 0, 'resolved': 0, 'credited': 0, 'reflected': 0, 'thin': 0, 'recog_fail': 0, 'errors': 0}}
+
+══ agent 工具面（主 agent 角色，无 signal id）
+log/search: (200, {'hits': [{'unit_id': 6, 't': 6, 'scene': '在围绕 mock 项目做开发与调试', 'snippet': 'cap_m 还是太大了，改小 已决定把 cap_m 改为 8，θp 保持 1.5。原先是 40。', 'score': 0.03333}, {'unit_id': 8, 't': 8, 'scene': '在围绕 mock 项目做开发与调试', 'snippet': 'M 池容量现在是多少？ cap_m 是 40。', 'score': 0.03279}, {'unit_id': 9, 't': 9, 'scene': '在围绕 mock 项目做开发与调试', 'snippet': '不对，你记错了，已经改成 8 了 抱歉，cap_m 现在是 8。', 'score': 0.03226}, {'unit_id': 1, 't': 1, 'scene': '在围绕 mock 项目做开发与调试', 'snippet': 'M 池容量设多少合适 已决定把 cap_m 设为 40，θp=1.5，θd=0.8。滞回用来防抖。', 'score': 0.03175}, {'unit_id': 3, 't': 3, 'scene': '在围绕 mock 项目做开发与调试', 'snippet': 'LoCoMo 结果怎么样 LoCoMo 上 acc 只有 0.29，原因是蒸馏丢细节。evidence recall 只有 0.16。', 'score': 0.01562}, {'unit_id': 2, 't': 2, 'scene': '在围绕 mock 项目做开发与调试', 'snippet': '跑一下测试 pytest 全部通过，共 211 个测试，用时 6 秒。', 'score': 0.01538}, {'unit_id': 4, 't': 4, 'scene': '在围绕 mock 项目做开发与调试', 'snippet': '我的 key 是 sk-abcdefghijklmnopqrstuvwx123 帮我配一下 已把 ZAI_API_KEY 写入 .env，key 是 sk-abcdefghijklmnopqrstuvwx123，注意不要提交。', 'score': 0.01515}, {'unit_id': 0, 't': 0, 'scene': '', 'snippet': '我们这个记忆项目现在用什么向量模型？ 目前决定采用智谱 embedding-3，维度 2048。缓存放在 emb.sqlite3 里。', 'score': 0.01493}], 'n': 8})
+log/timeline: (200, {'entity': 'cap_m', 'timeline': [{'unit_id': 1, 't': 1, 'scene': '在围绕 mock 项目做开发与调试', 'snippet': 'M 池容量设多少合适 已决定把 cap_m 设为 40，θp=1.5，θd=0.8。滞回用来防抖。'}, {'unit_id': 6, 't': 6, 'scene': '在围绕 mock 项目做开发与调试', 'snippet': 'cap_m 还是太大了，改小 已决定把 cap_m 改为 8，θp 保持 1.5。原先是 40。'}, {'unit_id': 8, 't': 8, 'scene': '在围绕 mock 项目做开发与调试', 'snippet': 'M 池容量现在是多少？ cap_m 是 40。'}, {'unit_id': 9, 't': 9, 'scene': '在围绕 mock 项目做开发与调试', 'snippet': '不对，你记错了，已经改成 8 了 抱歉，cap_m 现在是 8。'}], 'n': 4})
+log/stats: (200, {'group_by': 'entity', 'rows': [{'entity': 'cap_m', 'kind': 'ident', 'mentions': 4, 'first_t': 1, 'last_t': 9}, {'entity': 'zai_api_key', 'kind': 'envvar', 'mentions': 2, 'first_t': 4, 'last_t': 7}, {'entity': '#123', 'kind': 'pr', 'mentions': 1, 'first_t': 10, 'last_t': 10}, {'entity': 'follow_chain', 'kind': 'ident', 'mentions': 1, 'first_t': 10, 'last_t': 10}, {'entity': 'sk-abcdefghijklmnopqrstuvwx123', 'kind': 'ident', 'mentions': 1, 'first_t': 4, 'last_t': 4}, {'entity': 'emb.sqlite3', 'kind': 'ident', 'mentions': 1, 'first_t': 0, 'last_t': 0}, {'entity': 'embedding-3', 'kind': 'ident', 'mentions': 1, 'first_t': 0, 'last_t': 0}], 'n': 7, 'units_total': 12})
+log/window: (200, {'units': [{'unit_id': 6, 't': 6, 'scene': '在围绕 mock 项目做开发与调试', 'user_text': 'cap_m 还是太大了，改小', 'assistant_text': '已决定把 cap_m 改为 8，θp 保持 1.5。原先是 40。', 'truncated': False}], 'chars': 47, 'truncated': False, 'missing': [], 'omitted': []})
+miss: (200, {'queued': 10, 't': 12})
+propose(无来源，应拒): (200, {'accepted': 0, 'new_ids': [], 'merged': 0, 'rejected': [{'index': 0, 'reason': 'no_source'}], 'origin': 'agent', 'pool': {'C': 15, 'M': 0, 'A': 0}, 't': 12})
+propose(未来来源，应拒): (200, {'accepted': 0, 'new_ids': [], 'merged': 0, 'rejected': [{'index': 0, 'reason': 'unknown_or_future_source:[9999]'}], 'origin': 'agent', 'pool': {'C': 15, 'M': 0, 'A': 0}, 't': 12})
+propose(自指，应拒): (200, {'accepted': 0, 'new_ids': [], 'merged': 0, 'rejected': [{'index': 0, 'reason': 'self_reference'}], 'origin': 'agent', 'pool': {'C': 15, 'M': 0, 'A': 0}, 't': 12})
+待取代旧条目: [{'id': 10, 'text': 'cap_m 是 40。', 'birth': 8, 'kind': 'fact', 'origin': 'passive', 'src': [8]}]
+propose(合法 + supersedes): (200, {'accepted': 1, 'new_ids': [15], 'merged': 0, 'rejected': [], 'origin': 'agent', 'pool': {'C': 15, 'M': 0, 'A': 1}, 't': 12})
+
+search after propose: - [t=12] M 池容量 cap_m 当前为 8（原先是 40），θp=1.5
+- [t=4] env，key 是 [REDACTED]，注意不要提交。
+- [t=0] 目前决定采用智谱 embedding-3，维度 2048。
+- [t=11] 下一步必须扩大评测到 100 个点，并加上 LICENSE 与 pyproject。
+- [t=1] 已决定把 cap_m 设为 40，θp=1.
+- ⚠️未决冲突：[t=6] 已决定把 cap_m 改为 8，θp 保持 1.（与 t=1 条目冲突）
+
+conflicts: {"conflicts": [{"left": 2, "right": 8, "left_text": "已决定把 cap_m 设为 40，θp=1.", "right_text": "已决定把 cap_m 改为 8，θp 保持 1.", "first_seen": 6, "observations": 3}, {"left": 2, "right": 10, "left_text": "已决定把 cap_m 设为 40，θp=1.", "right_text": "cap_m 是 40。", "first_seen": 8, "observations": 2}], "t": 12}
+
+signals: {"queued": {"extract_due": 8, "recall_miss": 2}, "n_emitted": 27, "n_dropped": 0, "open_budgets": [], "missed": 2, "proposals": 1, "rejected": 3, "candgen_fail": 0, "miss_counts": {}, "log_units": 12, "agent": null, "t": 12}
+
+未授权请求: 401
+save: (200, {'saved': True, 'mems': 16})
+health: (200, {'ok': True, 't': 12, 'mems': {'C': 15, 'M': 0, 'A': 1}, 'tensions': 2, 'signals': 10, 'log_units': 12, 'agent': False})

@@ -1,6 +1,7 @@
 # 调查任务持久化、重试与幂等写回
 
 第三批覆盖 **AgentWorker 调查任务**，默认种类为 `recall_miss`、`extract_due`。
+默认执行器为 `agent/inline.py` 的进程内只读工具循环，不再依赖 OpenCode 子进程。
 这是本地服务/SQLite 的正确性修复，不是“模型恰好执行一次”，也不是 L3 真实 agent 验证。
 
 ## 状态与落盘时点
@@ -16,7 +17,7 @@ pending → running → ready → applying → done
 pending → skipped                              已完成任务的 TTL 去重
 ```
 
-- 信号发出时，通过 `SignalQueue.on_emit` **先提交 SQLite，再发布内存信号**。
+- 信号发出时，通过 `SignalQueue.on_emit` **直接提交 SQLite 并返回任务标识，不进入内存队列**。
   没有启动调查员、没有调用 `/save`，也不影响已接受任务的持久性。
 - 调查任务只存 SQLite，不再写入有界 SignalQueue。语义信号和 thin_recall 遥测仍走内存队列；健康接口通过 SQL 汇总待处理任务，不维护另一份镜像。
   `GET /signals` 新增 `tasks` 状态计数和 `checkpoint_fault`。
@@ -123,7 +124,7 @@ python -m pytest -q tests/test_durable_tasks.py tests/test_taskstore.py
 python -m pytest tests/ -q
 ```
 
-Python 3.11.2 下，NumPy 1.26.4 / 2.4.6 两套环境全套各 **338 passed**。覆盖未保存就重启、调查任务不挤占内存队列、部分应用失败、
+Python 3.11.2 下，NumPy 1.26.4 / 2.4.6 两套环境全套各 **302 passed**（合并当前主线后的服务/引擎套件）。覆盖未保存就重启、调查任务不挤占内存队列、部分应用失败、
 每日限额/去重/次数恢复、同任务工具与最终产物去重、租约过期/迟到 token、并发领取、
 回执写入失败的内存回滚、checkpoint 冲突/损坏、退避、关闭线程、容量 503 和编号高水位。
 

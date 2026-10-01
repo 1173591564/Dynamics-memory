@@ -1,17 +1,15 @@
 """cand-gen 层：InteractionWindow → CandidateGeneration（候选 + 情境名）。
 
-backend 可换：opencode CLI / 纯 chat API，只承诺同一协议。
+后端只承诺 CandidateGenerator 协议；在线默认 ChatGenerator。
 """
 from .base import (CandidateGeneration, CandidateGenerator, MemoryCandidate)
 from .prompt import (parse_generation, priority_to_salience,
                      redact_secrets, serialize_window)
-from .opencode import OpencodeCliGenerator
 
 __all__ = [
     "CandidateGeneration",
     "CandidateGenerator",
     "MemoryCandidate",
-    "OpencodeCliGenerator",
     "parse_generation",
     "priority_to_salience",
     "redact_secrets",

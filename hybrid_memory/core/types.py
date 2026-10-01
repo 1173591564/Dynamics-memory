@@ -32,7 +32,7 @@ def is_visible(m: "Memory") -> bool:
 @dataclass
 class Memory:
     id: int
-    belief_id: int          # 仿真 ground truth 锚点：useful-hit/死活判据
+    belief_id: int          # 语义指纹（真实数据 = 规范化文本 crc32；单测夹具 = belief id）
     value: str              # 生成时刻的 belief 值（漂移后比对 staleness 用）
     text: str
     emb: np.ndarray

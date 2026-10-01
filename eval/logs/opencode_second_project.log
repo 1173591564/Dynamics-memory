@@ -1,0 +1,40 @@
+timestamp=2026-09-28T11:22:43.580Z level=INFO run=1a17d6f0 message="creating instance" directory=/tmp/proj2
+timestamp=2026-09-28T11:22:43.584Z level=INFO run=1a17d6f0 message=fromDirectory directory=/tmp/proj2
+timestamp=2026-09-28T11:22:43.693Z level=INFO run=1a17d6f0 message=bootstrapping directory=/tmp/proj2
+timestamp=2026-09-28T11:22:43.718Z level=INFO run=1a17d6f0 message=loading path=/home/user/.config/opencode/config.json
+timestamp=2026-09-28T11:22:43.720Z level=INFO run=1a17d6f0 message=loading path=/home/user/.config/opencode/opencode.json
+timestamp=2026-09-28T11:22:43.734Z level=INFO run=1a17d6f0 message=loading path=/home/user/.config/opencode/opencode.jsonc
+timestamp=2026-09-28T11:22:43.772Z level=INFO run=1a17d6f0 message=loading path=/tmp/proj2/opencode.json
+timestamp=2026-09-28T11:22:43.875Z level=INFO run=1a17d6f0 message=loading path=/tmp/proj2/.opencode/opencode.json
+timestamp=2026-09-28T11:22:43.877Z level=INFO run=1a17d6f0 message=loading path=/tmp/proj2/.opencode/opencode.jsonc
+[memory-bridge:main] sidecar already up on :17872（复用，不重复拉起）
+[memory-bridge:main] sidecar ready on :17872
+timestamp=2026-09-28T11:22:44.219Z level=INFO run=1a17d6f0 message="all LSPs are disabled"
+timestamp=2026-09-28T11:22:44.221Z level=INFO run=1a17d6f0 message="all formatters are disabled"
+timestamp=2026-09-28T11:22:44.221Z level=INFO run=1a17d6f0 message=init
+timestamp=2026-09-28T11:22:44.615Z level=INFO run=1a17d6f0 message=created id=ses_f183f3df9ffeP3la1AZjafywsd slug=swift-panda version=1.18.33 projectID=global directory=/tmp/proj2 path="" workspaceID=undefined parentID=undefined title="New session - 2026-09-28T11:22:44.615Z" agent=undefined model=undefined metadata=undefined permission="[{\"permission\":\"question\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_enter\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_exit\",\"pattern\":\"*\",\"action\":\"deny\"}]" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1790594564615 time.updated=1790594564615
+timestamp=2026-09-28T11:22:44.642Z level=INFO run=1a17d6f0 message="event connected"
+timestamp=2026-09-28T11:22:45.865Z level=INFO run=1a17d6f0 message=loop session.id=ses_f183f3df9ffeP3la1AZjafywsd step=0
+[0m
+> build · glm-5.3-flash
+[0m
+timestamp=2026-09-28T11:22:45.908Z level=INFO run=1a17d6f0 message=stream providerID=zhipu-env modelID=glm-5.3-flash session.id=ses_f183f3df9ffeP3la1AZjafywsd small=true agent=title mode=primary
+[memory-bridge:main] sidecar 401 鉴权失败（token=/tmp/proj2/.opencode/memory/.memory-token）——端口被占位或 token 不匹配，停止发送数据
+timestamp=2026-09-28T11:22:45.953Z level=INFO run=1a17d6f0 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=zhipu-env llm.model=glm-5.3-flash
+timestamp=2026-09-28T11:22:46.052Z level=INFO run=1a17d6f0 message=tracking hash=42628e4c3ce28d5d7ed063433d0d82e42b036865 cwd=/tmp/proj2 git=/home/user/.local/share/opencode/snapshot/global/81ce0d6e0590156a7cc3f0ecee65d8af86b7f0ee
+timestamp=2026-09-28T11:22:46.071Z level=INFO run=1a17d6f0 message="shell tool using shell" shell=/bin/bash
+timestamp=2026-09-28T11:22:46.085Z level=INFO run=1a17d6f0 message=init count=1
+timestamp=2026-09-28T11:22:46.278Z level=INFO run=1a17d6f0 message="watcher backend" directory=/tmp/proj2 platform=linux backend=inotify
+timestamp=2026-09-28T11:22:46.292Z level=INFO run=1a17d6f0 message="project copy refresh started" projectID=global
+timestamp=2026-09-28T11:22:46.294Z level=INFO run=1a17d6f0 message="project copy refresh done" projectID=global updated=[] removed=[]
+timestamp=2026-09-28T11:22:47.073Z level=INFO run=1a17d6f0 message="booting location services" directory=/tmp/proj2 workspaceID=undefined
+timestamp=2026-09-28T11:22:47.092Z level=INFO run=1a17d6f0 message=process session.id=ses_f183f3df9ffeP3la1AZjafywsd messageID=msg_0e7c0c6f0001YSzZZVeK42QFBI
+timestamp=2026-09-28T11:22:47.095Z level=INFO run=1a17d6f0 message=stream providerID=zhipu-env modelID=glm-5.3-flash session.id=ses_f183f3df9ffeP3la1AZjafywsd small=false agent=build mode=primary
+timestamp=2026-09-28T11:22:47.098Z level=INFO run=1a17d6f0 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=zhipu-env llm.model=glm-5.3-flash
+（mock 回复）好的，我已了解当前项目状态。
+timestamp=2026-09-28T11:22:47.210Z level=INFO run=1a17d6f0 message=tracking hash=42628e4c3ce28d5d7ed063433d0d82e42b036865 cwd=/tmp/proj2 git=/home/user/.local/share/opencode/snapshot/global/81ce0d6e0590156a7cc3f0ecee65d8af86b7f0ee
+timestamp=2026-09-28T11:22:47.274Z level=INFO run=1a17d6f0 message=loop session.id=ses_f183f3df9ffeP3la1AZjafywsd step=1
+timestamp=2026-09-28T11:22:47.275Z level=INFO run=1a17d6f0 message="exiting loop" session.id=ses_f183f3df9ffeP3la1AZjafywsd
+[memory-bridge:main] idle: observe turn (user=16ch, reply=41ch)
+[memory-bridge:main] idle: observe → null
+timestamp=2026-09-28T11:22:47.293Z level=INFO run=1a17d6f0 message="disposing instance" directory=/tmp/proj2

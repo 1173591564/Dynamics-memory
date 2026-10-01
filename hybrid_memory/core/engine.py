@@ -34,7 +34,7 @@ class MemoryEngine:
         self.n_shadow_dropped = 0
         self.signals = SignalQueue(cfg.signal_queue_cap)
         self._next_id = 0
-        # 事件计数（metrics 用）
+        # 事件计数（遥测：/signals 的 engine_counters）
         self.n_promote = 0
         self.n_demote = 0
         self.n_evict = 0
@@ -258,7 +258,7 @@ class MemoryEngine:
         ingest.run_ingest(self, events, t)
         return list(range(before, self._next_id))
 
-    # ---- metrics 辅助 ----
+    # ---- 遥测 ----
     def pool_sizes(self) -> dict[str, int]:
         out = {p.value: 0 for p in Pool}
         for m in self.mems.values():

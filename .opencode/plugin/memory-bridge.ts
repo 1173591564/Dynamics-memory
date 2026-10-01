@@ -1,7 +1,6 @@
 /**
- * memory-bridge：opencode ↔ 记忆引擎 sidecar 的桥。两种角色，同一份代码：
+ * memory-bridge：opencode ↔ 记忆引擎 sidecar 的桥（只服务主 agent 会话）：
  *
- * main（默认）——主 agent 的会话：
  * - 生命周期：启动时拉起 `python -m hybrid_memory.server`，退出时 /save + kill
  * - 捕获：chat.message 记用户输入；session.idle 时把 (user, assistant) 一轮
  *   交互 POST /observe（sidecar 先落 L0 日志、触发扫描，再 candgen 蒸馏）
@@ -12,16 +11,9 @@
  *   日志，就说明注入的记忆没接住——插件顺手 POST /miss，后台调查员拿大预算
  *   系统性修复。这是衔尾蛇的一半：消费者的行为反过来驱动生产。
  *
- * worker（MEMORY_BRIDGE_ROLE=worker）——sidecar 拉起的调查员会话：
- * - 只注册工具，不挂任何捕获/注入钩子（火墙：调查员自己的会话绝不能被
- *   observe，否则会长出"我检索了日志"这类自指记忆并无限递归）
- * - token 从 MEMORY_BRIDGE_TOKEN 读（调查员的 --dir 是本仓库，不是用户项目，
- *   文件路径对不上）；每个请求带 X-Signal-Id（MEMORY_BRIDGE_SIGNAL），
- *   服务端按信号计量工具调用/回展预算并施加因果上界
- * - 不拉起 sidecar：它就是被 sidecar 拉起来的
+ * 后台调查员跑在 sidecar 进程内（hybrid_memory/agent/inline.py），不经过 opencode。
  *
- * sidecar 端口默认 17872，可用 MEMORY_BRIDGE_PORT 覆盖；judge 类无工具角色仍
- * 走 --pure（插件不加载）。
+ * sidecar 端口默认 17872，可用 MEMORY_BRIDGE_PORT 覆盖。
  */
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
@@ -29,8 +21,6 @@ import { resolve } from "node:path"
 
 const PORT = Number(process.env.MEMORY_BRIDGE_PORT ?? 17872)
 const BASE = `http://127.0.0.1:${PORT}`
-const ROLE = process.env.MEMORY_BRIDGE_ROLE === "worker" ? "worker" : "main"
-const SIGNAL = process.env.MEMORY_BRIDGE_SIGNAL ?? ""
 // sidecar 的包根：插件文件在 <repo>/.opencode/plugin/ 下——spawn 的 cwd
 // 固定到这里而不是目标项目目录，防项目内同名 hybrid_memory 模块遮蔽劫持
 const REPO_ROOT = resolve(import.meta.dir, "../..")
@@ -47,29 +37,27 @@ type Proposal = {
 }
 
 export default (async ({ directory }) => {
-  const log = (msg: string) => console.error(`[memory-bridge:${ROLE}] ${msg}`)
+  const log = (msg: string) => console.error(`[memory-bridge] ${msg}`)
 
-  // 鉴权令牌：main 角色每次现读 <project>/.opencode/memory/.memory-token
-  // （重启/重生成不缓存脏值）；worker 角色用环境变量。401 只告警一次——
+  // 鉴权令牌：每次现读 <project>/.opencode/memory/.memory-token
+  // （重启/重生成不缓存脏值）。401 只告警一次——
   // 可能是端口被占位进程抢占或 token 轮换，静默重试会持续喂数据给错误对象
   const tokenFile = `${directory}/.opencode/memory/.memory-token`
   let warned401 = false
   let authDead = false
   const auth = async () => {
-    if (process.env.MEMORY_BRIDGE_TOKEN) return process.env.MEMORY_BRIDGE_TOKEN
     const f = Bun.file(tokenFile)
     return (await f.exists()) ? (await f.text()).trim() : ""
   }
   const headers = async (): Promise<Record<string, string>> => {
     const h: Record<string, string> = { Authorization: `Bearer ${await auth()}` }
-    if (SIGNAL) h["X-Signal-Id"] = SIGNAL
     return h
   }
   const check = (r: Response) => {
     if (r.status === 401) {
       if (!warned401) {
         warned401 = true
-        log(`sidecar 401 鉴权失败（token=${process.env.MEMORY_BRIDGE_TOKEN ? "env" : tokenFile}）——端口被占位或 token 不匹配，停止发送数据`)
+        log(`sidecar 401 鉴权失败（token=${tokenFile}）——端口被占位或 token 不匹配，停止发送数据`)
       }
       authDead = true // 请求体本身就是数据，401 后不再发
     }
@@ -103,36 +91,32 @@ export default (async ({ directory }) => {
   let proc: Bun.Subprocess<"ignore", "pipe", "pipe"> | undefined
   const health = await call("GET", "/health")
   let ready = health.ok && health.data?.ok === true
-  if (ROLE === "worker") {
-    if (!ready) log(`sidecar NOT reachable on :${PORT}（worker 角色不拉起）`)
-  } else {
-    // 已有 sidecar（用户手起 / 插件被加载多次）→ 直接复用，不重复拉起；
-    // 只有自己拉起的进程才在 dispose 时杀掉
-    if (ready) log(`sidecar already up on :${PORT}（复用，不重复拉起）`)
-    // 只有连接失败才拉起；503/非法健康响应不能触发同端口的第二个进程。
-    if (!ready && health.status === 0) {
-      proc = Bun.spawn(
-        ["python", "-m", "hybrid_memory.server", "--port", String(PORT), "--project", directory],
-        { cwd: REPO_ROOT, env: process.env, stdout: "pipe", stderr: "pipe" },
-      )
-      const drain = async (stream: ReadableStream<Uint8Array> | undefined, tag: string) => {
-        if (!stream) return
-        const decoder = new TextDecoder()
-        for await (const chunk of stream) log(`${tag}: ${decoder.decode(chunk).trimEnd()}`)
-      }
-      void drain(proc.stdout as ReadableStream<Uint8Array>, "sidecar")
-      void drain(proc.stderr as ReadableStream<Uint8Array>, "sidecar!")
-      for (let i = 0; i < 40; i++) {
-        const probe = await call("GET", "/health")
-        if (probe.ok && probe.data?.ok === true) {
-          ready = true
-          break
-        }
-        await Bun.sleep(250)
-      }
+  // 已有 sidecar（用户手起 / 插件被加载多次）→ 直接复用，不重复拉起；
+  // 只有自己拉起的进程才在 dispose 时杀掉
+  if (ready) log(`sidecar already up on :${PORT}（复用，不重复拉起）`)
+  // 只有连接失败才拉起；503/非法健康响应不能触发同端口的第二个进程。
+  if (!ready && health.status === 0) {
+    proc = Bun.spawn(
+      ["python", "-m", "hybrid_memory.server", "--port", String(PORT), "--project", directory],
+      { cwd: REPO_ROOT, env: process.env, stdout: "pipe", stderr: "pipe" },
+    )
+    const drain = async (stream: ReadableStream<Uint8Array> | undefined, tag: string) => {
+      if (!stream) return
+      const decoder = new TextDecoder()
+      for await (const chunk of stream) log(`${tag}: ${decoder.decode(chunk).trimEnd()}`)
     }
-    log(ready ? `sidecar ready on :${PORT}` : `sidecar NOT reachable on :${PORT}`)
+    void drain(proc.stdout as ReadableStream<Uint8Array>, "sidecar")
+    void drain(proc.stderr as ReadableStream<Uint8Array>, "sidecar!")
+    for (let i = 0; i < 40; i++) {
+      const probe = await call("GET", "/health")
+      if (probe.ok && probe.data?.ok === true) {
+        ready = true
+        break
+      }
+      await Bun.sleep(250)
+    }
   }
+  log(ready ? `sidecar ready on :${PORT}` : `sidecar NOT reachable on :${PORT}`)
 
   // ---------------------------------------------------------------- 工具
   const fmtHits = (hits: Hit[]) =>
@@ -140,10 +124,10 @@ export default (async ({ directory }) => {
       ? hits.map((h) => `[unit ${h.unit_id} | t=${h.t}${h.scene ? ` | ${h.scene}` : ""}] ${h.snippet}`).join("\n")
       : "（无命中）"
 
-  // 主 agent 用了日志工具 = 记忆没接住这个需求；worker 自己就是修复者，不上报
+  // 主 agent 用了日志工具 = 记忆没接住这个需求
   let lastMiss = ""
   const reportMiss = (query: string, hint: string) => {
-    if (ROLE !== "main" || !query || query === lastMiss) return
+    if (!query || query === lastMiss) return
     void call("POST", "/miss", { query, hint, source: "agent_tool" }).then((r) => {
       if (r.ok) lastMiss = query
       else log(`缺失上报失败 ${errText(r)}`)
@@ -308,8 +292,6 @@ export default (async ({ directory }) => {
     }),
   }
 
-  // worker 角色：只有工具，没有钩子——这就是火墙
-  if (ROLE === "worker") return { tool: tools }
 
   // ---------------------------------------------------------------- main 钩子
   const pending = new Map<string, { user: string; retrievalId?: number }>()

@@ -6,6 +6,7 @@ import threading
 import urllib.request
 
 import numpy as np
+import pytest
 
 
 from hybrid_memory.candgen.base import CandidateGeneration, MemoryCandidate
@@ -61,6 +62,46 @@ def test_recall_returns_context_and_registry():
     assert isinstance(out["retrieval_id"], int)
     assert "部署在 B 服务器" in out["context"]
     assert out["selected"][0]["text"] == "部署在 B 服务器"
+
+
+def _engine_fingerprint(svc):
+    eng = svc.engine
+    mems = sorted((m.id, m.pool.name, round(m.v, 9), m.hits, m.d_hit,
+                   m.suppressed_by, m.last_hit) for m in eng.mems.values())
+    return (mems, sorted(eng.tensions), len(eng.signals),
+            len(eng._shadow_pending), svc._next_retrieval, svc._t)
+
+
+def test_passive_recall_leaves_no_trace():
+    svc = _service(texts=("部署在 B 服务器", "部署在 B 服务器，端口 8080"))
+    svc.observe("部署在哪", "已改到 B 服务器")
+    svc.observe("部署在哪", "端口 8080")
+    before = _engine_fingerprint(svc)
+    out = svc.recall("部署在哪", passive=True)
+    assert out["retrieval_id"] is None and out["n"] >= 1
+    assert "部署在 B 服务器" in out["context"]
+    assert _engine_fingerprint(svc) == before
+    active = svc.recall("部署在哪")          # 对照：非 passive 会留下痕迹
+    assert isinstance(active["retrieval_id"], int)
+    assert _engine_fingerprint(svc) != before
+
+
+def test_recall_budget_truncates_whole_lines():
+    from hybrid_memory.server import approx_tokens
+    svc = _service()
+    svc.observe("部署在哪", "已改到 B 服务器")
+    full = svc.recall("部署在哪", passive=True)
+    assert full["tokens"] == approx_tokens(full["context"]) > 0
+    tight = svc.recall("部署在哪", passive=True, budget_tokens=full["tokens"] - 1)
+    assert tight["context"] == "" and tight["n"] == 0 and tight["tokens"] == 0
+    exact = svc.recall("部署在哪", passive=True, budget_tokens=full["tokens"])
+    assert exact["context"] == full["context"]
+
+
+def test_approx_tokens_rule():
+    from hybrid_memory.server import approx_tokens
+    assert approx_tokens("部署在 B 服务器") == 7        # 6 个汉字 + 1 个 ASCII 词
+    assert approx_tokens("port=8080, zorvex_7") == 5  # port = 8080 , zorvex_7
 
 
 def test_feedback_credits_and_guards_double_call():
@@ -324,13 +365,13 @@ def test_recognizer_none_miss_is_opt_in():
         assert ("recall_miss" in svc.signals()["queued"]) is flag
 
 
-def test_log_tools_over_http_with_signal_budget(tmp_path):
+def test_log_tools_over_http(tmp_path):
+    """HTTP 只服务主 agent：不带信号、不计量、看得到全部。"""
     svc = _service(tmp_path)
     svc.observe("PR #42 合了吗，改的是 proxy/handler.ts", "合了，commit a1b2c3d4e5。")
     svc.observe("handler.ts 里 hermes 是什么", "form agent。")
     svc.open_budget("sig-1", tool_calls=3, window_chars=40, before=1, origin="repair")
     with _http(svc) as (post, get, _):
-        sig = {"X-Signal-Id": "sig-1"}
         # 主 agent（无信号）：不计量，看得到全部
         st, out = post("/log/search", {"query": "handler.ts"})
         assert st == 200 and {h["unit_id"] for h in out["hits"]} == {0, 1}
@@ -340,30 +381,39 @@ def test_log_tools_over_http_with_signal_budget(tmp_path):
         assert st == 200 and out["units_total"] == 2
         st, out = post("/log/window", {"unit_ids": [1]})
         assert st == 200 and out["units"][0]["assistant_text"] == "form agent。"
-        # 调查员（带信号）：因果上界 before=1 → 只见 unit 0；回展受字符预算
-        st, out = post("/log/search", {"query": "handler.ts"}, sig)          # 第 1 次
-        assert st == 200 and [h["unit_id"] for h in out["hits"]] == [0]
-        st, out = post("/log/window", {"unit_ids": [0, 1]}, sig)            # 第 2 次
-        assert st == 200 and [u["unit_id"] for u in out["units"]] == [0]
-        assert out["units"][0]["truncated"] and 1 in out["missing"]
-        assert out["budget_left"] == 40 - out["chars"]
-        st, out = post("/log/stats", {"group_by": "scene"}, sig)           # 第 3 次
-        assert st == 200
-        st, out = post("/log/search", {"query": "hermes"}, sig)             # 第 4 次 → 429
-        assert st == 429 and "预算" in out["error"]
-        st, out = post("/log/search", {"query": "hermes"}, {"X-Signal-Id": "ghost"})
-        assert st == 403                                                     # 无效信号号
-        # 参数校验
         assert post("/log/window", {"unit_ids": []})[0] == 400
         assert post("/log/window", {"unit_ids": list(range(21))})[0] == 400
         assert post("/log/stats", {"group_by": "user"})[0] == 400
         assert post("/log/search", {})[0] == 400
         usage = svc.close_budget("sig-1")
-        assert usage["calls"] == 4 and usage["window_used"] > 0
+        assert usage["calls"] == 0 and usage["window_used"] == 0
         assert get("/signals")[1]["open_budgets"] == []
 
 
-def test_propose_over_http_validates_and_stamps_origin(tmp_path):
+def test_log_tools_signal_budget_and_causal_bound(tmp_path):
+    """进程内调查员带 signal_id：因果上界 + 调用次数/回展字符预算。"""
+    from hybrid_memory.server import SignalClosed
+    svc = _service(tmp_path)
+    svc.observe("PR #42 合了吗，改的是 proxy/handler.ts", "合了，commit a1b2c3d4e5。")
+    svc.observe("handler.ts 里 hermes 是什么", "form agent。")
+    svc.open_budget("sig-1", tool_calls=3, window_chars=40, before=1, origin="repair")
+    out = svc.log_search("handler.ts", signal_id="sig-1")                 # 第 1 次
+    assert [h["unit_id"] for h in out["hits"]] == [0]
+    out = svc.log_window([0, 1], signal_id="sig-1")                       # 第 2 次
+    assert [u["unit_id"] for u in out["units"]] == [0]
+    assert out["units"][0]["truncated"] and 1 in out["missing"]
+    assert out["budget_left"] == 40 - out["chars"]
+    svc.log_stats("scene", signal_id="sig-1")                             # 第 3 次
+    with pytest.raises(PermissionError, match="预算"):                     # 第 4 次
+        svc.log_search("hermes", signal_id="sig-1")
+    with pytest.raises(SignalClosed):
+        svc.log_search("hermes", signal_id="ghost")
+    usage = svc.close_budget("sig-1")
+    assert usage["calls"] == 4 and usage["window_used"] > 0
+    assert svc.signals()["open_budgets"] == []
+
+
+def test_propose_validates_and_stamps_origin(tmp_path):
     svc = _service(tmp_path)
     svc.observe("端口是多少", "8080，token 是 sk-abcdefghijklmnopqrstuvwxyz123456")
     svc.observe("以后呢", "以后改 9090")
@@ -378,10 +428,10 @@ def test_propose_over_http_validates_and_stamps_origin(tmp_path):
             {"text": "x" * 1300, "source_unit_ids": [0]},
             "not an object",
         ], "origin": "user_confirmed"}
-        # 带信号：origin 由信号上下文决定（repair），请求体的 user_confirmed 被无视
+        # 带信号（进程内调查员）：origin 由信号上下文决定（repair），user_confirmed 被无视
         svc.open_budget("sig-p", tool_calls=5, window_chars=100, before=1, origin="repair")
-        st, out = post("/propose", body, {"X-Signal-Id": "sig-p"})
-        assert st == 200 and out["accepted"] == 1 and out["origin"] == "repair"
+        out = svc.propose(body["proposals"], origin="user_confirmed", signal_id="sig-p")
+        assert out["accepted"] == 1 and out["origin"] == "repair"
         reasons = {r["index"]: r["reason"] for r in out["rejected"]}
         assert reasons[1] == "unknown_or_future_source:[1]" and reasons[2] == "self_reference"
         assert reasons[3] == "no_source" and reasons[4] == "unknown_or_future_source:[77]"
@@ -677,3 +727,17 @@ def test_passive_sources_belong_to_actual_window_and_bad_json_schedules_repair()
     result = svc.observe("q2", "a2")
     assert "candgen_failed" in result["reasons"] and svc.n_candgen_fail == 1
     assert svc.tasks.queued_counts()["extract_due"] >= 1
+
+
+def test_http_passive_budget_keeps_checkpoint_unchanged(tmp_path):
+    svc = _service(tmp_path)
+    svc.observe("部署在哪", "已改到 B 服务器")
+    svc.save()
+    before, revision = svc._dump_state(), svc.tasks.checkpoint()[0]
+    with _http(svc) as (post, get, _):
+        full = get("/recall?q=%E9%83%A8%E7%BD%B2%E5%9C%A8%E5%93%AA&passive=1")[1]
+        assert full["retrieval_id"] is None and full["tokens"] > 0
+        status, empty = post("/search", {"query": "test", "passive": True, "budget_tokens": 0})
+        assert status == 200 and empty["tokens"] == 0 and empty["selected"] == []
+        assert post("/search", {"query": "test", "passive": "false"})[0] == 400
+    assert svc._dump_state() == before and svc.tasks.checkpoint()[0] == revision

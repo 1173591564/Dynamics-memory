@@ -434,3 +434,25 @@ def test_invalid_budget_or_window_size_cannot_manufacture_allowance():
             svc.log_window([0], max_chars=cap, signal_id="s")
     usage = svc.close_budget("s")
     assert usage["window_used"] == usage["window_reserved"] == usage["calls"] == 0
+
+
+@pytest.mark.parametrize("name,args", [("memory_search", {"query": "部署在哪"}),
+                                       ("memory_conflicts", {})])
+def test_inline_memory_tools_use_causal_readonly_admission(name, args):
+    from hybrid_memory.agent.inline import InlineInvestigator
+    svc = _service(texts=())
+    _seed(svc)
+    _open(svc)
+    before = pickle.dumps(svc._state())
+    inv = InlineInvestigator(svc, chat_fn=lambda *_: {})
+    output = inv._tool(name, args, "s")
+    assert "FUTURE" not in output and "过去" in output
+    assert pickle.dumps(svc._state()) == before
+    assert svc.close_budget("s")["calls"] == 1
+    with pytest.raises(SignalClosed):
+        inv._tool(name, args, "s")
+    for invalid in ([1.5], True, [0] * 21, [2**100]):
+        with pytest.raises(ValueError):
+            inv._tool("log_window", {"unit_ids": invalid}, "s")
+    with pytest.raises(ValueError):
+        inv._tool("log_search", {"query": "x", "k": 1.5}, "s")

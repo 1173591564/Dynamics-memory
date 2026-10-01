@@ -8,13 +8,13 @@ from hybrid_memory.config import Cfg
 from hybrid_memory.core import maintenance
 from hybrid_memory.core.engine import MemoryEngine
 from hybrid_memory.core.types import Memory
-from hybrid_memory.embed.synthetic import SyntheticEmbedder
-from hybrid_memory.sim.world import StreamGen
+from fakes import SyntheticEmbedder
+from fakes import FakeWorld
 
 
 def _engine():
     emb = SyntheticEmbedder(seed=0)
-    world = StreamGen(seed=0)
+    world = FakeWorld()
     return MemoryEngine(Cfg(), emb, world)
 
 
@@ -74,20 +74,32 @@ def test_step_with_tension_on_zero_chain_does_not_crash():
 
 
 @pytest.mark.parametrize("seed", [0, 1, 2])
-def test_synthetic_sim_runs_end_to_end(seed):
-    # experiments.run 的 ours 预设曾在此路径必现 KeyError
+def test_update_and_conflict_chains_survive_long_run(seed):
+    # 默认 Cfg 曾在此路径必现 KeyError（supersede 链指向 id=0）：
+    # 反复观测 + 中途换值（update 链）+ 同实体异 scope（聚合链）+ 容量淘汰
     from hybrid_memory.worker import SignalWorker
     emb = SyntheticEmbedder(seed=seed)
-    world = StreamGen(seed=seed)
+    world = FakeWorld()
     eng = MemoryEngine(Cfg(cap_m=8), emb, world)
     worker = SignalWorker(eng, world)
+    n = len(world.beliefs)
     for t in range(120):
-        evs, qs = world.step(t)
-        eng.observe(evs, t)
-        for q in qs:
-            belief = world.beliefs[q.target]
-            key = world.embedding_key(q.target, belief.value)
-            eng.retrieve(emb.embed([q.text], keys=[key])[0], q, t)
+        if t == 40:
+            for bid in (0, 1, 2):
+                world.set_value(bid, world.beliefs[bid].value + "'")
+        if t == 60:
+            world.spawn("like", entity=100, scope="work", birth=t)
+        if t == 70:
+            world.spawn("dislike", entity=100, scope="casual", birth=t)
+        alive = [b for b in world.beliefs.values() if b.alive(t)]
+        eng.observe([world.event(b.id, j=t % 4) for b in alive
+                     if (b.id + t) % 3 == 0 or b.id < 3], t)
+        for bid in (t % n, 0):
+            b = world.beliefs[bid]
+            key = world.embedding_key(bid, b.value)
+            eng.retrieve(emb.embed(["q"], keys=[key])[0], world.query(bid), t)
         eng.step(t)
         worker.process(t)
     assert eng.n_chain_broken == 0
+    assert eng.n_tension > 0 and any(m.superseded_by is not None
+                                     for m in eng.mems.values())

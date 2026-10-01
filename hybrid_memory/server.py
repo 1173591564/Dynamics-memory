@@ -33,8 +33,9 @@ token 持久化在 state_dir/.memory-token，插件侧同路径读取或经环�
   POST /diagnose            → {miss_type, note?}
   POST /save                → 落盘状态快照
 
-请求头 X-Signal-Id（调查员插件自动附带）：按信号计量工具调用次数与回展
-字符预算，并对该信号统一施加因果上界 before——不靠 LLM 自觉。
+进程内调查员直接传 signal_id；兼容 HTTP 调用可带 X-Signal-Id。
+按信号计量工具调用与回展预算，统一施加 before 因果上界。
+passive=True 在独立引擎视图上检索；budget_tokens 限制整行上下文。
 
 状态：<project>/.opencode/memory/ 下 log.sqlite（L0）与 tasks.sqlite
 （调查任务/产物/回执/checkpoint）。有 SQLite checkpoint 时以它为准，否则兼容
@@ -68,7 +69,7 @@ from .candgen.prompt import parse_ids, parse_salience, redact_secrets
 from .config import Cfg
 from .core.engine import MemoryEngine
 from .core.types import Event, Memory, Pool, Query, Retrieval, Tension
-from .datasets.real_chat import InteractionUnit, InteractionWindow
+from .interaction import InteractionUnit, InteractionWindow
 from .embed.base import Embedder
 from .llm import chat
 from .investigation_context import (CausalViolation, InvestigationContext,
@@ -408,19 +409,19 @@ class MemoryService:
                 "reasons": list(reasons), "pool": pool, "t": self._t,
                 "worker": wstats}
 
-    def _format_context(self, ret: Retrieval) -> str:
+    def _context_lines(self, ret: Retrieval) -> list[tuple[str, object]]:
         prov_ids = {m.id for m in ret.provisional}
         lines = []
         for m in ret.selected:
-            lines.append(
+            lines.append((
                 f"- {'[未确认] ' if m.id in prov_ids else ''}"
                 f"{'[项目状态汇总] ' if m.kind == 'reflection' else ''}"
-                f"[t={m.birth}] {_safe_mem_text(m.text)}")
+                f"[t={m.birth}] {_safe_mem_text(m.text)}", m))
         for m, rival in ret.contested:
-            lines.append(f"- ⚠️未决冲突：[t={rival.birth}] "
-                         f"{_safe_mem_text(rival.text)}"
-                         f"（与 t={m.birth} 条目冲突）")
-        return "\n".join(lines)
+            lines.append((f"- ⚠️未决冲突：[t={rival.birth}] "
+                          f"{_safe_mem_text(rival.text)}"
+                          f"（与 t={m.birth} 条目冲突）", None))
+        return lines
 
     def _causal_memory_ids(self, before: int | None) -> set[int]:
         """保守的当前版本过滤，不冒充历史版本重建；调用方持 service lock。
@@ -449,10 +450,15 @@ class MemoryService:
                 and (before is None or tension.last_seen < before)}
 
     def recall(self, q: str, k: int | None = None, *,
-               signal_id: str | None = None) -> dict:
+               signal_id: str | None = None, budget_tokens: int | None = None,
+               passive: bool = False) -> dict:
+        if budget_tokens is not None and (type(budget_tokens) is not int or budget_tokens < 0):
+            raise ValueError("budget_tokens must be a non-negative int")
+        if not isinstance(passive, bool):
+            raise ValueError("passive must be bool")
         ctx, _, _ = self._admit(signal_id)
-        if signal_id is None:
-            return self._recall_main(q, k)
+        if signal_id is None and not passive:
+            return self._recall_main(q, k, budget_tokens)
         qv = self.emb.embed([q])[0]  # 未准入的请求不会触发 embedding
         with self._lock:
             self._ensure_healthy()
@@ -466,10 +472,11 @@ class MemoryService:
             view.tensions = copy.deepcopy(self._causal_tensions(ids, ctx.before))
             # 沿用原排序/压制算法，但在筛选后的副本中运行；不改原记忆、
             # 不复活/记信用、不发主引擎信号，也不登记可被 feedback 的 rid。
-            ret = view.retrieve(qv, Query(-1, q), min(self._t, ctx.before - 1))
-            return self._recall_result(ret, None)
+            ret = view.retrieve(qv, Query(-1, q), self._t if ctx.before is None else min(self._t, ctx.before - 1))
+            return self._recall_result(ret, None, budget_tokens)
 
-    def _recall_main(self, q: str, k: int | None = None) -> dict:
+    def _recall_main(self, q: str, k: int | None = None,
+                     budget_tokens: int | None = None) -> dict:
         qv = self.emb.embed([q])[0]
         with self._lock:
             self._ensure_healthy()
@@ -488,11 +495,23 @@ class MemoryService:
                 self._retrievals.pop(min(self._retrievals))
             # 不在这里把 retrieval 关联到 _last_turn：/search 发生在回答
             # 之前，此刻 _last_turn 还是上一轮；关联由 /feedback 完成
-            return self._recall_result(ret, rid)
+            return self._recall_result(ret, rid, budget_tokens)
 
-    def _recall_result(self, ret: Retrieval, rid: int | None) -> dict:
-        return {"retrieval_id": rid, "context": self._format_context(ret),
-                "n": len(ret.selected),
+    def _recall_result(self, ret: Retrieval, rid: int | None,
+                       budget_tokens: int | None = None) -> dict:
+        lines, kept, used = [], [], 0
+        for line, memory in self._context_lines(ret):
+            cost = approx_tokens(line) + (1 if lines else 0)
+            if budget_tokens is not None and used + cost > budget_tokens:
+                break
+            lines.append(line)
+            used += cost
+            if memory is not None:
+                kept.append(memory)
+        # 延迟反馈只给实际送入上下文的记忆记账。
+        ret.selected = kept
+        return {"retrieval_id": rid, "context": "\n".join(lines),
+                "n": len(kept), "tokens": used,
                 "selected": [{"id": m.id, "text": m.text,
                               "birth": m.birth, "kind": m.kind,
                               "origin": m.origin, "src": sorted(m.src)}
@@ -1057,7 +1076,15 @@ class _Handler(BaseHTTPRequestHandler):
             query = q.get("q", "")
             if not query:
                 raise _HttpError(400, "q required")
-            self._reply(200, svc.recall(query, k, signal_id=sid))
+            budget = q.get("budget_tokens")
+            if budget is not None:
+                try:
+                    budget = int(budget)
+                except ValueError:
+                    raise _HttpError(400, "budget_tokens must be int")
+            self._reply(200, svc.recall(query, k, signal_id=sid,
+                                       budget_tokens=budget,
+                                       passive=q.get("passive", "") in ("1", "true")))
         elif path == "/conflicts":
             self._reply(200, svc.conflicts(signal_id=sid))
         elif path == "/signals":
@@ -1103,7 +1130,9 @@ class _Handler(BaseHTTPRequestHandler):
             query = body.get("query", "")
             if not isinstance(query, str) or not query:
                 raise _HttpError(400, "query required")
-            self._reply(200, svc.recall(query, k, signal_id=sid))
+            self._reply(200, svc.recall(query, k, signal_id=sid,
+                                       budget_tokens=_opt_int(body, "budget_tokens"),
+                                       passive=body.get("passive", False)))
         elif path == "/miss":
             query = _req_str(body, "query")
             hint = body.get("hint", "")
@@ -1217,6 +1246,16 @@ def serve(service: MemoryService, port: int,
 
 # ============================ 默认组装 ============================
 
+_TOKEN_RE = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]|[A-Za-z0-9_]+|[^\sA-Za-z0-9_]")
+
+
+def approx_tokens(text: str) -> int:
+    """与 TIDE 平台一致的近似 token 计数：CJK 单字 = 1，ASCII 词 = 1，
+    其余非空白符号 = 1。只用于预算截断，不追求与具体 tokenizer 对齐。"""
+    return len(_TOKEN_RE.findall(text))
+
+
+
 def _load_env_key(project_dir: Path) -> str | None:
     key = os.environ.get("ZAI_API_KEY")
     if key:
@@ -1269,9 +1308,8 @@ def main() -> None:
     ap.add_argument("--model", default="glm-5.3-flash")
     # 插件拉起 sidecar 时不传参，调查员相关配置允许走环境变量
     ap.add_argument("--agent-model",
-                    default=os.environ.get("MEMORY_AGENT_MODEL",
-                                           "zhipu-env/glm-5.3-flash"),
-                    help="调查员 agent 的 opencode 模型（provider/model）")
+                    default=os.environ.get("MEMORY_AGENT_MODEL", "glm-5.3-flash"),
+                    help="进程内调查员模型（兼容 provider/model）")
     ap.add_argument("--no-agent", action="store_true",
                     default=os.environ.get("MEMORY_AGENT", "").lower()
                     in ("off", "0", "false"),
@@ -1297,26 +1335,22 @@ def main() -> None:
 
     agent = None
     if not args.no_agent:
-        from .agent.investigator import Budget, OpencodeInvestigator
+        from .agent.inline import InlineInvestigator
+        from .agent.investigator import Budget
         from .agent.loop import AgentWorker
-        try:
-            key = _load_env_key(Path(args.project))
-            # 不给调查员开 chat 缓存：载荷含唯一 signal_id 永不命中，只会
-            # 无界堆文件；调查产物、诊断回执和用量已落 tasks.sqlite
-            inv = OpencodeInvestigator(
-                port=port, token=service.token, model=args.agent_model,
-                env_extra={"ZAI_API_KEY": key} if key else None,
-                timeout_s=300,
-                workdir=Path(__file__).resolve().parents[1])
+        key = _load_env_key(Path(args.project))
+        if not key:
+            print("[memory-sidecar] 调查员未启动: ZAI_API_KEY 未设置",
+                  file=sys.stderr, flush=True)
+        else:
+            # 进程内 function-calling 循环，不经 HTTP
+            inv = InlineInvestigator(service, model=args.agent_model, api_key=key)
             agent = AgentWorker(service, inv, daily_cap=args.agent_daily_cap,
                                 retry_delay_s=args.agent_retry_delay,
                                 budget=Budget(tool_calls=args.agent_tool_calls,
                                               window_chars=args.agent_window_chars))
             service.attach_agent(agent)
             agent.start()
-        except RuntimeError as exc:      # opencode CLI 不在 PATH
-            print(f"[memory-sidecar] 调查员未启动: {exc}", file=sys.stderr,
-                  flush=True)
 
     print(f"[memory-sidecar] http://127.0.0.1:{port} "
           f"project={Path(args.project).resolve()} "

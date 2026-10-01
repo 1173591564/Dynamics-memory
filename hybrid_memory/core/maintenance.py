@@ -27,30 +27,13 @@ def _retention_scale(m, cfg) -> float:
 
 def run_maintenance(eng, t: int) -> None:
     cfg = eng.cfg
-    active = [m for m in eng.mems.values() if m.pool is not Pool.ARCHIVE]
-
-    div = {}
-    if cfg.div_gate and len(active) > 1:
-        E = np.stack([m.emb for m in active])
-        n = np.linalg.norm(E, axis=1)
-        S = E @ E.T / np.outer(n, n)
-        np.fill_diagonal(S, -1)
-        for m, row in zip(active, S):
-            div[m.id] = 1 + cfg.alpha_div * math.tanh(
-                cfg.beta_div * (cfg.tau_div - float(row.max())))
-
     for m in eng.mems.values():
         discount_to(m, t, cfg)
         gain = cfg.eta * m.d_hit
-        if m.id in div:
-            gain *= div[m.id]
         if cfg.shadow_credit:
             gain += cfg.eta_shadow * m.d_shadow
         scale = _retention_scale(m, cfg)
-        if cfg.decay_mode == "linear":
-            m.v = max(0.0, m.v + gain - cfg.lam / scale)
-        else:
-            m.v = m.v * math.exp(-cfg.lam / scale) + gain
+        m.v = m.v * math.exp(-cfg.lam / scale) + gain
         m.d_hit = m.d_shadow = 0.0
 
     if cfg.two_pool:
@@ -108,8 +91,8 @@ def follow_chain(eng, m: Memory) -> Memory:
 
     两个防御：
     - 不能写 `a or b`——memory id 从 0 起，superseded_by=0 会被当成 False
-      （曾让 experiments.run 在 step 里 KeyError: None）；
-    - 链成环（例如持久状态损坏）：计数外显并在环处停下，
+      （曾让仿真回放在 step 里 KeyError: None）；
+    - 链成环（只可能来自损坏的 state.pkl）：计数外显并在环处停下，
       不能让每次 step 都炸掉整个 sidecar。
     """
     seen = {m.id}

@@ -8,7 +8,8 @@
 ## 1. 一个调查上下文、一份工具预算
 
 `open_budget()` 返回不可变 `InvestigationContext(signal_id, before, origin)`。
-HTTP 调用不能传入这个 Python 对象，只能用 `X-Signal-Id` 查找活跃调查。
+进程内调查员直接向服务方法传 `signal_id`，六个只读工具共用这个准入边界。
+HTTP 兼容接口仍可用 `X-Signal-Id` 查找活跃调查，不能传入这个 Python 对象；主 agent 插件不再充当 worker。
 
 所有调查工具共用一次准入操作 `_admit()`，在同一个服务锁临界区中：
 
@@ -36,9 +37,8 @@ HTTP 调用不能传入这个 Python 对象，只能用 `X-Signal-Id` 查找活�
 保留插件初始化兼容性。
 
 没有 `X-Signal-Id` 的主 agent 请求保持原来的通路和反馈登记语义。
-**这不是按身份区分的授权系统**：主 agent 和 worker 仍共用服务 token；一个能自行
-构造请求且持有 token 的客户端可以省略信号头。这里保证的是带信号调用的服务端约束，
-不把插件自动附头当成对恶意 runtime 的安全隔离。
+**这不是按身份区分的 HTTP 授权系统**：持有服务 token 的客户端可以省略信号头。
+默认调查员不持有 HTTP 工具通道，只执行进程内六个只读工具，写回由 AgentWorker 接管。
 
 ## 2. 并发回展先预留、后结算
 
