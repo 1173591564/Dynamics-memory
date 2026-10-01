@@ -547,7 +547,8 @@ def test_stale_snapshot_keeps_memory_sources_and_advances_from_log(tmp_path):
     try:
         assert restored._unit_id == 2 and restored._t == 2
         mem = next(iter(restored.engine.mems.values()))
-        assert mem.src == {0}
+        # 单元 1 已同回执/checkpoint 原子提交；旧 state.pkl 不能抹掉其来源。
+        assert mem.src == {0, 1}
         assert restored._retrievals[rid].selected[0] is mem
         assert restored.observe("next.py", "answer")["unit_id"] == 2
         assert restored.log.get(0) == original
@@ -617,8 +618,11 @@ def test_l0_is_committed_before_candgen_even_with_allocated_ids(tmp_path):
 def test_invalid_snapshot_does_not_publish_partially_loaded_memory(tmp_path):
     import pickle
 
-    svc = _service(tmp_path)
-    svc.observe("old_module.py", "evidence")
+    # 构造升级前的旧库：有快照与 L0，但没有新单元回执/checkpoint。
+    svc = _service(tmp_path, texts=())
+    svc.log.add_unit(0, 0, user_text="old_module.py", assistant_text="evidence")
+    svc.propose([{"text": "部署在 B 服务器", "source_unit_ids": [0]}])
+    svc._unit_id, svc._t = 1, 1
     svc.save()
     svc.log.close()
     path = tmp_path / "state.pkl"

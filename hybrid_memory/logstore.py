@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import re
 import sqlite3
 import threading
@@ -116,6 +117,14 @@ CREATE TABLE IF NOT EXISTS unit_emb (
     dims INTEGER NOT NULL,
     vec BLOB NOT NULL
 );
+-- Only online append creates a row. Legacy units are deliberately not replayed.
+CREATE TABLE IF NOT EXISTS unit_work (
+    unit_id INTEGER PRIMARY KEY REFERENCES units(id),
+    state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','done')),
+    result TEXT, context TEXT NOT NULL DEFAULT '{}', attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NOT NULL DEFAULT '', next_run_at REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS unit_work_order ON unit_work(state,unit_id);
 """
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_#./+-]{2,}|[\u4e00-\u9fff]+")
@@ -161,7 +170,11 @@ class LogStore:
                                      check_same_thread=False)
         if self.path:
             self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA synchronous=FULL")
+        self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(_SCHEMA)
+        if "context" not in {r[1] for r in self._conn.execute("PRAGMA table_info(unit_work)")}:
+            self._conn.execute("ALTER TABLE unit_work ADD COLUMN context TEXT NOT NULL DEFAULT '{}'")
         self._lock = threading.RLock()
         self._embedder = embedder
         self.n_embed_fail = 0
@@ -178,7 +191,8 @@ class LogStore:
 
     def append_unit(self, t: int, *, user_text: str, assistant_text: str,
                     scene: str = "", assistant_turns: int = 1,
-                    ts: float | None = None, min_unit_id: int = 0) -> dict:
+                    ts: float | None = None, min_unit_id: int = 0,
+                    work_context: dict | None = None) -> dict:
         """在线追加：数据库在写事务内分配 id/t，快照只提供不能回退的下界。
         返回 unit_id/t/entities/new_entities。原文和确定性索引一起提交，
         可选 embedding 在提交后执行。不同连接追加也不会复用已提交编号。
@@ -186,13 +200,15 @@ class LogStore:
         return self.add_unit(None, t, user_text=user_text,
                              assistant_text=assistant_text, scene=scene,
                              assistant_turns=assistant_turns, ts=ts,
-                             min_unit_id=min_unit_id)
+                             min_unit_id=min_unit_id, track_work=True,
+                             work_context=work_context)
 
     def add_unit(self, unit_id: int | None, t: int, *, user_text: str,
                  assistant_text: str, scene: str = "",
                  assistant_turns: int = 1, ts: float | None = None,
-                 min_unit_id: int = 0) -> dict:
-        """导入指定 id/t；unit_id=None 时为在线追加分配 id/t。
+                 min_unit_id: int = 0, track_work: bool = False,
+                 work_context: dict | None = None) -> dict:
+        """导入指定 id/t；在线 append 在同一事务内登记待处理工作。
 
         证据不可覆盖：同 id 同内容的重放为 no-op，不重建索引/向量、不重发
         new_entities；同 id 不同内容（含 t/scene/显式 ts）抛 ValueError。
@@ -236,6 +252,9 @@ class LogStore:
                 self._conn.execute(
                     "INSERT INTO mentions(entity, kind, unit_id)"
                     " VALUES (?,?,?)", (ent, kind, unit_id))
+            if track_work:
+                self._conn.execute("INSERT INTO unit_work(unit_id,context) VALUES(?,?)",
+                                   (unit_id, json.dumps(work_context or {}, ensure_ascii=False)))
         self._embed(unit_id, user_text, assistant_text)
         return {"unit_id": unit_id, "t": t,
                 "entities": [e for e, _ in ents], "new_entities": new}
@@ -253,6 +272,80 @@ class LogStore:
             self._conn.execute(
                 "INSERT OR REPLACE INTO unit_emb(unit_id, dims, vec) VALUES (?,?,?)",
                 (int(unit_id), int(vec.size), vec.tobytes()))
+
+    # ---- 在线单元工作日志（与 L0 同库；不回填升级前历史单元）----
+    def work(self, unit_id: int) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT unit_id,state,result,context,attempts,last_error,next_run_at "
+                "FROM unit_work WHERE unit_id=?", (unit_id,)).fetchone()
+        if row is None:
+            return None
+        return {"unit_id": row[0], "state": row[1], "result": row[2],
+                "context": json.loads(row[3]), "attempts": row[4],
+                "last_error": row[5], "next_run_at": row[6]}
+
+    def pending_units(self, limit: int = 8) -> list[int]:
+        # 不跳过退避中的较早单元，否则新单元可能先推进引擎时间和场景。
+        with self._lock:
+            return [r[0] for r in self._conn.execute(
+                "SELECT unit_id FROM unit_work WHERE state='pending' "
+                "ORDER BY unit_id LIMIT ?", (limit,))]
+
+    def work_stats(self) -> dict:
+        with self._lock:
+            pending, ready, failed, done = self._conn.execute(
+                "SELECT COUNT(*) FILTER (WHERE state='pending'), "
+                "COUNT(*) FILTER (WHERE state='pending' AND result IS NOT NULL), "
+                "COUNT(*) FILTER (WHERE state='pending' AND last_error<>''), "
+                "COUNT(*) FILTER (WHERE state='done') FROM unit_work").fetchone()
+        return {"pending": pending, "result_saved": ready, "failed": failed, "done": done}
+
+    def unit_context(self, unit_id: int) -> dict:
+        """按原单元时间恢复首次出现的实体及上一轮原文，不使用当前时钟。"""
+        unit = self.get(unit_id)
+        if unit is None:
+            raise ValueError(f"pending unit {unit_id} 缺失 L0 原文")
+        ents = entities_in(unit["user_text"] + "\n" + unit["assistant_text"])
+        with self._lock:
+            first = [ent for ent, _ in ents if not self._conn.execute(
+                "SELECT 1 FROM mentions m JOIN units u ON u.id=m.unit_id "
+                "WHERE m.entity=? AND u.t<? LIMIT 1", (ent, unit["t"])).fetchone()]
+            previous = self._conn.execute(
+                "SELECT user_text FROM units WHERE t<? ORDER BY t DESC LIMIT 1",
+                (unit["t"],)).fetchone()
+        return {"unit": unit, "entities": [e for e, _ in ents],
+                "new_entities": first, "previous_user": previous[0] if previous else ""}
+
+    def save_work_result(self, unit_id: int, result: str) -> None:
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "UPDATE unit_work SET result=?,last_error='',next_run_at=0 "
+                "WHERE unit_id=? AND state='pending' AND result IS NULL", (result, unit_id))
+            if cursor.rowcount != 1:
+                raise RuntimeError(f"unit {unit_id} 结果不可写（已完成或重复）")
+
+    def fail_work(self, unit_id: int, error: Exception) -> None:
+        with self._lock, self._conn:
+            row = self._conn.execute("SELECT attempts FROM unit_work WHERE unit_id=? AND state='pending'",
+                                     (unit_id,)).fetchone()
+            if row is None:
+                return
+            delay = min(300, 2 * (2 ** min(row[0], 8)))
+            self._conn.execute(
+                "UPDATE unit_work SET attempts=attempts+1,last_error=?,next_run_at=? "
+                "WHERE unit_id=? AND state='pending'",
+                (f"{type(error).__name__}: {error}"[:500], time.time() + delay, unit_id))
+
+    def finish_work(self, unit_id: int) -> None:
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "UPDATE unit_work SET state='done',last_error='',next_run_at=0 "
+                "WHERE unit_id=? AND state='pending'", (unit_id,))
+            if cursor.rowcount != 1:
+                row = self.work(unit_id)
+                if row is None or row["state"] != "done":
+                    raise RuntimeError(f"unit {unit_id} 无待确认工作")
 
     # ---- 读 ----
     def get(self, unit_id: int) -> dict | None:
