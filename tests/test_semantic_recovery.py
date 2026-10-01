@@ -1,4 +1,5 @@
 """sidecar 语义工作真实 SQLite/HTTP、失败回滚、子进程重启。"""
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -152,7 +153,7 @@ svc.process_semantic_tasks()
 '''
         root = Path(__file__).resolve().parents[1]
         proc = subprocess.run([sys.executable, "-c", code, str(path), phase],
-                              cwd=root, env={"PYTHONPATH": str(root) + ":" + str(root / "tests")},
+                              cwd=root, env={**os.environ, "PYTHONPATH": str(root) + os.pathsep + str(root / "tests")},
                               capture_output=True, text=True, timeout=20)
         assert proc.returncode == 77, proc.stderr
         restored = _service(path, texts=())
@@ -237,7 +238,7 @@ svc.process_semantic_tasks()
 '''
     root = Path(__file__).resolve().parents[1]
     proc = subprocess.run([sys.executable, "-c", code, str(tmp_path)], cwd=root,
-                          env={"PYTHONPATH": str(root) + ":" + str(root / "tests")},
+                          env={**os.environ, "PYTHONPATH": str(root) + os.pathsep + str(root / "tests")},
                           capture_output=True, text=True, timeout=20)
     assert proc.returncode == 77, proc.stderr
     restored = _service(tmp_path, texts=())
@@ -449,7 +450,7 @@ svc.process_semantic_tasks=lambda: os._exit(77)
 svc.observe('部署在哪','已改到 B 服务器')
 '''
     proc = subprocess.run([sys.executable, "-c", code, str(tmp_path)], cwd=root,
-                          env={"PYTHONPATH": str(root) + ":" + str(root / "tests")},
+                          env={**os.environ, "PYTHONPATH": str(root) + os.pathsep + str(root / "tests")},
                           capture_output=True, text=True, timeout=20)
     assert proc.returncode == 77, proc.stderr
     svc = _service(tmp_path, texts=())
@@ -558,7 +559,7 @@ svc.tasks.complete_semantic=lambda *args,**kwargs: os._exit(77)
 svc.process_semantic_tasks()
 '''
     proc = subprocess.run([sys.executable, "-c", code, str(tmp_path)], cwd=root,
-                          env={"PYTHONPATH": str(root) + ":" + str(root / "tests")},
+                          env={**os.environ, "PYTHONPATH": str(root) + os.pathsep + str(root / "tests")},
                           capture_output=True, text=True, timeout=20)
     assert proc.returncode == 77, proc.stderr
     restored = _service(tmp_path, texts=())
