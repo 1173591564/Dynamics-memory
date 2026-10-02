@@ -105,13 +105,13 @@ def check_a1() -> None:
 A2_ROWS = [
     # (doc, doc_snippet, pytest_node)
     ("README.md", "幂等",
-     "tests/test_capture_delivery.py::test_same_observe_request_id_is_one_unit_and_conflict_does_not_rebind"),
+     "tests/integration/test_service_observe.py::test_same_observe_request_id_is_one_unit_and_conflict_does_not_rebind"),
     ("README.md", "unverified",
      "tests/test_launch_closeout.py::test_health_does_not_claim_remote_validation_and_retry_is_read_only"),
     ("README.md", "不能绕过 Selector",
      "tests/test_trio_protocol.py::test_direct_agent_mutations_denied_in_trio_http_mode"),
     ("docs/opencode-trio.md", "CONFLICT",
-     "tests/test_trio_protocol.py::test_conflict_quarantined_until_human_review_and_stale_version_stays_hidden"),
+     "tests/integration/test_service_review.py::test_conflict_quarantined_until_human_review_and_stale_version_stays_hidden"),
     ("docs/opencode-trio.md", "hauler",
      "tests/test_trio_protocol.py::test_hauler_selector_create_exist_and_overlapping_window"),
     ("README.md", "checkpoint",
@@ -458,7 +458,7 @@ def check_a9(phase: str) -> None:
                           "test_proposal_bounds_and_malformed_supersedes_do_not_partially_apply"],
                          timeout=120)
         report("A9", "PASS" if out.returncode == 0 else "FAIL", "propose 批量 50")
-        if due("P5"):
+        if due("P4"):
             out = pytest_run(["tests/integration/test_service_recall.py::test_contested_bound"],
                              timeout=120)
             report("A9", "PASS" if out.returncode == 0 else "FAIL", "contested 行为")
@@ -472,7 +472,7 @@ def check_a10() -> None:
     if new.is_file():
         targets = [str(new)]
     else:
-        targets = ["tests/test_observe_recovery.py", "tests/test_semantic_recovery.py",
+        targets = ["tests/integration/test_service_observe.py", "tests/test_semantic_recovery.py",
                    "tests/test_durable_tasks.py"]
     out = pytest_run(targets, timeout=900)
     if out.returncode == 0:

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from ..core.confidence import discount_to
 from ..core.types import Event, Memory, Pool, is_visible
-from ..embed.base import cosine
+from .types import cosine
 
 
 def run_ingest(eng, events: list[Event], t: int) -> None:

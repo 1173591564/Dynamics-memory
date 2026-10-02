@@ -7,6 +7,7 @@ import pytest
 
 from hybrid_memory.config import Cfg
 from hybrid_memory.core.confidence import discount_to, projected
+from hybrid_memory.core.dynamics import evictable, overflow_policy
 from hybrid_memory.core.engine import MemoryEngine
 from hybrid_memory.core.types import Event, Memory, Pool, Query
 from fakes import SyntheticEmbedder
@@ -164,6 +165,96 @@ def test_capacity_eviction():
     assert sum(1 for m in eng.mems.values() if m.pool is Pool.MEMORY) <= cfg.cap_m
     assert eng.n_evict == 5
     assert sum(1 for m in eng.mems.values() if m.pool is Pool.CANDIDATE) == 5
+
+
+def test_c_overflow_archives_lowest_v_first():
+    # H11：C 满时 V 最低者迁往 A（非删除），archived_at 打戳，计数累积。
+    emb, world, eng = make(cfg=Cfg(cap_c=3, idle_p=1000))
+    for i in range(5):
+        b = world.spawn(f"c{i}")
+        eng.observe([Event(b.id, b.value, b.phrasings[b.value][0])], 0)
+    for m, v in zip(eng.mems.values(), (0.1, 0.5, 0.3, 0.9, 0.2)):
+        m.pool = Pool.CANDIDATE
+        m.v = v
+    eng.step(1)
+    assert sum(1 for m in eng.mems.values() if m.pool is Pool.CANDIDATE) == 3
+    archived = [m for m in eng.mems.values() if m.pool is Pool.ARCHIVE]
+    assert sorted(m.v for m in archived) == sorted(
+        v * math.exp(-eng.cfg.lam) for v in (0.1, 0.2))
+    assert all(m.archived_at == 1 for m in archived)
+    assert eng.n_pool_truncated == 2
+
+
+def test_a_overflow_deletes_oldest_first():
+    # H12：A 满删除最旧（archived_at FIFO；缺戳视为最旧）。
+    emb, world, eng = make(cfg=Cfg(cap_a=3, idle_p=1000))
+    for i in range(5):
+        b = world.spawn(f"a{i}")
+        eng.observe([Event(b.id, b.value, b.phrasings[b.value][0])], 0)
+    for m, s in zip(eng.mems.values(), (10, None, 30, 20, 40)):
+        m.pool = Pool.ARCHIVE
+        m.archived_at = s
+    eng.step(1)
+    assert sorted(m.archived_at for m in eng.mems.values()) == [20, 30, 40]
+    assert eng.n_pool_truncated == 2
+
+
+def test_m_full_rejects_promotion():
+    # H12：M 满时拒绝新晋升（留在 C），计数，不挤掉已有 M。
+    emb, world, eng = make(cfg=Cfg(cap_m=2, idle_p=1000))
+    for i in range(3):
+        b = world.spawn(f"m{i}")
+        eng.observe([Event(b.id, b.value, b.phrasings[b.value][0])], 0)
+    mems = list(eng.mems.values())
+    mems[0].pool = Pool.MEMORY
+    mems[0].v = 2.0
+    mems[1].pool = Pool.MEMORY
+    mems[1].v = 2.0
+    mems[2].pool = Pool.CANDIDATE
+    mems[2].v = 2.0
+    eng.step(1)
+    assert mems[2].pool is Pool.CANDIDATE
+    assert eng.n_promote_rejected == 1
+    assert eng.n_promote == 0
+    assert eng.n_evict == 0
+    assert sum(1 for m in eng.mems.values() if m.pool is Pool.MEMORY) == 2
+
+
+def test_pinned_memories_skip_c_eviction():
+    # H11：pinned（tension 端点）跳过 C 淘汰，哪怕 V 最低。
+    emb, world, eng = make(cfg=Cfg(cap_c=2, idle_p=1000))
+    for i in range(4):
+        b = world.spawn(f"p{i}")
+        eng.observe([Event(b.id, b.value, b.phrasings[b.value][0])], 0)
+    mems = list(eng.mems.values())
+    for m, v in zip(mems, (0.01, 0.02, 0.03, 0.04)):
+        m.pool = Pool.CANDIDATE
+        m.v = v
+    eng.add_tension(mems[0].id, mems[1].id, 0)
+    eng.step(1)
+    assert mems[0].pool is Pool.CANDIDATE
+    assert mems[1].pool is Pool.CANDIDATE
+    assert sorted(m.id for m in eng.mems.values()
+                  if m.pool is Pool.ARCHIVE) == sorted([mems[2].id, mems[3].id])
+    assert eng.n_pool_truncated == 2
+
+
+def test_overflow_policy_pure_shape():
+    # overflow_policy：纯函数形状（archive/delete 分组；M 永不给 victims）。
+    emb, world, eng = make(cfg=Cfg(cap_c=1, cap_a=1, cap_m=1))
+    for i in range(2):
+        b = world.spawn(f"o{i}")
+        eng.observe([Event(b.id, b.value, b.phrasings[b.value][0])], 0)
+    mems = list(eng.mems.values())
+    mems[0].pool = Pool.CANDIDATE
+    mems[0].v = 0.1
+    mems[1].pool = Pool.CANDIDATE
+    mems[1].v = 0.9
+    out = overflow_policy(eng.mems, eng.cfg, frozenset())
+    assert out == {"archive": [mems[0].id], "delete": []}
+    out2 = overflow_policy(eng.mems, eng.cfg, frozenset({mems[0].id}))
+    assert out2["archive"] == [mems[1].id]
+    assert evictable(Pool.MEMORY, eng.mems, eng.cfg, frozenset()) == []
 
 
 def test_retrieve_returns_topk():

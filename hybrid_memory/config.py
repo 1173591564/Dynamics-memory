@@ -2,7 +2,7 @@
 评测平台（TIDE，独立仓库）通过适配器传入具体 Cfg。
 
 P2 新增 Settings（进程级配置）+ resolve_settings/resolve_pipeline/load_env_key：
-只加不启用，旧调用一律不动（P5 通电）。
+resolve_pipeline 在 P4 通电（I2 消红）；其余旧调用一律不动（P5 通电）。
 """
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ class Cfg:
     consolidation_max_items: int = 12
     signal_queue_cap: int = 256   # 引擎→LLM 信号队列容量（超限丢最旧+计数）
     shadow_pending_cap: int = 256  # 延迟记账待结算队列容量（超限丢最旧+计数）
-    capacity_on: bool = True     # False → M 池无界
+    capacity_on: bool = True     # False → C/M/A 池无界（P4 起 C/A 上界与 M 拒收同受此门控）
     suppression_on: bool = True
     tension_on: bool = True
     archive_retrieval: bool = True

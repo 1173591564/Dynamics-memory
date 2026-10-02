@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from hybrid_memory.core.types import Event, Query
-from hybrid_memory.embed.base import Embedder
+from hybrid_memory.core.types import Embedder
 
 
 @dataclass

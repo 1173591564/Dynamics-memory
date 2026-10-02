@@ -8,11 +8,13 @@ V ← V·e^(−λ) + η·hit + η_s·shadow（可选 Ψ_div 冗余门乘在 η �
 from __future__ import annotations
 
 import math
+import sys
 
 import numpy as np
 
 from ..core.confidence import discount_to
 from ..core.consolidation import maybe_consolidate
+from ..core.dynamics import overflow_policy, pinned_ids
 from ..core.types import Memory, Pool
 
 
@@ -23,6 +25,20 @@ def _retention_scale(m, cfg) -> float:
     salience = max(0.0, min(1.0, m.salience))
     excess = max(0.0, (salience - floor) / (1.0 - floor))
     return 1.0 + cfg.salience_retention_weight * excess
+
+
+_warned_promote_reject = False
+
+
+def _warn_promote_reject_once() -> None:
+    """M 拒收只告警一次（core 内镜像 telemetry.warn_once 语义：core 不得
+    import telemetry，I1；计数 n_promote_rejected 另行累积在引擎上）。"""
+    global _warned_promote_reject
+    if _warned_promote_reject:
+        return
+    _warned_promote_reject = True
+    print("[memory-core] M 池已满，拒绝新晋升（条目留在 C 池）",
+          file=sys.stderr, flush=True)
 
 
 def run_maintenance(eng, t: int) -> None:
@@ -37,12 +53,20 @@ def run_maintenance(eng, t: int) -> None:
         m.d_hit = m.d_shadow = 0.0
 
     if cfg.two_pool:
+        in_m_count = sum(1 for m in eng.mems.values() if m.pool is Pool.MEMORY)
         for m in eng.mems.values():
             if m.pool is Pool.CANDIDATE and m.v > cfg.theta_p:
+                if cfg.capacity_on and in_m_count >= cfg.cap_m:
+                    # H12：M 满时拒绝新晋升，条目留在 C；不挤掉已有 M。
+                    eng.n_promote_rejected += 1
+                    _warn_promote_reject_once()
+                    continue
                 m.pool = Pool.MEMORY
+                in_m_count += 1
                 eng.n_promote += 1
             elif m.pool is Pool.MEMORY and m.v < cfg.theta_d:
                 m.pool = Pool.CANDIDATE
+                in_m_count -= 1
                 eng.n_demote += 1
 
     if cfg.capacity_on:
@@ -50,15 +74,33 @@ def run_maintenance(eng, t: int) -> None:
         while len(in_m) > cfg.cap_m:
             weakest = min(in_m, key=lambda m: (m.v, m.last_hit if m.last_hit is not None else m.birth, m.id))
             weakest.pool = Pool.CANDIDATE if cfg.two_pool else Pool.ARCHIVE
+            if weakest.pool is Pool.ARCHIVE:
+                weakest.archived_at = t
             in_m.remove(weakest)
             eng.n_evict += 1
+        # H11：C 溢出迁往 A（pinned 跳过；A 的删除在闲置归档之后统一执行，
+        # 保证单步结束时 C/A/M 上界同时成立）。
+        victims = overflow_policy(eng.mems, cfg, pinned_ids(eng))
+        for vid in victims["archive"]:
+            m = eng.mems[vid]
+            m.pool = Pool.ARCHIVE
+            m.archived_at = t
+            eng.n_pool_truncated += 1
 
     for m in eng.mems.values():
         idle_since = m.last_hit if m.last_hit is not None else m.birth
         horizon = cfg.idle_p * _retention_scale(m, cfg)
         if m.pool is Pool.CANDIDATE and t - idle_since > horizon:
             m.pool = Pool.ARCHIVE
+            m.archived_at = t
             eng.n_archive += 1
+
+    if cfg.capacity_on:
+        # H12：A 满删除最旧（archived_at FIFO；L0 可重建，可逆）。
+        victims = overflow_policy(eng.mems, cfg, pinned_ids(eng))
+        for vid in victims["delete"]:
+            del eng.mems[vid]
+            eng.n_pool_truncated += 1
 
     _emit_pending_conflicts(eng, t)
     maybe_consolidate(eng, t)

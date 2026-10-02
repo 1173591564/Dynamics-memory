@@ -2,6 +2,9 @@
 from dataclasses import dataclass
 
 
+_ORIGINS = {"repair", "extract", "mining", "agent", "user_confirmed"}
+
+
 @dataclass(frozen=True, slots=True)
 class InvestigationContext:
     signal_id: str | None

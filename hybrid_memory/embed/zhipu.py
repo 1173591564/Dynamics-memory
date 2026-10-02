@@ -11,7 +11,7 @@ from urllib.request import Request, urlopen
 
 import numpy as np
 
-from .base import Embedder
+from ..core.types import Embedder
 from .cache import SqliteEmbeddingCache
 
 

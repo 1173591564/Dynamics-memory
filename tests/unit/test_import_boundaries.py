@@ -140,7 +140,6 @@ def test_new_shells_import_cleanly():
 # --------------------------------------- 终态规则（红是预期的，消红时摘标记）
 
 
-@pytest.mark.xfail(strict=True, reason="P5 消红：cosine→core，Embedder→core.types")
 def test_core_zero_cross_layer(repo_root):
     """终态 core/ 只用标准库 + numpy + core + config/errors（I1 字面）。"""
     allowed_prefixes = (PKG + ".core.", PKG + ".config", PKG + ".errors")
@@ -158,7 +157,6 @@ def test_core_zero_cross_layer(repo_root):
     assert not bad, f"core 越层: {bad}"
 
 
-@pytest.mark.xfail(strict=True, reason="P5 消红：bootstrap 用 resolve_pipeline，server 变薄 shim")
 def test_pipeline_single_reader(repo_root):
     """I2：MEMORY_PIPELINE 只在 config.resolve_pipeline 被读。"""
     pat = re.compile(r"""environ(?:\.get|\[)\s*\(?\s*["']MEMORY_PIPELINE["']|"""

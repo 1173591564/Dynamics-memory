@@ -17,7 +17,7 @@ from ..config import Cfg
 from ..core.signals import SignalQueue
 from ..core.types import (Event, Memory, MemorySemantics, Pool, Query,
                           Retrieval, Tension)
-from ..embed.base import Embedder
+from .types import Embedder
 from . import confidence, consolidation, ingest, maintenance, retrieval
 
 
@@ -47,6 +47,8 @@ class MemoryEngine:
         self.n_agg = 0
         self.n_consolidate = 0
         self.n_chain_broken = 0   # supersede/aggregate 链断裂或成环（状态损坏痕迹）
+        self.n_pool_truncated = 0   # C 迁 A + A 删除（H11/H12，P4）
+        self.n_promote_rejected = 0   # M 满拒收晋升（H12，P4）
 
     def next_id(self) -> int:
         i = self._next_id

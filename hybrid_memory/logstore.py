@@ -30,7 +30,7 @@ from typing import Iterable
 
 import numpy as np
 
-from .embed.base import cosine
+from .core.types import cosine
 from .store.tasks import CaptureConflict
 
 # ---------------------------------------------------------------- 实体正则
@@ -425,6 +425,30 @@ class LogStore:
             args = ids + [int(before)]
         with self._lock:
             return {r[0]: r[1] for r in self._conn.execute(q, args).fetchall()}
+
+    def retention_report(self, src_ids=None) -> dict:
+        """L0 保留报告（H13，只告警不删）：体积/最旧单元/src 悬空数。
+
+        src_ids：记忆侧引用的源单元 id 集（调用方传入 engine 侧 src 并集）；
+        为 None 时不统计悬空。阈值告警与 /health 字段随 P5 落地。
+        """
+        with self._lock:
+            units = self._conn.execute("SELECT count(*) FROM units").fetchone()[0]
+            row = self._conn.execute(
+                "SELECT id, t FROM units ORDER BY t ASC, id ASC LIMIT 1").fetchone()
+            pages = self._conn.execute("PRAGMA page_count;").fetchone()[0]
+            psize = self._conn.execute("PRAGMA page_size;").fetchone()[0]
+            dangling = None
+            if src_ids is not None:
+                want = set(src_ids)
+                have = ({r[0] for r in self._conn.execute(
+                    f"SELECT id FROM units WHERE id IN ({','.join('?' * len(want))})",
+                    tuple(want)).fetchall()} if want else set())
+                dangling = len(want - have)
+        return {"units": units, "bytes": pages * psize,
+                "oldest_unit_id": row[0] if row else None,
+                "oldest_t": row[1] if row else None,
+                "dangling_src": dangling}
 
     def search(self, query: str, *, before: int | None = None,
                scene: str | None = None, k: int = 8,

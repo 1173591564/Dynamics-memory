@@ -9,7 +9,7 @@ deferred：同签名不重复发射，新源加入后签名变化自动恢复发
 from __future__ import annotations
 
 from ..core.types import Memory, Pool, is_visible
-from ..embed.base import cosine
+from .types import cosine
 
 
 def maybe_consolidate(eng, t: int) -> None:

@@ -45,6 +45,7 @@ class Memory:
     birth: int = 0
     last_hit: int | None = None  # 最近一次 selected（进 context）
     last_seen: int = 0      # 最近一次被生成/确认
+    archived_at: int | None = None  # 进入 ARCHIVE 的 t（H12：A 池 FIFO 依据；旧快照缺省 None 视为最旧）
     suppressed_by: int | None = None
     superseded_by: int | None = None
     aggregated_into: int | None = None  # 被收编进聚合 memory（冲突容器代其出场）
@@ -144,3 +145,17 @@ class Retrieval:
                             # submit_relevance 置位，防重复记账）
     feedback_sent: bool = False   # 已发 feedback_pending 信号（防重复发射：
                             # 信号被丢弃时 credited 仍是 False，只靠它不够）
+
+
+def cosine(a: np.ndarray, b: np.ndarray) -> float:
+    """余弦相似（P4 从 embed.base 原样迁入：core 零越层 I1，算法一字不动）。"""
+    na, nb = np.linalg.norm(a), np.linalg.norm(b)
+    if na == 0 or nb == 0:
+        return 0.0
+    return float(a @ b / (na * nb))
+
+
+class Embedder(Protocol):
+    """向量生产者契约（P4 从 embed.base 原样迁入；产出的向量由 cosine 消费）。"""
+
+    def embed(self, texts: list[str], keys: list | None = None) -> np.ndarray: ...

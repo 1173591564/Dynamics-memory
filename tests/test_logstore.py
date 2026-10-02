@@ -256,3 +256,19 @@ def test_failed_index_write_rolls_back_unit_and_allocation():
         assert s.search("handler.ts")[0]["unit_id"] == 0
     finally:
         s.close()
+
+
+def test_retention_report_units_bytes_oldest_and_dangling():
+    s = LogStore(None)
+    try:
+        assert s.retention_report()["units"] == 0
+        assert s.retention_report()["oldest_unit_id"] is None
+        _fill(s)
+        rep = s.retention_report(src_ids={0, 1, 2, 99})
+        assert rep["units"] == 3
+        assert rep["bytes"] > 0
+        assert (rep["oldest_unit_id"], rep["oldest_t"]) == (0, 0)
+        assert rep["dangling_src"] == 1
+        assert s.retention_report()["dangling_src"] is None
+    finally:
+        s.close()

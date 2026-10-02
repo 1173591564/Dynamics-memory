@@ -267,7 +267,7 @@
   这是**违背已承诺不变量**的 bug，不是调优。
 - **决策**：每条入选记忆最多带 1 个对手、总共最多 3 行，超限截断 + `truncated` 标志。
   放在 `service/recall.py:context_lines`，与预算截断同一处。
-- **后果**：P5 修；测试断言"16 行场景 → ≤8 行 + truncated=true"。
+- **后果**：P4 已修（`service/recall.py:context_lines` + `truncated` 标志；测试 `test_service_recall.py::test_contested_bound` 断言"16 行场景 → ≤8 行 + truncated=true"）。
 
 ### H30 TIDE V/P 为负（无依赖失效机制） —— 已决：功能 backlog，不在重构范围
 - **背景**：v0.1 报告：V（修订）u<0、P（传播）≈−0.5~−0.9。根因是机制缺失

@@ -1,17 +1,7 @@
-"""Embedder 协议与相似度工具。"""
-from __future__ import annotations
+"""Embedder 协议与相似度工具（P4：定义已迁至 `core.types`，此处 re-export）。
 
-from typing import Protocol
+core 零越层（I1）：向量契约属于领域层；旧导入路径保留兼容。
+"""
+from ..core.types import Embedder, cosine
 
-import numpy as np
-
-
-def cosine(a: np.ndarray, b: np.ndarray) -> float:
-    na, nb = np.linalg.norm(a), np.linalg.norm(b)
-    if na == 0 or nb == 0:
-        return 0.0
-    return float(a @ b / (na * nb))
-
-
-class Embedder(Protocol):
-    def embed(self, texts: list[str], keys: list | None = None) -> np.ndarray: ...
+__all__ = ["Embedder", "cosine"]

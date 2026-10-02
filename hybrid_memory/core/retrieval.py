@@ -14,7 +14,7 @@ import numpy as np
 
 from ..core.confidence import discount_to, projected
 from ..core.types import Memory, Pool, Query, Retrieval, is_visible
-from ..embed.base import cosine
+from .types import cosine
 
 _ASCII_TOK = re.compile(r"[a-z0-9_#.+-]{2,}")
 _CJK_RUN = re.compile(r"[一-鿿]{2,}")

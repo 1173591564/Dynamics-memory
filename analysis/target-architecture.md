@@ -206,38 +206,40 @@ Dynamics-memory/
 
 ### 2.7 `service/` — 编排层（现 server.py 66 方法分家，H2）
 
-**`service/service.py`** — 门面：组装依赖、持有 RLock；对外方法转发，不放业务实现；`lock/current/attach_dispatch/notify`
+**`service/service.py`** — 门面：组装依赖、持有 RLock；对外方法转发，不放业务实现（P4：`MemoryService` 类整体迁入；`lock/current/attach_dispatch/notify` 最终形态 P5 落地，P4 仍用 `_lock` 属性 + 构造直连）
 
-**`service/lifecycle.py`** — 生命周期：`build_service/recover_or_init/ensure_healthy/save/snapshot_status/corrupt_file_exists/start_unit_recovery/stop_unit_recovery`
+**`service/lifecycle.py`** — 生命周期：`build_service/recover_or_init/ensure_healthy/save/snapshot_status/corrupt_file_exists/start_unit_recovery/stop_unit_recovery`（P4 落地除 `build_service/snapshot_status` 外全部：二者无独立等价物，组装仍在门面 `__init__`、快照状态仍内联，P5 定形态；另 `_check_checkpoint_error` P5 迁入本模块）
 
-**`service/observe.py`** — 观察回路：`observe/process_pending_units/process_unit`（先落 L0 幂等，再扫描，再三 agent 交接；legacy 才走 candgen）
+**`service/observe.py`** — 观察回路：`observe/process_pending_units/process_unit`（先落 L0 幂等，再扫描，再三 agent 交接；legacy 才走 candgen）+ `_annotate_observe` 回执整形 helper
 
-**`service/recall.py`** — 检索回路：`recall/recall_main/recall_result/context_lines`（`[未确认]/[待人审冲突…]/[项目状态汇总]` 前缀 + contested 1+3 上界 H29）；`causal_memory_ids/causal_tensions`
+**`service/recall.py`** — 检索回路：`recall/recall_main/recall_result/context_lines`（`[未确认]/[待人审冲突…]/[项目状态汇总]` 前缀 + contested 1+3 上界 H29：`CONTESTED_K=3` + `truncated` 标志，P4 已修）；`causal_memory_ids/causal_tensions`；随行迁入 `approx_tokens`/`_safe_mem_text`（仅本模块用）
 
 **`service/feedback.py`** — 延迟记账：`feedback`（幂等 + 锁外判裁）
 
-**`service/operate.py`** — agent 操作面：`propose/resolve/diagnose/validate_proposal/durable_propose`；trio 下三入口 `Rejected("direct_write_disabled")`（H35）
+**`service/operate.py`** — agent 操作面（P5）：`propose/resolve/diagnose/validate_proposal/durable_propose` + `report_miss` + `_cited_text` + 效果事务 `_commit_sidecar_effect/_task_once`；trio 下三入口 `Rejected("direct_write_disabled")`（H35）
 
-**`service/tools.py`** — 只读工具面：`log_search/log_timeline/log_stats/log_window`（`before` 因果上界 + 预算）
+**`service/tools.py`** — 只读工具面（P5）：`log_search/log_timeline/log_stats/log_window`（`before` 因果上界 + 预算）+ `conflicts`（tension 只读列表）
 
-**`service/review.py`** — 冲突台账：`human_reviews/decide_human_review`（幂等）；`conflict_ledger` 合并读模型（H14）
+**`service/review.py`** — 冲突台账：`human_reviews/decide_human_review`（幂等，P4 落地）+ `_review_token` 能力位；`conflict_ledger` 合并读模型（H14 后半，非 P4 范围，P5+）
 
 **`service/budgets.py`** — 预算：`open_budget/close_budget/admit`；`MAIN_WINDOW_CAP`；预算对象不可变
 
-**`service/context.py`** — 调用上下文（现 `investigation_context.py`，19 行）：`InvestigationContext`；`SignalClosed/CausalViolation`
+**`service/context.py`** — 调用上下文（P1 已自 `investigation_context.py` 迁入）：`InvestigationContext`；`SignalClosed/CausalViolation`；`_ORIGINS`（P4 自 server.py 迁入）
+
+> P4→P5 留守归宿（P4 门面保留、P5 迁出）：`dispatch/{worker,effects}` ← `_semantic_model/_apply_semantic/process_semantic_tasks` + `_journal_signal/_signal_payload`；`transport/auth.py` ← `_load_or_create_token`；`transport/bootstrap.py` ← `attach_agent`（legacy 挂载）；`transport/dto.py` ← `_VERDICTS`（P4 暂放 service.py，HTTP 回引）；`operate.py` ← `_SELF_REF_RE/_MAX_PROPOSAL_CHARS/_MISS_SOURCES`（随 propose/report_miss）；门面保留 `_rollback_effect/_kick`（legacy 通知，P6 随 legacy 删）；`ProposalRejected` → P6 `errors.py`。
 
 ### 2.8 `guards/` — 横切校验（新增包）
 
 **`guards/provenance.py`**：`validate_sources/sources_known/ensure_within_before`（存在 + 因果上界内）
-**`guards/grounding.py`**：`content_grounded`（2 汉字/≥4 标识命中/≥8 标识全出现）；`cited_text`
+**`guards/grounding.py`**：`content_grounded`（2 汉字/≥4 标识命中/≥8 标识全出现，P4 落地）；`cited_text` 归 `operate.py`（P5：它是 propose 的 log 联接 helper，非纯函数，不进 guards）
 **`guards/redact.py`**：`redact_secrets` **唯一**实现（legacy 侧 re-export，H5）
-**`guards/bounds.py`**：`validate_request_id/require_batch_size/clamp` + `MAX_*` 常量
+**`guards/bounds.py`**：`validate_request_id` + `capture_fingerprint`（P4 落地）；`require_batch_size/clamp` + `MAX_*` 常量 P5 收敛（现状批量上限是 log_*/propose 内硬编码 50/20/100/200）
 
 ### 2.9 `transport/` — 传输层
 
 **`transport/http.py`**：`Handler(do_GET/do_POST/reply/body)`；`ROUTES` 声明式表（含 trio 禁用表，H35）；`serve`；统一错误映射（H24）
 **`transport/auth.py`**：`load_or_create_token`（0600）；`review_token`；`authorized`（`compare_digest` + 能力位，H36）
-**`transport/dto.py`**：`parse_body`（Content-Type/4MiB）；`opt_int/req_str`；`observe_payload/feedback_payload`；`validate_request_id/capture_fingerprint`
+**`transport/dto.py`**：`parse_body`（Content-Type/4MiB）；`opt_int/req_str`；`observe_payload/feedback_payload`；请求身份复用 `guards/bounds` 的 `validate_request_id/capture_fingerprint`（不重复实现）
 **`transport/bootstrap.py`**：`parse_args/resolve_settings/build_default_service/main/install_signal_handlers`
 **`transport/review_cli.py`**：human CLI（现 `human_review.py`，H37 纠正归类）
 
@@ -266,7 +268,7 @@ tests/
 ├── integration/
 │   ├── test_service_observe.py    原 test_observe_recovery + test_capture_delivery
 │   ├── test_service_recall.py     原 test_late_credit + test_source_authenticity
-│   ├── test_service_review.py     人审闭环（原 test_server 相关用例）
+│   ├── test_service_review.py     人审闭环（原 test_trio_protocol 相关用例）
 │   ├── test_http_contract.py      原 test_server（路由/鉴权/状态码/快照，A7/A8）
 │   ├── test_dispatch_recovery.py  原 test_semantic_recovery + test_durable_tasks（A10）
 │   └── test_legacy_pipeline.py    原 test_ouroboros + legacy 用例
