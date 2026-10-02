@@ -221,9 +221,11 @@ def check_a5() -> None:
 
 
 def check_a6() -> None:
+    # P2 的 policy.py 是空壳（POLICIES 为空）；A6 以 effects.py 落地（P5）为到期信号。
     pol = ROOT / "hybrid_memory" / "dispatch" / "policy.py"
-    if not pol.is_file():
-        report("A6", "PENDING", "dispatch.policy P3/P5 落地")
+    eff = ROOT / "hybrid_memory" / "dispatch" / "effects.py"
+    if not pol.is_file() or not eff.is_file():
+        report("A6", "PENDING", "dispatch.policy/effects P5 落地")
         return
     sys.path.insert(0, str(ROOT))
     try:
