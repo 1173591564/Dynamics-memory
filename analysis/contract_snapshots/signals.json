@@ -1,0 +1,32 @@
+{
+ "fields": {
+  "agent": "NoneType",
+  "candgen_fail": "int",
+  "checkpoint_fault": "bool",
+  "log_units": "int",
+  "miss_counts": {},
+  "missed": "int",
+  "n_dropped": "int",
+  "n_emitted": "int",
+  "open_budgets": [],
+  "proposals": "int",
+  "queued": {},
+  "rejected": "int",
+  "semantic": {
+   "errors": [],
+   "recog_fail": "int",
+   "retrying": "int",
+   "states": []
+  },
+  "t": "int",
+  "tasks": {
+   "operations": "int"
+  },
+  "units": {
+   "done": "int",
+   "failed": "int",
+   "pending": "int",
+   "result_saved": "int"
+  }
+ }
+}

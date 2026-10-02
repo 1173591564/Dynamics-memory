@@ -1,5 +1,7 @@
 # OpenCode 三 Agent 记忆协议（源码交付版）
 
+> 状态：现行 · OpenCode 三 Agent 记忆协议；关键断言由 A2 验到测试。
+
 本版默认启用 `MEMORY_PIPELINE=opencode`。旧的被动 candgen + 进程内调查员可通过 `MEMORY_PIPELINE=legacy` 显式启用；**不要把旧的单轮抽取结果当作三 Agent 验证结果**。OpenCode Hauler、Selector、Reviewer 的定义在 `.opencode/agent/`，sidecar 通过真正的 `opencode run --pure --agent <name> --format json` 调用它们，不在 Python 中仿造语义判断。
 
 ## 安装与运行

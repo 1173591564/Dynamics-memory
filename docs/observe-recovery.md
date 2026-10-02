@@ -1,5 +1,7 @@
 # 第 1 批计划：L0 提交后的逐单元恢复
 
+> 状态：已实现·归档 · 第 1 批（L0 逐单元恢复）已落地，本文保留为决策记录。
+
 ## 已核实的边界（基于 main 642caa6）
 
 `MemoryService.observe` 在 `log.sqlite` 事务中 `append_unit`，随后锁外运行 candgen，最后在服务锁内通过 `engine.report_unit` 将调查任务单独提交到 `tasks.sqlite`，应用候选和 step；正常退出的 `/save` 不是每轮事务的一部分。任何一步崩溃都可能留下只存在于 L0 的单元，重启只对齐游标，不补处理。`tasks.sqlite` 的调查效果/回执 checkpoint 已支持同库事务。语义任务仍是内存队列，不属于本批。

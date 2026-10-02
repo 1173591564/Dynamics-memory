@@ -2,6 +2,8 @@
 
 # Dynamics-memory
 
+> 状态：现行 · 项目入口与行为摘要；关键断言由 analysis/acceptance_check.py（A2）逐条验到测试。
+
 **LLM agent 的有界长期记忆层**
 
 把连续、嘈杂、前后矛盾的项目交互，蒸馏成一个不会堆成"史山"的记忆库。<br/>

@@ -1,5 +1,7 @@
 # 第 3 批计划：插件到 sidecar 的可靠交付与请求幂等
 
+> 状态：已实现·归档 · 第 3 批（可靠交付与幂等）已落地，本文保留为决策记录；行为以 tests/test_capture_delivery.py 为准。
+
 基点是已合并 PR #3 的 `origin/main` `a8471be`（head `36397ed`）。本批只做主 agent 捕获回路的 `/observe` 与 `/feedback`。不改 `agent/` 第三方 runtime，不改 eval 评分，不实现第 4–6 批。
 
 ## 已核实的现状

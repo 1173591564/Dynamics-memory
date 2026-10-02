@@ -1,0 +1,19 @@
+{
+ "feedback_200": 200,
+ "feedback_404": 404,
+ "feedback_409": 409,
+ "feedback_badtype": 400,
+ "health_noauth": 200,
+ "miss_503": 503,
+ "observe_413": 413,
+ "observe_badjson": 400,
+ "recall_missing_q": 400,
+ "resolve_badverdict": 400,
+ "save_401": 401,
+ "save_405": 405,
+ "save_415": 415,
+ "search_k0": 400,
+ "trio_diagnose_403": 403,
+ "trio_propose_403": 403,
+ "trio_resolve_403": 403
+}

@@ -1,5 +1,7 @@
 # TIDE：面向"动力学记忆"的评测框架设计
 
+> 状态：现行 · TIDE 评测框架设计说明（与实现 eval/tide 对读）。
+
 **TIDE** = **T**emporal **I**ntegrity & **D**emand-aware **E**valuation，即"时间完整性与需求感知评测"。
 
 > **定位：** 这是一个与具体系统无关的基准设计，任何带状态、会遗忘、会自我修订的 agent 记忆都可以用它来评：Mem0、Zep/Graphiti、Letta/MemGPT、A-Mem、Dynamics-memory 等。

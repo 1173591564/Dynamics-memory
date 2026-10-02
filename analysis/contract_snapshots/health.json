@@ -1,0 +1,23 @@
+{
+ "fields": {
+  "agent": "bool",
+  "checkpoint_fault": "bool",
+  "corrupt_file": "bool",
+  "log_units": "int",
+  "mems": {
+   "A": "int",
+   "C": "int",
+   "M": "int"
+  },
+  "ok": "bool",
+  "signals": "int",
+  "snapshot": "str",
+  "t": "int",
+  "tensions": "int",
+  "units_pending": "int",
+  "validation": "str"
+ },
+ "literals": {
+  "validation": "unverified"
+ }
+}
