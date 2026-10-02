@@ -559,7 +559,7 @@ def test_inflight_observe_cannot_publish_after_checkpoint_becomes_uncertain(monk
     from concurrent.futures import ThreadPoolExecutor
     import threading
     from hybrid_memory.candgen.base import CandidateGeneration
-    from hybrid_memory.server import triggers
+    from hybrid_memory.core import triggers
     from hybrid_memory.store.tasks import CheckpointConflict
 
     svc = _queued()

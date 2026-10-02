@@ -10,7 +10,7 @@ import pytest
 from hybrid_memory.agent.investigator import Budget, Investigation
 from hybrid_memory.agent.loop import AgentWorker
 from hybrid_memory.core.types import Memory, Tension
-from hybrid_memory.server import SignalClosed
+from hybrid_memory.service.context import SignalClosed
 from test_server import _http, _service
 
 

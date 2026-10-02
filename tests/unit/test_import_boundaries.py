@@ -171,7 +171,6 @@ def test_pipeline_single_reader(repo_root):
     assert not bad, f"多处读 MEMORY_PIPELINE: {bad}"
 
 
-@pytest.mark.xfail(strict=True, reason="P5 消红：server.py 拆成 3 行 shim")
 def test_server_is_thin_shim(repo_root):
     """终态 server.py 是薄 shim（≤10 行，只引 service/transport）。"""
     f = repo_root / PKG / "server.py"

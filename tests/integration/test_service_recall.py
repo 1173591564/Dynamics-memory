@@ -153,7 +153,7 @@ def test_old_checkpoint_without_shadow_pending_loads_empty(tmp_path):
 
 """来源 id 存在不够：正文必须在所引原文里有可核对片段。"""
 from hybrid_memory.candgen.chat import ChatGenerator
-from hybrid_memory.server import _content_grounded
+from hybrid_memory.guards.grounding import content_grounded as _content_grounded
 from test_server import _service
 
 

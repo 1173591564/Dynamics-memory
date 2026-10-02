@@ -18,7 +18,10 @@ import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from hybrid_memory import server as S
+from http.server import ThreadingHTTPServer
+
+from hybrid_memory.transport import bootstrap
+from hybrid_memory.transport import http as H
 
 PAGE = """<!doctype html><html lang="zh"><head><meta charset="utf-8">
 <title>Dynamics-memory sidecar（mock 预览）</title>

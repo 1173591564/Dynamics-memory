@@ -87,7 +87,7 @@ def test_passive_recall_leaves_no_trace():
 
 
 def test_recall_budget_truncates_whole_lines():
-    from hybrid_memory.server import approx_tokens
+    from hybrid_memory.service.recall import approx_tokens
     svc = _service()
     svc.observe("部署在哪", "已改到 B 服务器")
     full = svc.recall("部署在哪", passive=True)
@@ -99,7 +99,7 @@ def test_recall_budget_truncates_whole_lines():
 
 
 def test_approx_tokens_rule():
-    from hybrid_memory.server import approx_tokens
+    from hybrid_memory.service.recall import approx_tokens
     assert approx_tokens("部署在 B 服务器") == 7        # 6 个汉字 + 1 个 ASCII 词
     assert approx_tokens("port=8080, zorvex_7") == 5  # port = 8080 , zorvex_7
 
@@ -392,7 +392,7 @@ def test_log_tools_over_http(tmp_path):
 
 def test_log_tools_signal_budget_and_causal_bound(tmp_path):
     """进程内调查员带 signal_id：因果上界 + 调用次数/回展字符预算。"""
-    from hybrid_memory.server import SignalClosed
+    from hybrid_memory.service.context import SignalClosed
     svc = _service(tmp_path)
     svc.observe("PR #42 合了吗，改的是 proxy/handler.ts", "合了，commit a1b2c3d4e5。")
     svc.observe("handler.ts 里 hermes 是什么", "form agent。")

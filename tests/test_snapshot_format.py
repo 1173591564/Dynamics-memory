@@ -5,7 +5,7 @@ import pickle
 import pytest
 
 from hybrid_memory.core.types import Pool
-from hybrid_memory.server import _RestrictedUnpickler
+from hybrid_memory.store.state import RestrictedUnpickler as _RestrictedUnpickler
 
 
 class _ByName:

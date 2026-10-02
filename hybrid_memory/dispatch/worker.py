@@ -1,0 +1,157 @@
+"""语义后台循环（P5 从 service.py 迁入）：claim→判裁→落库→应用。
+
+run_semantic_tasks 经门面调 svc._semantic_model：测试用实例属性 stub
+模型（_semantic_model = lambda），只有经 svc 属性查找 stub 才生效；
+应用侧 apply_semantic 无外部 stub，直接调本模块函数。
+DispatchWorker 类 P6 随 agents/ 落地（run_agent/validate 需 agent 运行时）。
+"""
+from __future__ import annotations
+
+import copy
+import sys
+from dataclasses import asdict
+
+from ..core import maintenance
+from ..core.types import (ConsolidationSemantics, FeedbackSemantics,
+                          is_visible)
+from ..store.tasks import SEMANTIC_KINDS, WORKFLOW_KINDS, TaskLeaseLost
+from . import effects
+
+
+def semantic_model(svc, row):
+    """只读取判定输入；调用外部语义模型时不持服务锁。"""
+    kind, payload = row["kind"], row["payload"]
+    with svc._lock:
+        svc._ensure_healthy()
+        if kind == "conflict_pending":
+            jobs = []
+            for left, right in payload:
+                a, b = svc.engine.mems.get(left), svc.engine.mems.get(right)
+                if a is not None and b is not None:
+                    a, b = maintenance.follow_chain(svc.engine, a), maintenance.follow_chain(svc.engine, b)
+                args = ((a.belief_id, a.value, b.belief_id, b.value)
+                        if a is not None and b is not None and a.id != b.id else None)
+                tension = svc.engine.tensions.get(tuple(sorted((left, right))))
+                stamp = [tension.last_seen, tension.observations] if tension else None
+                jobs.append((left, right, args, stamp))
+        elif kind == "feedback_pending":
+            texts = payload.get("texts")
+            selected = payload.get("selected")
+            if (not isinstance(texts, list) or not isinstance(selected, list)
+                    or len(texts) != len(selected)):
+                raise ValueError("反馈文本快照与入选记忆不匹配")
+        elif kind == "maintenance_due":
+            sources = [[i, m.last_seen, m.pool.value, m.superseded_by, m.aggregated_into]
+                       for i in payload["ids"] if (m := svc.engine.mems.get(i)) is not None]
+            mems = sorted((copy.deepcopy(m) for i in payload["ids"]
+                           if (m := svc.engine.mems.get(i)) is not None
+                           and is_visible(m) and not m.pending_review and m.kind == "fact"),
+                          key=lambda m: (m.birth, m.id))
+    if kind == "conflict_pending":
+        return {"verdicts": [[a, b, svc.semantics.judge(*args) if args else "pending", stamp]
+                             for a, b, args, stamp in jobs]}
+    if kind == "feedback_pending":
+        fn = svc.semantics.relevant_set if isinstance(svc.semantics, FeedbackSemantics) else None
+        used = fn(texts, payload["question"], payload["answer"]) if fn else [True] * len(texts)
+        failed = used is None or len(used) != len(texts)
+        if failed:
+            used = [True] * len(texts)
+        return {"used": [bool(u) for u in used], "recog_fail": failed}
+    if kind == "maintenance_due":
+        if (not isinstance(svc.semantics, ConsolidationSemantics)
+                or len(mems) < svc.cfg.consolidation_min_items):
+            return {"event": None, "sources": sources}
+        event = svc.semantics.consolidate(mems, row["t"])
+        return {"event": asdict(event) if event is not None else None, "sources": sources}
+    raise ValueError(f"未知语义任务 {kind}")
+
+
+def apply_semantic(svc, row):
+    """事务性应用已落库的模型结果；分支走 EFFECTS 表。"""
+    with svc._lock, svc._rollback_effect():
+        old_ret = None
+        if row["kind"] == "feedback_pending":
+            old_ret = svc._retrievals.get(row["payload"]["retrieval_id"])
+            ret_fields = dict(old_ret.__dict__) if old_ret is not None else None
+        try:
+            def mutate(conn, result):
+                q = svc.engine.signals
+                old_emit = q.on_emit
+
+                def collect(kind, payload, t, key, merge):
+                    if kind in SEMANTIC_KINDS | WORKFLOW_KINDS or kind in ("recall_miss", "extract_due"):
+                        return svc.tasks._enqueue(
+                            conn, kind, effects.signal_payload(svc, kind, payload), t,
+                            key=key, merge=merge, memory_next_id=svc.engine._next_id)
+                    return old_emit(kind, payload, t, key, merge)
+
+                q.on_emit = collect
+                try:
+                    applier = effects.EFFECTS[row["kind"]].apply
+                    if applier is None:
+                        raise ValueError(f"无 dispatch applier: {row['kind']}")
+                    return applier(svc, row, result)
+                finally:
+                    q.on_emit = old_emit
+
+            out, revision = svc.tasks.complete(
+                row["id"], row["token"], mutate,
+                svc._dump_state, svc._checkpoint_revision)
+            svc._checkpoint_revision = revision
+            svc._kick()
+            return out
+        except BaseException:
+            if old_ret is not None:
+                old_ret.__dict__.clear()
+                old_ret.__dict__.update(ret_fields)
+            raise
+
+
+def run_semantic_tasks(svc, limit: int = 8) -> dict:
+    """先持久化模型结果，再事务性应用；队列失败可见且独立于调查员。"""
+    stats = {"judged": 0, "resolved": 0, "credited": 0,
+             "reflected": 0, "thin": 0, "recog_fail": 0, "errors": 0}
+    if not svc._semantic_busy.acquire(blocking=False):
+        return stats
+    try:
+        with svc._lock:
+            stats["thin"] = len(svc.engine.signals.take(("thin_recall",)))
+        svc.tasks.recover_expired(kinds=SEMANTIC_KINDS,
+                                  reset_next_run_at=True)
+        for item in svc.tasks.list_tasks(states=("pending", "ready"), kinds=SEMANTIC_KINDS)[:limit]:
+            row = None
+            try:
+                with svc._lock:
+                    svc._ensure_healthy()
+                    row = svc.tasks.claim(item["id"],
+                                          expected_version=item["version"])
+                if row is None:
+                    continue
+                if row["state"] == "running":
+                    result = svc._semantic_model(row)
+                    if row["kind"] == "conflict_pending":
+                        stats["judged"] += len(result["verdicts"])
+                    svc.tasks.store_result(row["id"], row["token"], result)
+                    with svc._lock:
+                        svc._ensure_healthy()
+                        row = svc.tasks.claim(row["id"],
+                                              expected_version=row["version"])
+                    if row is None:
+                        continue
+                out = apply_semantic(svc, row)
+                for key in ("resolved", "credited", "reflected", "recog_fail"):
+                    stats[key] += out.get(key, 0)
+            except Exception as exc:  # noqa: BLE001
+                stats["errors"] += 1
+                if row is not None:
+                    try:
+                        svc.tasks.retry(row["id"], row["token"], exc)
+                    except TaskLeaseLost:
+                        pass  # 产物已落库或其他领取者获权，不覆盖它
+                print(f"[memory-sidecar] 语义任务 {item['id']} 待重试: "
+                      f"{type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+                if svc._checkpoint_fault:
+                    break
+        return stats
+    finally:
+        svc._semantic_busy.release()
