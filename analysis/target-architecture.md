@@ -1,5 +1,7 @@
 # 目标架构（定稿 · 只抽象，不实现）
 
+> 状态：冻结 · 目标架构终稿（2026-10-02）；改动需 ADR。
+
 > 依据：主干全量通读（`hybrid_memory/` + `eval/` + 插件 + 测试 + 文档，除 vendored `agent/`）。
 > 决策登记：[`decision-register.md`](decision-register.md)（H1–H42，全部已决）。
 > 验收挂钩：[`acceptance-criteria.md`](acceptance-criteria.md)（A1–A10）。

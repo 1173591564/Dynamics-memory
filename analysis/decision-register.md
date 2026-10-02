@@ -1,5 +1,7 @@
 # 决策登记表（Decision Register · H1–H42，全部已决）
 
+> 状态：冻结 · 隐藏决策终稿 H1–H42（2026-10-02）；改动需 ADR。
+
 > 配套：[`target-architecture.md`](target-architecture.md)（目标结构）、
 > [`acceptance-criteria.md`](acceptance-criteria.md)（验收 A1–A10）。
 > 取证基线：主干全量通读（除 vendored `agent/`）；行号证据以本轮 `grep` 为准。

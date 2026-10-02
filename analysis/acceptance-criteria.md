@@ -1,5 +1,7 @@
 # 验收标准（Acceptance Criteria · A1–A10）
 
+> 状态：冻结 · 重构验收终稿（2026-10-02）；改动需 ADR 并同步 analysis/acceptance_check.py。
+
 > 配套：[`target-architecture.md`](target-architecture.md)（目标结构）、
 > [`decision-register.md`](decision-register.md)（H1–H42）。
 > 执行：`analysis/acceptance_check.py`（P0 实现）+ `pytest` + `python -m tide meta` 三门（H41）。
