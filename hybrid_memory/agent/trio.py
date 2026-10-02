@@ -16,7 +16,7 @@ import time
 
 from ..core.types import Pool
 from ..taskstore import TaskLeaseLost, WORKFLOW_KINDS
-from .. import triggers
+from ..core import triggers
 
 
 class OpenCodeRunner:

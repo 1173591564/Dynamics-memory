@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ..candgen.prompt import redact_secrets
+from ..guards.redact import redact_secrets
 from ..core.types import Event
 from ..llm import ZhipuChatError, chat
 from .real import RealChatSemantics, VERDICTS, normalize

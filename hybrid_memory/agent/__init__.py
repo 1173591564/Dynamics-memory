@@ -1,1 +1,1 @@
-"""调查员：契约（investigator）、进程内工具循环（inline）、信号调度（loop）。"""
+"""三 Agent 协议（trio，现行）+ 旧调查员模块的兼容 shim（inline/loop/investigator→legacy，human_review→transport，H1）。"""

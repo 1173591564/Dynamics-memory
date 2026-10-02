@@ -68,18 +68,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import triggers
-from .candgen.base import CandidateGenerator
-from .candgen.chat import ChatGenerator
-from .candgen.prompt import parse_ids, parse_salience, redact_secrets
+from .core import triggers
+from .legacy.candgen import CandidateGenerator
+from .legacy.candgen import ChatGenerator
+from .legacy.prompt import parse_ids, parse_salience
+from .guards.redact import redact_secrets
 from .config import Cfg
 from .core.engine import MemoryEngine
 from .core.types import Event, Memory, Pool, Query, Retrieval, Tension
-from .interaction import InteractionUnit, InteractionWindow
+from .core.interaction import InteractionUnit, InteractionWindow
 from .embed.base import Embedder
 from .llm import chat
-from .investigation_context import (CausalViolation, InvestigationContext,
-                                    SignalClosed)
+from .service.context import (CausalViolation, InvestigationContext,
+                              SignalClosed)
 from .logstore import LogStore, entities_in
 from .semantics import normalize
 from .semantics.llm import LLMSemantics
@@ -1385,7 +1386,7 @@ class MemoryService:
                  signal_id: str | None = None, kind: str = "",
                  usage: dict | None = None,
                  _context: InvestigationContext | None = None, _audit=True) -> dict:
-        from .agent.investigator import MISS_TYPES
+        from .legacy.investigator import MISS_TYPES
         if miss_type not in MISS_TYPES:
             raise ValueError(f"miss_type must be one of {MISS_TYPES}")
         with self._lock:
@@ -2031,15 +2032,18 @@ def main() -> None:
 
     service = build_default_service(args.project, model=args.model, task_capacity=args.task_queue_cap)
     service.trio_mode = os.environ.get("MEMORY_PIPELINE", "opencode").lower() != "legacy"
+    if not service.trio_mode:
+        from .legacy import warn_once  # P1：§2.11 legacy 启动提示（唯一新增行，行为不变）
+        warn_once()
     service.start_unit_recovery()  # 即使 --no-agent，已提交 L0 也必须能恢复
     httpd = serve(service, args.port)
     port = httpd.server_address[1]
 
     agent = None
     if not args.no_agent and not service.trio_mode:
-        from .agent.inline import InlineInvestigator
-        from .agent.investigator import Budget
-        from .agent.loop import AgentWorker
+        from .legacy.inline import InlineInvestigator
+        from .legacy.investigator import Budget
+        from .legacy.loop import AgentWorker
         key = _load_env_key(Path(args.project))
         if not key:
             print("[memory-sidecar] 调查员未启动: ZAI_API_KEY 未设置",

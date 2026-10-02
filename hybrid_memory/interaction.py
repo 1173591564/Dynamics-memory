@@ -1,24 +1,4 @@
-"""对话单元与窗口：candgen 的输入类型（sidecar 每轮 observe 构造一个单元窗口）。"""
-from __future__ import annotations
+"""兼容 shim（H1/P1）：已移至 `hybrid_memory.core.interaction`。冻结消费者（tests）用；产品代码走 canonical 路径。"""
+from hybrid_memory.core.interaction import InteractionUnit, InteractionWindow
 
-from dataclasses import dataclass
-
-
-@dataclass(frozen=True)
-class InteractionUnit:
-    id: int
-    start_time: int
-    end_time: int
-    user_text: str
-    assistant_text: str
-    assistant_turns: int
-
-
-@dataclass(frozen=True)
-class InteractionWindow:
-    id: int
-    start_unit_id: int
-    end_unit_id: int
-    start_time: int
-    end_time: int
-    units: tuple[InteractionUnit, ...]
+__all__ = ["InteractionUnit", "InteractionWindow"]

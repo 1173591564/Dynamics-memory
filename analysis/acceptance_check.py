@@ -62,12 +62,17 @@ def pytest_run(nodes: list[str], timeout: int = 300) -> subprocess.CompletedProc
 
 
 def detect_phase() -> str:
+    # 文件级标记：P1 即创建 service/（context.py）与 transport/（review_cli.py），
+    # 目录存在性不可作 P4/P5 判据。
     h = ROOT / "hybrid_memory"
-    if (h / "agents").is_dir():
+    if (h / "agents" / "opencode.py").is_file():
         return "P6"
-    if (h / "transport").is_dir():
+    if (h / "transport" / "http.py").is_file():
         return "P5"
-    if (h / "service").is_dir():
+    svc = h / "service"
+    if svc.is_dir() and any(p.suffix == ".py" and p.name not in
+                            ("__init__.py", "context.py")
+                            for p in svc.iterdir()):
         return "P4"
     if (ROOT / "tests" / "characterization").is_dir():
         return "P3"

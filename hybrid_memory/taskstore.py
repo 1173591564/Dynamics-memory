@@ -14,7 +14,7 @@ import sqlite3
 import threading
 import time
 
-from .investigation_context import SignalClosed
+from .service.context import SignalClosed
 
 
 SEMANTIC_KINDS = frozenset({"conflict_pending", "feedback_pending", "maintenance_due"})
