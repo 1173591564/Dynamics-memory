@@ -44,7 +44,7 @@ def health_view(service: object) -> dict:
                 "tensions": len(service.engine.tensions),
                 "signals": sum(service.tasks.queued_counts().values()) + len(service.engine.signals),
                 "log_units": service.log.count(),
-                "agent": bool(service.agent or service.trio_worker)}
+                "agent": bool(service.agent or service.dispatch_worker)}
 
 
 def signals_view(service: object) -> dict:

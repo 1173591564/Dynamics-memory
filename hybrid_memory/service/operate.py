@@ -13,6 +13,7 @@ from dataclasses import replace
 
 from ..core.types import Event
 from ..dispatch import effects
+from ..errors import ProposalRejected
 from ..guards.grounding import content_grounded as _content_grounded
 from ..guards.redact import redact_secrets
 from ..legacy.prompt import parse_ids, parse_salience
@@ -33,10 +34,6 @@ _MAX_PROPOSAL_CHARS = 1200
 VERDICTS = {"synonym", "update", "contradiction", "collision", "pending"}
 _MISS_SOURCES = {"recognizer_none", "correction", "agent_tool", "thin",
                  "external"}
-
-
-class ProposalRejected(ValueError):
-    pass
 
 
 def _cited_text(svc, unit_ids) -> str:

@@ -54,7 +54,7 @@ class MemoryService:
         self.token = self._load_or_create_token()
         self.human_review_token = self._review_token()
         self.agent = None                 # legacy AgentWorker，attach_agent 挂上
-        self.trio_worker = None           # OpenCode protocol worker
+        self.dispatch_worker = None       # DispatchWorker，attach_dispatch 挂上
         self.trio_mode = False             # OpenCode 三 agent 工作协议；测试可显式注入
         self._t = 0
         self._unit_id = 0
@@ -162,9 +162,19 @@ class MemoryService:
     def attach_agent(self, agent) -> None:
         self.agent = agent
 
-    def _kick(self) -> None:
+    def attach_dispatch(self, worker) -> None:
+        """挂后台循环（P6 最终形态；worker 只需有 notify()）。"""
+        self.dispatch_worker = worker
+
+    def notify(self) -> None:
+        """唤醒后台循环早跑一轮（legacy agent 与 dispatch 二选一常设）。"""
+        if self.dispatch_worker is not None:
+            self.dispatch_worker.notify()
         if self.agent is not None:
             self.agent.notify()
+
+    def _kick(self) -> None:
+        self.notify()
 
     def _load_or_create_token(self) -> str:
         """HTTP 鉴权令牌：持久化在 state_dir/.memory-token（插件侧同路径

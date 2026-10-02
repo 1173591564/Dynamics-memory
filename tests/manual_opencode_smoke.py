@@ -13,7 +13,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from hybrid_memory.agent.trio import OpenCodeRunner, TrioWorker  # noqa: E402
+from hybrid_memory.agents.opencode import OpenCodeRunner  # noqa: E402
+from hybrid_memory.dispatch.worker import DispatchWorker  # noqa: E402
 from test_ouroboros import _svc  # noqa: E402
 
 
@@ -74,7 +75,7 @@ def main(executable):
         with tempfile.TemporaryDirectory() as tmp:
             svc = _svc(Path(tmp))
             svc.trio_mode = True
-            worker = TrioWorker(svc, OpenCodeRunner(Path(tmp), executable, timeout=50))
+            worker = DispatchWorker(svc, OpenCodeRunner(Path(tmp), executable, timeout=50))
             try:
                 svc.observe('项目统一使用 bun 工具', '好的')
                 for _ in range(4):

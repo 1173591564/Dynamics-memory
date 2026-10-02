@@ -29,6 +29,14 @@ class Fatal(MemoryError):
     """拒绝启动：配置错/版本错/自检不过，不进 HTTP。"""
 
 
+class ProposalRejected(ValueError):
+    """写入校验失败（P6 自 service/operate.py 归位至此）。
+
+    保持 ValueError 基类：trio 重试的 retry_model 整轮重开、HTTP 400 映射
+    都认 ValueError；operate/service/server 逐层 re-export 兼容旧引用。
+    """
+
+
 _STATUS: dict[str, int] = {
     "bad_request": 400,
     "unauthorized": 401,

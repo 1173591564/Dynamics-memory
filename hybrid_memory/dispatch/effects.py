@@ -1,16 +1,21 @@
 """效果落地（P5 落地，H21/H25/I3/I5）：每种持久 kind 的 applier 注册表。
 
 EFFECTS 覆盖 9 种 kind（POLICIES 的 8 种 + 回执 kind 'feedback'）；
-语义类 applier 为真实效果函数，调查/工作流类归外部循环所有
-（legacy-agent/trio，P6 随 agents/ 收敛），此处登记归属不断言实现。
+语义/工作流类 applier 为真实效果函数（工作流类 P6 随 agents/ 收敛，
+validate 进 agents/*，mutate 留本模块）；调查类归外部循环所有
+（legacy-agent），此处登记归属不断言实现。
 effect_transaction 是效果 + checkpoint 同事务的唯一入口（I5）。
 """
 from __future__ import annotations
 
+import json
+import time
 from dataclasses import dataclass
 from typing import Callable
 
-from ..core.types import Event, is_visible
+from ..agents import hauler, reviewer, selector
+from ..core import triggers
+from ..core.types import Event, Pool, is_visible
 from ..logstore import entities_in
 from ..store.tasks import SEMANTIC_KINDS, WORKFLOW_KINDS
 
@@ -18,7 +23,7 @@ from ..store.tasks import SEMANTIC_KINDS, WORKFLOW_KINDS
 @dataclass(frozen=True)
 class Applier:
     """一种 kind 的消费者登记：dispatch 自持 applier 函数，
-    外部循环（legacy-agent/trio/service）只登记归属。"""
+    外部循环（legacy-agent/service）只登记归属；工作流类 P6 起归 dispatch。"""
     kind: str
     owner: str
     apply: Callable | None = None
@@ -169,15 +174,134 @@ def apply_maintenance(svc, row, result) -> dict:
     return {"reflected": 1}
 
 
+def send_workflow(conn, svc, kind, uid, candidates, parent):
+    """工作流交接：下发下一角色任务；空候选不建任务（原 TrioWorker._send）。"""
+    if not candidates:
+        return
+    svc.tasks._enqueue(conn, kind,
+        {"unit_id": uid, "candidates": candidates, "parent_task": parent},
+        svc._t, key=f"{kind}:{parent}", memory_next_id=svc.engine._next_id)
+
+
+def apply_hauler(svc, row, output, conn) -> dict:
+    """hauler_due applier：校验候选 → 下发 selector_due。"""
+    candidates = hauler.validate(output, row, svc)
+    send_workflow(conn, svc, "selector_due", row["payload"]["unit_id"],
+                  candidates, row["id"])
+    return {"candidates": len(candidates)}
+
+
+def apply_selector(svc, row, output, conn) -> dict:
+    """selector_due applier：预检 → 逐决定校验+写入（同一事务，全有或全无）。"""
+    selector.validate(output, row, svc)
+    decisions = output.get("decisions")
+    candidates = row["payload"]["candidates"]
+    if (not isinstance(decisions, list) or len(decisions) != len(candidates)
+            or sorted(d.get("candidate_index") for d in decisions if isinstance(d, dict))
+            != list(range(len(candidates)))):
+        raise ValueError("Selector must return exactly one decision per candidate")
+    uid = row["payload"]["unit_id"]
+    outcomes = []
+    for d in decisions:
+        idx, action = d["candidate_index"], d.get("action")
+        c = candidates[idx]
+        if action not in {"CREATE", "EXIST", "UPDATE", "CONFLICT", "REJECT"}:
+            raise ValueError("invalid Selector action")
+        if action == "REJECT":
+            outcomes.append({"index": idx, "action": action})
+            continue
+        # The selector cannot widen a source boundary established by its parent.
+        hauler.validate_sources(svc, [c], uid)
+        # Treat even model-produced recommendations as untrusted input.
+        ev, _ = svc._validate_proposal(c, None)
+        ev.origin = "agent"
+        target = d.get("target_id")
+        old = svc.engine.mems.get(target) if type(target) is int else None
+        # Exact re-extraction from overlapping windows cannot yield a second
+        # identical memory even when the model misclassifies it as CREATE.
+        if action == "CREATE":
+            same = next((m for m in svc.engine.mems.values()
+                         if m.superseded_by is None and m.aggregated_into is None
+                         and m.text == ev.text), None)
+            if same is not None:
+                action, old = "EXIST", same
+        if action != "CREATE" and (old is None or old.superseded_by is not None
+                                   or old.aggregated_into is not None):
+            raise ValueError("Selector target is retired or unknown")
+        if action == "EXIST":
+            new_sources = set(ev.src) - set(old.src)
+            old.src = old.src | frozenset(ev.src)
+            old.evid += len(new_sources)
+            if old.pool is Pool.ARCHIVE:
+                old.pool = Pool.CANDIDATE if svc.cfg.two_pool else Pool.MEMORY
+            old.last_seen = max(old.last_seen, svc._t)
+            outcomes.append({"index": idx, "action": action, "target_id": old.id,
+                             "new_evidence": len(new_sources)})
+            continue
+        if action == "UPDATE":
+            # Recent != correct. Without an explicit user correction, refer
+            # incompatible statements to a human rather than choosing newest.
+            confirmed = bool(d.get("verified_correction")) and any(
+                triggers.is_correction(svc.log.get(i)["user_text"])
+                for i in ev.src if svc.log.get(i))
+            if not confirmed:
+                action = "CONFLICT"
+        if action == "CONFLICT":
+            conn.execute("INSERT OR IGNORE INTO human_reviews"
+                         "(source_task,target_id,candidate,reason,created_at) VALUES(?,?,?,?,?)",
+                         (row["id"], old.id, json.dumps(c, ensure_ascii=False, sort_keys=True),
+                          str(d.get("reason", "conflicting evidence"))[:500], time.time()))
+            old.pending_review = True
+            outcomes.append({"index": idx, "action": action, "target_id": old.id})
+            continue
+        ids = svc.engine.propose([ev], svc._t)
+        if action == "UPDATE" and ids:
+            svc.engine.add_tension(ids[0], old.id, svc._t)
+            svc.engine.submit_verdicts([(ids[0], old.id, "update")], svc._t)
+        outcomes.append({"index": idx, "action": action if ids else "EXIST", "new_ids": ids})
+    return {"outcomes": outcomes}
+
+
+def apply_reviewer(svc, row, output, conn) -> dict:
+    """reviewer_due applier：预检 → 规则反馈/新规则/修复交接写入（同一事务）。"""
+    bundle = reviewer.validate(output, row, svc)
+    for rr in bundle["rule_reviews"]:
+        conn.execute("INSERT INTO agent_rule_feedback"
+            "(reviewer_task,rule_id,assessment,reason,at) VALUES(?,?,?,?,?)",
+            (row["id"], rr["rule_id"], rr["assessment"],
+             rr["reason"].strip(), time.time()))
+        if rr["assessment"] == "ineffective":
+            updated = conn.execute("UPDATE agent_rules SET enabled=0 "
+                "WHERE id=? AND enabled=1", (rr["rule_id"],))
+            if updated.rowcount:
+                conn.execute("INSERT INTO agent_rule_audit(rule_id,action,actor,at) "
+                    "VALUES(?,'disable','reviewer',?)",
+                    (rr["rule_id"], time.time()))
+    for r in bundle["rules"]:
+        scope = r.get("scope", "project")
+        cur = conn.execute("INSERT OR IGNORE INTO agent_rules"
+                     "(source_task,target,instruction,scope,created_at) "
+                     "VALUES(?,?,?,?,?)", (row["id"], r["target"],
+                         r["instruction"].strip(), scope, time.time()))
+        if cur.rowcount:
+            rid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.execute("INSERT INTO agent_rule_audit(rule_id,action,actor,at) "
+                         "VALUES(?,'create','reviewer',?)", (rid, time.time()))
+    send_workflow(conn, svc, "selector_due", row["payload"]["unit_id"],
+                  bundle["repair_candidates"], row["id"])
+    return {"rules": len(bundle["rules"]),
+            "repair_candidates": len(bundle["repair_candidates"])}
+
+
 EFFECTS: dict[str, Applier] = {
     "conflict_pending": Applier("conflict_pending", "dispatch", apply_conflict),
     "feedback_pending": Applier("feedback_pending", "dispatch", apply_feedback),
     "maintenance_due": Applier("maintenance_due", "dispatch", apply_maintenance),
     "recall_miss": Applier("recall_miss", "legacy-agent"),
     "extract_due": Applier("extract_due", "legacy-agent"),
-    "hauler_due": Applier("hauler_due", "trio"),
-    "selector_due": Applier("selector_due", "trio"),
-    "reviewer_due": Applier("reviewer_due", "trio"),
+    "hauler_due": Applier("hauler_due", "dispatch", apply_hauler),
+    "selector_due": Applier("selector_due", "dispatch", apply_selector),
+    "reviewer_due": Applier("reviewer_due", "dispatch", apply_reviewer),
     # 'feedback' 是回执 kind（不进任务表）：消费者是 service/feedback API。
     "feedback": Applier("feedback", "service"),
 }

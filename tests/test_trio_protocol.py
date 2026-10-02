@@ -3,7 +3,8 @@ import json
 
 import pytest
 
-from hybrid_memory.agent.trio import TrioWorker, OpenCodeRunner
+from hybrid_memory.agents.opencode import OpenCodeRunner
+from hybrid_memory.dispatch.worker import DispatchWorker
 from test_ouroboros import _svc
 
 
@@ -29,7 +30,7 @@ def test_hauler_selector_create_exist_and_overlapping_window(tmp_path):
             return {"decisions": [{"candidate_index": 0, "action": "EXIST", "target_id": 0}]}
         return {"decisions": [{"candidate_index": 0, "action": "CREATE"}]}
 
-    worker = TrioWorker(svc, fake)
+    worker = DispatchWorker(svc, fake)
     try:
         svc.observe("以后统一用 bun", "好的")
         assert len(svc.engine.mems) == 0  # no implicit single-turn candgen write
@@ -69,7 +70,7 @@ def test_reviewer_writes_rules_for_later_agent_inputs(tmp_path):
             return {"candidates": []}
         raise AssertionError(name)
 
-    worker = TrioWorker(svc, fake)
+    worker = DispatchWorker(svc, fake)
     try:
         svc.observe("这个事情我之前明明讲过", "抱歉")
         drain(worker)
@@ -91,12 +92,12 @@ def test_opencode_runner_parses_json_stream_and_rejects_missing_cli(tmp_path, mo
         returncode = 0
         stderr = ""
         stdout = json.dumps({"type": "text", "part": {"text": '{"candidates":[]}'}}) + "\n"
-    monkeypatch.setattr("hybrid_memory.agent.trio.shutil.which", lambda x: x)
+    monkeypatch.setattr("hybrid_memory.agents.opencode.shutil.which", lambda x: x)
     def run(cmd, **kwargs):
         assert cmd[0:5] == ["definitely-not-installed-opencode", "run", "--pure", "--agent", "hauler"]
         assert kwargs["env"]["DYNAMICS_MEMORY_INTERNAL_AGENT"] == "1"
         return Result()
-    monkeypatch.setattr("hybrid_memory.agent.trio.subprocess.run", run)
+    monkeypatch.setattr("hybrid_memory.agents.opencode.subprocess.run", run)
     assert runner("hauler", {}) == {"candidates": []}
 
 
@@ -121,11 +122,11 @@ def test_stored_agent_result_survives_restart_without_rerunning_model(tmp_path):
     fresh = _svc(tmp_path)
     fresh.trio_mode = True
     try:
-        drain(TrioWorker(fresh, fake))
+        drain(DispatchWorker(fresh, fake))
         assert calls == ["hauler", "selector"]  # stored Hauler output was replayed
         assert fresh.engine.mems[0].text == "项目统一使用 bun 工具"
         assert len(fresh.tasks.list_tasks(states=("done",), kinds={"hauler_due", "selector_due"})) == 2
-        drain(TrioWorker(fresh, fake))
+        drain(DispatchWorker(fresh, fake))
         assert len(fresh.engine.mems) == 1
     finally:
         fresh.tasks.close()
@@ -142,7 +143,7 @@ def test_bad_reviewer_source_does_not_install_rule_or_handoff(tmp_path):
         return {"rules": [{"target": "selector", "instruction": "unsafe instruction"}],
                 "repair_candidates": [{"text": "fake", "source_unit_ids": [999]}]}
     try:
-        TrioWorker(svc, fake).process_once()
+        DispatchWorker(svc, fake).process_once()
         assert svc.tasks.rules_for("selector") == []
         assert not svc.tasks.list_tasks(states=("pending",), kinds={"selector_due"})
         assert any(x["kind"] == "reviewer_due" and x["state"] == "pending"
@@ -161,10 +162,10 @@ def test_exact_duplicate_create_cannot_inflate_overlapping_source(tmp_path):
         return {"decisions": [{"candidate_index": 0, "action": "CREATE"}]}
     try:
         svc.observe("项目统一使用 bun 工具", "好的")
-        drain(TrioWorker(svc, fake))
+        drain(DispatchWorker(svc, fake))
         before = svc.engine.mems[0].evid
         svc.observe("还是上面的决定", "好的")
-        drain(TrioWorker(svc, fake))
+        drain(DispatchWorker(svc, fake))
         assert len(svc.engine.mems) == 1
         assert svc.engine.mems[0].evid == before
     finally:
@@ -193,11 +194,11 @@ def test_reviewer_sees_committed_handoffs_and_captured_prior_retrieval(tmp_path)
 
     try:
         svc.observe("端口现在是 8080", "收到")
-        drain(TrioWorker(svc, fake))
+        drain(DispatchWorker(svc, fake))
         ret = svc.recall("端口现在是 8080")
         svc.feedback(ret["retrieval_id"], "端口现在是 8080", "8080")
         svc.observe("这个端口我之前明明讲过", "抱歉")
-        drain(TrioWorker(svc, fake))
+        drain(DispatchWorker(svc, fake))
         assert len(seen) == 1
         review = seen[0]
         assert review["previous_retrieval"]["previous_user"] == "端口现在是 8080"
@@ -226,20 +227,20 @@ def test_scoped_rule_usage_is_audited_and_human_can_disable_it(tmp_path):
 
     try:
         svc.observe("我之前明明讲过端口 8080", "抱歉")
-        drain(TrioWorker(svc, fake))
+        drain(DispatchWorker(svc, fake))
         rid = svc.tasks.rule_report()[0]["id"]
         assert svc.tasks.rule_report()[0]["uses"] == 0
         svc.observe("端口 8080", "好的")
-        drain(TrioWorker(svc, fake))
+        drain(DispatchWorker(svc, fake))
         assert [r["id"] for r in seen[-1]["rules"]] == [rid]
         svc.observe("这是别的事情", "好的")
-        drain(TrioWorker(svc, fake))
+        drain(DispatchWorker(svc, fake))
         assert seen[-1]["rules"] == []  # overlap does not broaden a rule's scope
         assert svc.tasks.rule_report()[0]["uses"] == 1
         assert svc.tasks.disable_rule(rid)
         assert not svc.tasks.disable_rule(rid)
         svc.observe("端口 8080", "好的")
-        drain(TrioWorker(svc, fake))
+        drain(DispatchWorker(svc, fake))
         assert seen[-1]["rules"] == []
         assert svc.tasks.rule_report()[0]["enabled"] == 0
     finally:
@@ -262,7 +263,7 @@ def test_reviewer_does_not_confuse_late_hauler_completion_with_prior_decision(tm
     try:
         svc.observe("端口现在是 8080", "好")  # Hauler not run yet
         svc.observe("这个端口我之前明明讲过", "抱歉")
-        drain(TrioWorker(svc, fake))
+        drain(DispatchWorker(svc, fake))
         first = next(x for x in seen[0]["handoffs"] if x["unit_id"] == 0)
         assert first["state"] == "pending_at_complaint"
         assert "agent_output" not in first
@@ -339,13 +340,13 @@ def test_reviewer_can_assess_used_rule_and_atomically_roll_it_back(tmp_path):
                     "reason": "same omission after applying this rule"}]}
     try:
         svc.observe("我之前明明讲过端口8080", "好")
-        drain(TrioWorker(svc, fake))
+        drain(DispatchWorker(svc, fake))
         rule = svc.tasks.rule_report()[0]
         svc.observe("端口8080", "收到")
-        drain(TrioWorker(svc, fake))
+        drain(DispatchWorker(svc, fake))
         assert svc.tasks.rule_report()[0]["uses"] == 1
         svc.observe("这个端口我之前明明讲过", "抱歉")
-        drain(TrioWorker(svc, fake))
+        drain(DispatchWorker(svc, fake))
         assert svc.tasks.rule_report()[0]["enabled"] == 0
         with svc.tasks._lock:
             assert svc.tasks._conn.execute(
@@ -367,7 +368,7 @@ def test_reviewer_cannot_disable_rule_not_observed_in_handoff(tmp_path):
                 "rule_reviews": [{"rule_id": 123, "assessment": "ineffective",
                                   "reason": "not observed"}]}
     try:
-        TrioWorker(svc, fake).process_once()
+        DispatchWorker(svc, fake).process_once()
         assert not svc.tasks.rule_report()
         assert svc.tasks.list_tasks(kinds={"reviewer_due"})[0]["state"] == "pending"
     finally:
@@ -388,13 +389,20 @@ def test_archived_equivalent_is_reactivated_not_duplicated(tmp_path):
         return {"decisions": [{"candidate_index": 0, "action": "CREATE"}]}
     try:
         svc.observe("项目统一使用 bun 工具", "好的")
-        drain(TrioWorker(svc, fake))
+        drain(DispatchWorker(svc, fake))
         svc.engine.mems[0].pool = Pool.ARCHIVE
         svc.observe("项目统一使用 bun 工具", "好的")
-        drain(TrioWorker(svc, fake))
+        drain(DispatchWorker(svc, fake))
         assert len(svc.engine.mems) == 1
         assert svc.engine.mems[0].pool is not Pool.ARCHIVE
         assert svc.engine.mems[0].src == {0, 1}
     finally:
         svc.tasks.close()
         svc.log.close()
+
+
+def test_workflow_attempt_bound_matches_policy():
+    """H8 锁死：agents 侧 MAX_ATTEMPTS 与 KindPolicy 同值。"""
+    from hybrid_memory.agents.protocol import MAX_ATTEMPTS
+    from hybrid_memory.dispatch.policy import POLICIES
+    assert MAX_ATTEMPTS == POLICIES["hauler_due"].max_attempts == 5

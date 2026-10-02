@@ -67,31 +67,29 @@ Dynamics-memory/
 ---
 
 ## 2. 逐文件接口（类 / 函数 / 职责；只抽象）
+*注记（P6 后审计）：下划线开头的私有 helper（`_x`）为实现细节，不逐一列名；公开函数/类与实现一一对应，差异处以「P6 后」收敛。*
 
 ### 2.1 顶层
 
-**`hybrid_memory/__init__.py`** — 对外极小面
-- `__version__`：包版本（与 `pyproject.toml` 同步）
-- `from .service.service import MemoryService`、`from .config import Cfg, Settings`
-- 不导出 store/dispatch 细节；`build_default_service` 走 `transport.bootstrap`（延迟导入）
+**`hybrid_memory/__init__.py`** — 对外极小面（P6 后审计落地：`MemoryService/Cfg/Settings` + 延迟 `build_default_service`，不导出 store/dispatch 细节；`__version__` 随 `pyproject.toml`，P6 后）
 
-**`hybrid_memory/server.py`** — 兼容入口 shim（3 行）
+**`hybrid_memory/server.py`** — 兼容入口 shim（7 行：docstring + 3 引用 + `__main__` 守卫）
 - `main()`：`from .transport.bootstrap import main`；`python -m hybrid_memory.server` 契约不变（H1/H39）
 
 **`hybrid_memory/config.py`** — 配置唯一真源
 - `Cfg`（dataclass）：引擎动力学与机制开关；**新增** `cap_c`（默认 200）、`cap_a`（默认 2000，H11/H12）
 - `Settings`（dataclass）：进程级——`project/port/model/task_capacity/pipeline/agent_*/state_dir`
 - `resolve_pipeline(env) -> "opencode"|"legacy"`：唯一读 `MEMORY_PIPELINE` 的地方
-- `resolve_settings(argv, env) -> Settings`：`CLI > env > 默认`，唯一解析点；import 时不求值
+- `resolve_settings(argv, env) -> Settings`：`CLI > env > 默认`；import 时不求值（bootstrap 未接线：main 自持 argparse 与之数值一致，接线 P6 后——「唯一」待兑现）
 - `load_env_key(project) -> str`：`.env` 读取（现 `server._load_env_key` 迁入）
 
 **`hybrid_memory/errors.py`** — 错误分类（新增，H24）
-- `MemoryError` 基类；`Rejected(code, message)`（4xx）；`Degraded(code, detail)`（外显降级）；`Fatal(code, detail)`（拒绝启动）
+- `MemoryError(code, message, detail)` 基类（同一构造，三子类不覆写）；`Rejected`（4xx 调用方错）；`Degraded`（外显降级）；`Fatal`（拒绝启动）；`ProposalRejected(ValueError)`（P6 自 operate 归位，保 HTTP-400/重试语义）
 - `http_status(code) -> int`：错误码 → 状态码唯一映射表
 
 **`hybrid_memory/telemetry.py`** — 观测面（新增）
 - `Counters`：`n_missed/n_rejected/n_ungrounded/n_candgen_fail/n_dropped/n_shadow_dropped/n_pool_truncated/n_dead_tasks`
-- `health_view(service) -> dict`：现字段集冻结（只许加字段，A7）+ `semantics` 健康段（H27）
+- `health_view(service) -> dict`：现字段集冻结（只许加字段，A7）；`semantics` 健康段（H27）未接——provider.py 不在，P6 后
 - `signals_view(service) -> dict`：现字段集冻结
 - `log_event(kind, **fields)`：JSON 一行到 stderr；`warn_once(key, message)`：限频告警
 
@@ -100,7 +98,7 @@ Dynamics-memory/
 **`core/types.py`** — 数据类型与契约
 - `Pool(Enum)`：`CANDIDATE/MEMORY/ARCHIVE`（含定值序列化）；`Memory` 全字段（**新增** `archived_at`，H12）
 - `Event`、`Query`、`Tension`、`Retrieval`（字段集冻结，增删需 ADR）
-- `is_visible(m)`：唯一"可服务"判定
+- `is_visible(m)`：唯一"可服务"判定；另有 `cosine` + `Embedder(Protocol)`（§2.10 愿望在 `embed/base.py`，实际落 core/types，P6 后定归属）
 - `MemorySemantics` / `FeedbackSemantics` / `ConsolidationSemantics`（Protocol）
 
 **`core/interaction.py`** — 抽取输入类型（现文件原样迁入，24 行）
@@ -110,7 +108,7 @@ Dynamics-memory/
 - `is_correction/is_dissatisfaction/scan_unit` + 正则常量 + `LONG_TURN_CHARS`
 - 语义：纯调度提示，永不作为事实证据；改正则需跑安全测试（H18）
 
-**`core/dynamics.py`** — 动力学（新增，从 engine/maintenance 抽出）
+**`core/dynamics.py`** — 动力学（P4 落地 H11/H12 三件；以下衰减/入账/滞回四组 P6 后，行为在 engine/maintenance 内联）
 - `decay(m, t, cfg)`：`V ← V·e^(−λΔt)` + 保留地板
 - `credit(m, weight)`：useful/shadow 命中入账
 - `promote/demote/archive(m, cfg)`：滞回与归档判定
@@ -124,13 +122,13 @@ Dynamics-memory/
 **`core/retrieval.py`** — 检索
 - `lexical_scores(texts, query)`、`_prior(pool, cfg)`
 - `run_retrieve(eng, query, t, budget_tokens, passive)`：质量门 θ → 压制对 → RRF 融合 → π 先验 → 预算截断
-- `suppression_pairs(...)`：过相似未入选对 → 张力候选
+- `suppression_pairs(...)`：过相似未入选对 → 张力候选（P6 后：压制标记在 `run_retrieve` 内联，独立函数+张力发射未抽）
 
-**`core/tension.py`** — 张力台账（新增，从 maintenance/engine 收拢）
+**`core/tension.py`** — 张力台账（P6 后：文件不存在；裁决后果散在 `engine.submit_verdicts` + `maintenance.apply_resolution/follow_chain`）
 - `TensionBook.register/pending/emit_due/apply_verdict/aggregate/follow_chain`
 - 四类裁决后果：synonym→merge、update→新替旧、contradiction→聚合、collision→都留
 
-**`core/maintenance.py`** — 维护回路：`run_maintenance(eng, t)`（老化→滞回→归档→shadow 结算→冲突发射）；`settle_shadow(eng, t)`（H32）
+**`core/maintenance.py`** — 维护回路：`run_maintenance(eng, t)`（老化→滞回→归档→shadow 结算→冲突发射）+ `apply_resolution/follow_chain`（裁决执行/链跟随，tension.py 未建前的实际家）；`settle_shadow` 现为 `engine._settle_shadow` 私有方法（H32，P6 后定归属）
 
 **`core/consolidation.py`** — 巩固回路：`maybe_consolidate(eng, t)`；`admit_reflection(eng, event, chosen, t)`
 
@@ -138,77 +136,77 @@ Dynamics-memory/
 
 **`core/signals.py`** — 有界信号队列：`Signal`、`SignalQueue(cap, on_emit)`；`emit` 语义：`on_emit` 返回非 None = 已持久交接
 
-**`core/engine.py`** — 引擎门面（唯一对外 API）：`observe/retrieve/step/feedback/propose/add_reflection/submit_verdicts/submit_relevance/credit_shown/report_miss/report_unit/miss_key/add_tension/pool_sizes/drain_signals`
+**`core/engine.py`** — 引擎门面（唯一对外 API）：`observe/retrieve/step/feedback/propose/add_reflection/submit_verdicts/submit_relevance/credit_shown/report_miss/report_unit/miss_key/add_tension/pool_sizes/drain_signals/next_id`（+ `_settle_shadow` 等私有 helper，见 §2 注记）
 
 ### 2.3 `store/` — 持久化层
 
-**`store/schema.py`** — 建表与迁移（新增，H10）
-- `SCHEMA_VERSION`、`open_db(path)`（WAL、busy_timeout）、`ensure_schema(conn)`、`migrate(conn)`；高版本 → `Fatal`
+**`store/schema.py`** — 建表与迁移（H10；三函数全是未通电 stub，零调用：TaskStore/LogStore 自持 `CREATE TABLE`；收敛 P6 后）
+- `SCHEMA_VERSION`（=1，唯一实例化常量）；`open_db/ensure_schema/migrate` stub（高版本 → `Fatal` 待兑现）
 
-**`store/evidence.py`** — L0 证据库（现 `logstore.py`，642 行）
-- `append_unit/add_unit`（只追加；同 id 异内容 → `Rejected`）；`get/count/exists/recent_ids/unit_context/next_position`
-- `search`（FTS5-trigram + 向量 RRF k=60 + LIKE 兜底）；`timeline/mention_counts/stats`
+**`store/evidence.py`** — L0 证据库（搬迁未发生：实际为顶层 `logstore.py`；以下 API 以实际为准）
+- `append_unit`（DB 分配 id 只追加）/`add_unit`（导入指定 id；同 id 异内容 → `ValueError`，非 `Rejected`，P6 后定）；`get/count/exists/recent_ids/unit_context/next_position`
+- `search`（FTS5-trigram + 向量 RRF k=60 + LIKE 兜底）；`timeline/mention_counts/stats`；模块另有 `entities_in`（实体抽取）
 - `window(unit_ids, max_chars, before)`：**唯一**全文回展通道，返回 `truncated`
 - `work/pending_units/work_stats/save_work_result/fail_work/finish_work`：逐单元恢复；`capture_receipt`
 - `retention_report()`：体积/最旧单元（H13 只告警）；`close()`
 
 **`store/tasks.py`** — 任务库（现 `taskstore.py`，613 行，H7 合并）
-- `transaction()`（`BEGIN IMMEDIATE`）；`enqueue`（`(kind,key)` 去重合并；满 → `Degraded("queue_full")`，H9）
+- `transaction()`（`BEGIN IMMEDIATE`）；`enqueue`（`(kind,key)` 去重合并；满 → `TaskQueueFull`，`Degraded("queue_full")` 化（H9）P6 后；HTTP 映射 503 等价）
 - `checkpoint()/save_checkpoint(state)`：revision CAS，唯一权威状态（H6）
-- `claim/store_result/retry/finish`：单状态机 + `KindPolicy` 参数
-- `unit_receipt/remember_capture/apply_captured_effect/apply_operation`
-- `rule_snapshot/rule_report/disable_rule/rules_for`；`workflow_trace`（18 条/24KB，超限 `Degraded`）
+- `claim/store_result/retry/finish`：单状态机 + `KindPolicy` 参数；另有 `get/list_tasks/recover_expired/check_owned`（查询/认领）与 `encode`（JSON 编码）
+- `unit_receipt/remember_capture/read_capture/apply_unit/apply_effect/apply_captured_effect/apply_operation`（回执/效果）；`runs_today/skip_recent/memory_next_id`（配额/游标）
+- `rule_snapshot/rule_report/disable_rule/rules_for`；`workflow_trace`（18 条/24KB，超限 → `ValueError`，`Degraded` 化 P6 后）
 - `pending_reviews/queued_counts/stats/semantic_stats/close`
 
 **`store/state.py`** — 快照（从 server 抽出）
 - `STATE_KEYS` / `MEMORY_FIELD_DEFAULTS`；`RestrictedUnpickler`（RCE 防护，保留）
-- `dump_state/load_state`；`is_corrupt/quarantine`（坏快照隔离，`snapshot=quarantined`）
+- `dump_state/load_state`；`is_corrupt/quarantine` 未单列成函数（§2.3 愿望）：实际为 `lifecycle.corrupt_file_exists` + `recover_or_init` 内联隔离（`snapshot=quarantined`，state.py 自注已承认），P6 后定
 
 ### 2.4 `dispatch/` — 派发层（唯一后台循环）
 
 **`dispatch/policy.py`** — 策略表（新增，H7/H8/H25）
 - `KindPolicy(kinds, claim_from, daily_cap, max_attempts, on_exhausted, lease_s, backoff)`；`POLICIES`；`policy_for(kind)`；`assert_consumers(appliers)` 启动自检
 
-**`dispatch/worker.py`** — 语义工作函数（P5 落地函数形态；`DispatchWorker` 类 + `start/stop/notify` 后台循环是 P6 形态，随 agents/ 落地）：`run_semantic_tasks/semantic_model/apply_semantic`
-- `run_semantic_tasks`：`thin 回收 → recover_expired → list_tasks → claim → semantic_model（锁外） → store_result → apply_semantic`（P6 `process_once` 收敛为 `recover_expired → list_tasks → claim → run_agent → validate → apply → finish`）
+**`dispatch/worker.py`**（P6 落地）：`DispatchWorker(service, runner, policies, idle_s)` + `start/stop/notify/process_once(limit)/stats`，只驱动工作流 kind（TrioWorker 继任）；语义 kind 仍走函数形态 `run_semantic_tasks/semantic_model/apply_semantic`（独立驱动，合并不在 P6）
+- `process_once`：`recover_expired → list_tasks → claim → run_agent → store_result → claim → EFFECTS-apply → complete`（认领状态/重试上限来自 policies，默认值与旧硬编码一致；`finish` 即 `complete` 同事务提交）
 
-**`dispatch/effects.py`** — 效果落地（新增，H21）
-- `Applier` 类型；`EFFECTS` 表（9 种 kind 全覆盖）；`effect_transaction(service, mutate)` 唯一入口
-- 每个 applier：`validate → mutate → checkpoint`，失败一律 `Degraded` 外显
+**`dispatch/effects.py`** — 效果落地（P5 落地表结构，P6 收敛工作流类，H21）
+- `Applier(kind/owner/apply)`；`EFFECTS` 表 9 种全覆盖（语义/工作流归 dispatch，调查类归 legacy-agent，回执 kind 归 service）；`effect_transaction(svc, mutate, capture)` 唯一入口（I5）
+- 工作流 applier = agents.validate 预检 + mutate（`apply_hauler/apply_selector/apply_reviewer` + `send_workflow` 交接，conn 随传）；失败抛错进重试/dead，不走 `Degraded` 外显（H21 的 Degraded 化不在 P6）
 
-### 2.5 `agents/` — 抽取协议（现 `agent/trio.py` 327 行拆分，H4）
+### 2.5 `agents/` — 抽取协议（P6 落地：`agent/trio.py` 329 行拆分，源文件删除，H4）
 
-**`agents/protocol.py`** — 运行器契约：`AgentRunner(Protocol)`（`run/available`）；`AgentTimeout/AgentProtocolError`；`MAX_ATTEMPTS=5`；返回已解析 JSON 对象，否则协议错误（H15）
+**`agents/protocol.py`**（P6 落地）：`AgentRunner(Protocol)`（`run/available`）；`AgentTimeout`（CLI 超时）/`AgentProtocolError(ValueError)`（不可解析/非对象，可重试整轮）；`MAX_ATTEMPTS=5`（H8，与 KindPolicy 同值，H8-test 锁死）；返回已解析 JSON 对象，否则协议错误（H15）
 
-**`agents/opencode.py`** — 唯一 OpenCode 实现：`OpenCodeRunner(project, executable, timeout)`；`opencode run --pure --agent <name> --format json`；cwd=仓库根；`DYNAMICS_MEMORY_INTERNAL_AGENT=1` 防递归；stdin 关闭；`_event/_parse_text`
+**`agents/opencode.py`**（P6 落地）：`OpenCodeRunner(project, executable, timeout)`；`run` 主调 + `available` 探活 + `__call__` 兼容委托（fake 同形）；`opencode run --pure --agent <name> --format json`；cwd=仓库根；`DYNAMICS_MEMORY_INTERNAL_AGENT=1` 防递归；stdin 关闭；`_event/_parse_text`（解析失败全归 `AgentProtocolError`；CLI 缺失/非零退出/agent 未加载沿用 `RuntimeError`）
 
-**`agents/payload.py`** — 任务 → 载荷：`build_payload(kind, service, row)`（窗口 12k，超限 `Degraded` 不截断，H16）；`memory_snapshot`（500 上限确定性 id 序，H17）；`rules_for`（作用域规则注入）
+**`agents/payload.py`**（P6 落地）：`build_payload(kind, service, row)`（窗口 12k，超限沿用 `ValueError` 整轮重试、不静默截断；H16 的 `Degraded` 化不在 P6）；`memory_snapshot`（500 上限确定性 id 序，H17）；`rules_for`（作用域规则注入）
 
-**`agents/hauler.py`** — 候选校验：`validate(reply, row)`（结构、`source_unit_ids ⊆ 窗口`、长度、去重；空列表合法）
+**`agents/hauler.py`**（P6 落地）：`validate(reply, row, svc)`（结构、长度、`source_unit_ids ⊆ 窗口`；空列表合法；去重未做——现状无去重，P6 不加行为）+ `validate_sources(svc, candidates, uid)`（三角色共用）
 
-**`agents/selector.py`** — 决定校验（安全核心，H18）：`Decision` 类型；`validate`（每候选恰一 action；`target_id` 存在；UPDATE 门；截断禁猜 H17）
+**`agents/selector.py`**（P6 落地，安全核心 H18）：`Decision` 类型；`validate(reply, row, svc)` 预检（每候选恰一 action；action 合法集；`target_id` 存在且未退役；只读）；UPDATE 门（未确认降 CONFLICT）不抛错，活在 applier 内；同事务漂移由 applier 逐条复核（全有或全无，对外行为与预检无关）
 
-**`agents/reviewer.py`** — 审查校验（H19）：`validate`（diagnosis/rules/repair_candidates/rule_reviews）；`scope_of`（`project|entity:<literal>`）；rule_reviews 引用范围校验
+**`agents/reviewer.py`**（P6 落地，H19）：`validate(reply, row, svc)`（diagnosis/rules/repair_candidates/rule_reviews + rule_reviews 引用范围校验，返回归一化 bundle）；`scope_of`（`project|entity:<literal>`）
 
 ### 2.6 `semantics/` + `llm/` — 判裁与模型客户端
 
-**`semantics/provider.py`** — 判裁契约（新增，H27）：`SemanticsProvider(Protocol)`（`judge/relevant_set/consolidate/health`）；`ProviderHealth(ok/last_error/calls)` 进 `/health`
+**`semantics/provider.py`** — 判裁契约（P6 后：文件不存在；H27 的 `/health` semantics 段待接；`judge/relevant_set/consolidate/health` 愿望形状见 H27）
 
-**`semantics/llm.py`** — 现行实现：`LLMSemantics(client, model)` + 解析容错
+**`semantics/llm.py`** — 现行实现：`LLMSemantics`（`judge/relevant_set/consolidate` + 解析容错；prompt 常量 `_JUDGE_SYS/_CONSOLIDATE_SYS` 内联，见 prompts.py）
 
-**`semantics/prompts.py`** — prompt 模板（从实现抽出）：`JUDGE_SYS/RECOGNIZER_SYS/CONSOLIDATE_SYS + render_*`
+**`semantics/prompts.py`** — prompt 模板（P6 后：文件不存在；`_JUDGE_SYS/_CONSOLIDATE_SYS` 内联 llm.py，无独立 RECOGNIZER 常量）
 
-**`semantics/stub.py`** — 确定性实现（现 `semantics/real.py`）：`RealChatSemantics`；测试与离线唯一可跑实现
+**`semantics/stub.py`** — 确定性实现（改名未发生：实际为 `semantics/real.py`，`RealChatSemantics` + `normalize`；测试与离线唯一可跑实现）
 
-**`llm/client.py`** — 通用 chat 客户端（现 `llm.py`，118 行）：`chat`（磁盘缓存）/`chat_messages`（tools 直连）/`ZhipuChatError`；`BASE_URL` 调用时求值（改掉 import 时求值）
+**`llm/client.py`** — 通用 chat 客户端（拆分未发生：实际为顶层 `llm.py`，`chat`（磁盘缓存）/`chat_messages`（tools 直连）/`ZhipuChatError` + 私有 `_cache_lookup/_cache_store/_post_chat`；`BASE_URL` 仍 import 时求值，调用时求值 P6 后）
 
-**`llm/cache.py`** — 响应缓存：`cache_lookup/cache_store`（原子写）
+**`llm/cache.py`** — 响应缓存（P6 后：文件不存在；实现为 llm.py 私有 `_cache_lookup/_cache_store`）
 
 ### 2.7 `service/` — 编排层（现 server.py 66 方法分家，H2）
 
-**`service/service.py`** — 门面：组装依赖、持有 RLock；对外方法转发，不放业务实现（P4：`MemoryService` 类整体迁入；`lock/current/attach_dispatch/notify` 最终形态推迟到 P6——P5 仍用 `_lock` 属性 + `attach_agent/trio_worker` 构造直连，随 DispatchWorker 落地）
+**`service/service.py`** — 门面：组装依赖、持有 RLock；对外方法转发，不放业务实现（P4：`MemoryService` 类整体迁入；P6 最终形态落地：`lock` 属性 + `current()` + `attach_dispatch/notify`，`trio_worker` 槽位改 `dispatch_worker`，`_kick` 剩 `notify()` 委托；`attach_agent` 留守 legacy 挂载，P6 后随 legacy 删）
 
-**`service/lifecycle.py`** — 生命周期：`build_service/recover_or_init/ensure_healthy/save/snapshot_status/corrupt_file_exists/start_unit_recovery/stop_unit_recovery`（P4 落地除 `build_service/snapshot_status` 外全部；P5 未动——组装仍在门面 `__init__`、快照状态仍内联、`_check_checkpoint_error` 仍在门面：三者 P6 定形态）
+**`service/lifecycle.py`** — 生命周期：`build_service/recover_or_init/ensure_healthy/save/snapshot_status/corrupt_file_exists/start_unit_recovery/stop_unit_recovery`（P4 落地除 `build_service/snapshot_status` 外全部；P5/P6 未动——组装仍在门面 `__init__`、快照状态仍内联、`_check_checkpoint_error` 仍在门面：三者 P6 后定形态）
 
 **`service/observe.py`** — 观察回路：`observe/process_pending_units/process_unit`（先落 L0 幂等，再扫描，再三 agent 交接；legacy 才走 candgen）+ `_annotate_observe` 回执整形 helper
 
@@ -216,39 +214,39 @@ Dynamics-memory/
 
 **`service/feedback.py`** — 延迟记账：`feedback`（幂等 + 锁外判裁）
 
-**`service/operate.py`** — agent 操作面（P5 落地）：`propose/resolve/diagnose/report_miss/validate_proposal` + `_durable_propose/_task_once/_cited_text` 内部件；公开拥有 `VERDICTS` + `ProposalRejected`（门面 re-export 供 trio/review 复用）；效果事务归 `dispatch/effects.effect_transaction`（门面 `_commit_sidecar_effect` 只剩委托）；trio 下三入口禁用落在 transport/http（`TRIO_DISABLED`，H35）
+**`service/operate.py`** — agent 操作面（P5 落地）：`propose/resolve/diagnose/report_miss/validate_proposal` + `_durable_propose/_task_once/_cited_text` 内部件；公开拥有 `VERDICTS`；`ProposalRejected` 已归位 `errors.py`（P6，本模块改从 errors 引用，门面 re-export 不动）；效果事务归 `dispatch/effects.effect_transaction`（门面 `_commit_sidecar_effect` 只剩委托）；trio 下三入口禁用落在 transport/http（`TRIO_DISABLED`，H35）
 
 **`service/tools.py`** — 只读工具面（P5 落地）：`log_search/log_timeline/log_stats/log_window`（`before` 因果上界 + 预算）+ `conflicts`（tension 只读列表）
 
-**`service/review.py`** — 冲突台账：`human_reviews/decide_human_review`（幂等，P4 落地）+ `_review_token` 能力位；`conflict_ledger` 合并读模型（H14 后半，非 P4 范围，P5+）
+**`service/review.py`** — 冲突台账：`human_reviews/decide_human_review`（幂等，P4 落地）+ `review_token` 能力位（公开函数；门面 `_review_token` 为委托）；`conflict_ledger` 合并读模型（H14 后半，P6 后）
 
 **`service/budgets.py`** — 预算：`open_budget/close_budget/admit`；`MAIN_WINDOW_CAP`；预算对象不可变
 
 **`service/context.py`** — 调用上下文（P1 已自 `investigation_context.py` 迁入）：`InvestigationContext`；`SignalClosed/CausalViolation`；`_ORIGINS`（P4 自 server.py 迁入）
 
-> P4→P5 留守归宿（P5 结算）：`dispatch/{worker,effects}` ← `_semantic_model/_apply_semantic/process_semantic_tasks` + `_journal_signal/_signal_payload`（已迁）；`operate.py` ← `_SELF_REF_RE/_MAX_PROPOSAL_CHARS/_MISS_SOURCES` + `VERDICTS` 公开拥有（已迁，HTTP 改从 operate 回引，dto 不拥有 verdicts）；`_load_or_create_token` 留守门面（`__init__` 期创建，service 层不能反向依赖 transport；auth.py 只做请求期 `authorized` 校验）；`attach_agent` 留守门面（legacy 挂载 seam，P6 随 legacy 删）；门面保留 `_rollback_effect/_kick`（legacy 通知，P6 随 legacy 删）；`ProposalRejected` → P6 `errors.py`。
+> P4→P5 留守归宿（P5 结算）：`dispatch/{worker,effects}` ← `_semantic_model/_apply_semantic/process_semantic_tasks` + `_journal_signal/_signal_payload`（已迁）；`operate.py` ← `_SELF_REF_RE/_MAX_PROPOSAL_CHARS/_MISS_SOURCES` + `VERDICTS` 公开拥有（已迁，HTTP 改从 operate 回引，dto 不拥有 verdicts）；`_load_or_create_token` 留守门面（`__init__` 期创建，service 层不能反向依赖 transport；auth.py 只做请求期 `authorized` 校验）；`attach_agent` 留守门面（legacy 挂载 seam，P6 后随 legacy 删）；门面保留 `_rollback_effect` + `_kick`（`notify()` 委托，P6 后随 legacy 删）；`ProposalRejected` 已归位 `errors.py`（P6，`ValueError` 基类不动）。
 
 ### 2.8 `guards/` — 横切校验（新增包）
 
 **`guards/provenance.py`**：`validate_sources/sources_known/ensure_within_before`（存在 + 因果上界内）
-**`guards/grounding.py`**：`content_grounded`（2 汉字/≥4 标识命中/≥8 标识全出现，P4 落地）；`_cited_text`（私有）归 `operate.py`（P5 落地：它是 propose 的 log 联接 helper，非纯函数，不进 guards）
+**`guards/grounding.py`**：`content_grounded`（2 汉字/≥4 标识命中/≥8 标识全出现，P4 落地）；`cited_text` 为未通电 stub（零调用，真身 `operate._cited_text`，P6 后定去留）；`_cited_text`（私有）归 `operate.py`（P5 落地：它是 propose 的 log 联接 helper，非纯函数，不进 guards）
 **`guards/redact.py`**：`redact_secrets` **唯一**实现（legacy 侧 re-export，H5）
-**`guards/bounds.py`**：`validate_request_id` + `capture_fingerprint`（P4 落地）；`require_batch_size/clamp` + `MAX_*` 常量未收敛（P5 未动，仍硬编码 50/20/100/200；推迟 P6）
+**`guards/bounds.py`**：`validate_request_id` + `capture_fingerprint`（P4 落地）；`require_batch_size/clamp` 为未通电 stub（零调用）；`MAX_PROPOSE_BATCH/MAX_BODY_BYTES` 存在但零调用（`dto.MAX_BODY` 同值重复；调用点仍硬编码 50/20/100/200，收敛 P6 后）
 
 ### 2.9 `transport/` — 传输层
 
-**`transport/http.py`**：`Handler(do_GET/do_POST/reply/body)`；`ROUTES` 声明式表（含 trio 禁用表，H35）；`serve`；统一错误映射（H24）
+**`transport/http.py`**（P5 落地）：`Handler(do_GET/do_POST/_reply/handle_*×17/_dispatch/_run)`；`dto.parse_body` 为唯一 body 解析；`ROUTES` 声明式表（含 trio 禁用表，H35）；`serve`；统一错误映射（H24）
 **`transport/auth.py`**（P5 落地）：`authorized` 唯一函数（bearer 统一校验）；token 创建留守 service 侧（门面 `__init__` 期创建 + `review.review_token`，service 层不能反向依赖 transport；双 token 0600 由 `test_http_contract` 断言，H36）
-**`transport/dto.py`**（P5 落地）：`HttpError`；路径表（`SIGNAL_PATHS/GET_PATHS/POST_PATHS`）；`parse_body`（Content-Type/4MiB）；`opt_int/req_str`；`capture_request_id` + `observe_payload/feedback_payload`；请求身份复用 `guards/bounds` 的 `validate_request_id`（不重复实现）
+**`transport/dto.py`**（P5 落地）：`HttpError`；路径表（`SIGNAL_PATHS/GET_PATHS/POST_PATHS`）+ `MAX_BODY`（4MiB，与 bounds 同值重复，P6 后收敛）；`parse_body`（Content-Type/4MiB）；`opt_int/req_str`；`capture_request_id` + `observe_payload/feedback_payload`；请求身份复用 `guards/bounds` 的 `validate_request_id`（不重复实现）
 **`transport/bootstrap.py`**（P5 落地）：`build_default_service/main`（argparse 与 SIGTERM 内联 main，不单列 `parse_args/install_signal_handlers`；`resolve_pipeline` 复用 config；`load_env_key` 改调 config canonical 实现，旧 `server._load_env_key` 已删）
 **`transport/review_cli.py`**：human CLI（现 `human_review.py`，H37 纠正归类）
 
 ### 2.10 `embed/` — 嵌入（保留）
-- `embed/base.py`（`cosine`、`Embedder`）；`embed/cache.py`（`SqliteEmbeddingCache`）；`embed/zhipu.py`（分块/缓存键/离线模式，`ZhipuEmbeddingError`）
+- `embed/base.py`（空：`cosine` + `Embedder(Protocol)` 实际在 `core/types.py`，P6 后定归属）；`embed/cache.py`（`SqliteEmbeddingCache`）；`embed/zhipu.py`（分块/缓存键/离线模式，`ZhipuEmbeddingError`）
 
 ### 2.11 `legacy/` — 冻结旧管线（H5/H23）
-- `legacy/candgen.py`（候选类型 + ChatGenerator）；`legacy/prompt.py`（redact 改 re-export `guards.redact`）；`legacy/worker.py`（SignalWorker，裸引擎用）；`legacy/investigator.py`；`legacy/inline.py`；`legacy/loop.py`（AgentWorker）；`legacy/__init__.py`（`DEPRECATED=True` + 启动 `warn_once`）
-- 兼容 shim（H1）：`hybrid_memory/candgen/`、`hybrid_memory/worker.py`、`hybrid_memory/agent/{inline,loop,investigator}.py`、`hybrid_memory/server.py` 保留为一行 re-export
+- `legacy/candgen.py`（`ChatGenerator`；候选类型定义在 prompt.py，此处 re-export）；`legacy/prompt.py`（redact 改 re-export `guards.redact`）；`legacy/worker.py`（SignalWorker，裸引擎用）；`legacy/investigator.py`；`legacy/inline.py`；`legacy/loop.py`（AgentWorker）；`legacy/__init__.py`（`DEPRECATED=True` + 启动 `warn_once`）
+- 兼容 shim（H1）：`hybrid_memory/candgen/`、`hybrid_memory/worker.py`、`hybrid_memory/agent/{inline,loop,investigator}.py`、`hybrid_memory/server.py` 缩为 7 行垫片（P5）；另有 `triggers.py/interaction.py/investigation_context.py/taskstore.py/agent/human_review.py` 五垫片（P1 落地，目标一致）；`agent/trio.py` P6 拆入 agents/ 后直接删除（无垫片，4 处引用全改 canonical）
 
 ### 2.12 `tests/` 与 `eval/`
 ```
@@ -275,10 +273,11 @@ tests/
 ├── protocol/
 │   ├── test_agent_protocol.py     原 test_trio_protocol（fake CLI）
 │   └── memory_bridge.test.ts      原位（bun）
-├── characterization/              P3 冻结套件（P6 末删除，A4）
+├── characterization/              P3 冻结套件（A4；P6 未删——删除推迟，P6 后定）
 └── test_acceptance.py             断言 acceptance_check.py 全 PASS（H41）
 ```
 `eval/harness/` 收纳离线脚本（H40）；`eval/tide/` 一行不改（H39）。
+> （P6 后审计：测试搬迁大部未发生——`unit/test_core_*/test_store_evidence/test_store_state/test_semantics`、`integration/test_dispatch_recovery/test_legacy_pipeline`、`protocol/`、`test_acceptance.py` 均不存在；实际用例散在顶层 `test_*.py`（P6 后定；门禁不依赖目标树）。`eval/harness/` 未建目录（脚本散在 `eval/`，H40 名存实无）。
 
 ---
 

@@ -399,12 +399,18 @@ def _ast_literal_in(path: Path, func: str, value: int) -> bool:
     return False
 
 
-def _find_trio_memories_file() -> Path | None:
+def _find_trio_memories_file() -> tuple[Path | None, str]:
+    # P6：agents/payload.memory_snapshot；旧名 _memories 兼容旧树。
     for p in (ROOT / "hybrid_memory" / "agents" / "payload.py",
               ROOT / "hybrid_memory" / "agent" / "trio.py"):
-        if p.is_file() and "_memories" in p.read_text(encoding="utf-8"):
-            return p
-    return None
+        if not p.is_file():
+            continue
+        txt = p.read_text(encoding="utf-8")
+        if "memory_snapshot" in txt:
+            return p, "memory_snapshot"
+        if "_memories" in txt:
+            return p, "_memories"
+    return None, "_memories"
 
 
 def _find_tasks_file() -> Path:
@@ -431,9 +437,9 @@ def check_a9(phase: str) -> None:
              inspect.signature(TaskStore.__init__).parameters["capacity"].default == 4096),
             ("signal cap", "P0", "cap" in inspect.signature(SignalQueue.__init__).parameters),
         ]
-        mem_file = _find_trio_memories_file()
+        mem_file, mem_func = _find_trio_memories_file()
         rows.append(("snapshot 500", "P0",
-                     mem_file is not None and _ast_literal_in(mem_file, "_memories", 500)))
+                     mem_file is not None and _ast_literal_in(mem_file, mem_func, 500)))
         trio_file = (ROOT / "hybrid_memory" / "agents" / "payload.py"
                      if (ROOT / "hybrid_memory" / "agents").is_dir()
                      else ROOT / "hybrid_memory" / "agent" / "trio.py")

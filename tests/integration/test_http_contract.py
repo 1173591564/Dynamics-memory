@@ -26,6 +26,15 @@ def test_shim_reexports_canonical():
     assert shim.main is bootstrap.main
 
 
+def test_package_surface_is_minimal():
+    import hybrid_memory as hm
+    from hybrid_memory.config import Cfg, Settings
+    assert hm.MemoryService is MemoryService
+    assert hm.Cfg is Cfg and hm.Settings is Settings
+    assert hm.build_default_service is bootstrap.build_default_service
+    assert not hasattr(hm, "TaskStore") and not hasattr(hm, "DispatchWorker")
+
+
 def test_auth_bearer():
     assert auth.authorized({"Authorization": "Bearer abc"}, "abc") is True
     assert auth.authorized({"Authorization": "Bearer abc"}, "abd") is False

@@ -182,7 +182,6 @@ def test_server_is_thin_shim(repo_root):
     assert not bad, f"server shim 引了旧路径: {bad}"
 
 
-@pytest.mark.xfail(strict=True, reason="P6 消红：agents/ 落地（trio 拆分）")
 def test_agents_boundaries(repo_root):
     """终态 agents/ 存在且不碰 store/（I1）。"""
     agents = repo_root / PKG / "agents"

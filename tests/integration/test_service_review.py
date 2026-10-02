@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from hybrid_memory.agent.trio import TrioWorker
+from hybrid_memory.dispatch.worker import DispatchWorker
 from test_ouroboros import _svc
 
 
@@ -29,7 +29,7 @@ def test_conflict_quarantined_until_human_review_and_stale_version_stays_hidden(
                 "action": "CREATE" if p["unit_id"] == 0 else "CONFLICT",
                 **({"target_id": 0} if p["unit_id"] else {})}]}
 
-    worker = TrioWorker(svc, fake)
+    worker = DispatchWorker(svc, fake)
     try:
         svc.observe("项目端口是 8080", "记下了")
         drain(worker)
@@ -71,9 +71,9 @@ def test_review_http_requires_independent_human_capability(tmp_path):
         return {"decisions": [{"candidate_index": 0, "action": "CREATE" if p["unit_id"] == 0 else "CONFLICT",
                               **({"target_id": 0} if p["unit_id"] else {})}]}
     svc.observe("端口现在是 8080", "好")
-    drain(TrioWorker(svc, fake))
+    drain(DispatchWorker(svc, fake))
     svc.observe("端口现在是 9090", "好")
-    drain(TrioWorker(svc, fake))
+    drain(DispatchWorker(svc, fake))
     httpd = serve(svc, 0)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()

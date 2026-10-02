@@ -3,19 +3,22 @@
 run_semantic_tasks 经门面调 svc._semantic_model：测试用实例属性 stub
 模型（_semantic_model = lambda），只有经 svc 属性查找 stub 才生效；
 应用侧 apply_semantic 无外部 stub，直接调本模块函数。
-DispatchWorker 类 P6 随 agents/ 落地（run_agent/validate 需 agent 运行时）。
+DispatchWorker（P6 落地，TrioWorker 继任）只驱动工作流 kind；
+语义 kind 仍走 run_semantic_tasks（独立驱动，合并不在 P6）。
 """
 from __future__ import annotations
 
 import copy
 import sys
+import threading
 from dataclasses import asdict
 
 from ..core import maintenance
 from ..core.types import (ConsolidationSemantics, FeedbackSemantics,
                           is_visible)
+from ..agents import payload
 from ..store.tasks import SEMANTIC_KINDS, WORKFLOW_KINDS, TaskLeaseLost
-from . import effects
+from . import effects, policy
 
 
 def semantic_model(svc, row):
@@ -155,3 +158,111 @@ def run_semantic_tasks(svc, limit: int = 8) -> dict:
         return stats
     finally:
         svc._semantic_busy.release()
+
+
+class DispatchWorker:
+    """工作流后台循环（P6：TrioWorker 继任；语义 kind 仍走 run_semantic_tasks）。
+
+    claim→run_agent→store_result→claim→EFFECTS-apply→complete；
+    认领状态与重试上限来自 policies（默认值与旧硬编码一致）。
+    """
+
+    def __init__(self, service, runner, policies=None, *, idle_s=2, lease_s=600):
+        self.svc, self.run_agent = service, runner
+        self.policies = policies if policies is not None else policy.POLICIES
+        self.idle_s, self.lease_s = idle_s, lease_s
+        # 三工作流 kind 同策略，认领状态任取其一（现均为 pending/ready）。
+        self._claim_from = self.policies["hauler_due"].claim_from
+        self._stop = threading.Event()
+        self._wake = threading.Event()
+        self._thread = None
+        self._busy = threading.Lock()
+        self._processed = 0
+        self._errors = 0
+
+    def start(self):
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._wake.clear()
+        self._thread = threading.Thread(target=self._loop, daemon=True,
+                                        name="memory-dispatch")
+        self._thread.start()
+
+    def stop(self, timeout=5):
+        self._stop.set()
+        self._wake.set()
+        if self._thread:
+            self._thread.join(timeout)
+
+    def notify(self) -> None:
+        self._wake.set()
+
+    def stats(self) -> dict:
+        return {"processed": self._processed, "errors": self._errors}
+
+    def _loop(self):
+        while True:
+            self._wake.wait(self.idle_s)
+            self._wake.clear()
+            if self._stop.is_set():
+                break
+            try:
+                self.process_once()
+            except Exception as exc:
+                print(f"[memory-dispatch] {type(exc).__name__}: {exc}",
+                      file=sys.stderr, flush=True)
+
+    def _apply(self, conn, row, output):
+        applier = effects.EFFECTS[row["kind"]].apply
+        if applier is None:
+            raise ValueError(f"无 dispatch applier: {row['kind']}")
+        return applier(self.svc, row, output, conn)
+
+    def process_once(self, limit=8):
+        if not self._busy.acquire(False):
+            return 0
+        done = 0
+        try:
+            store = self.svc.tasks
+            store.recover_expired(kinds=WORKFLOW_KINDS, reset_next_run_at=True)
+            for item in store.list_tasks(states=self._claim_from,
+                                         kinds=WORKFLOW_KINDS)[:limit]:
+                if self._stop.is_set():
+                    break
+                row = store.claim(item["id"], expected_version=item["version"],
+                                          lease_s=self.lease_s)
+                if row is None:
+                    continue
+                try:
+                    if row["state"] == "running":
+                        name = row["kind"].removesuffix("_due")
+                        task_payload = payload.build_payload(row["kind"], self.svc, row)
+                        result = self.run_agent(name, task_payload)
+                        store.store_result(row["id"], row["token"], result,
+                            rule_ids=[r["id"] for r in task_payload["rules"]])
+                        row = store.claim(row["id"], expected_version=row["version"],
+                                          lease_s=self.lease_s)
+                        if row is None:
+                            continue
+                    with self.svc.lock, self.svc._rollback_effect():
+                        _, revision = store.complete(
+                            row["id"], row["token"],
+                            lambda conn, output: self._apply(conn, row, output),
+                            self.svc._dump_state, self.svc._checkpoint_revision)
+                        self.svc._checkpoint_revision = revision
+                    done += 1
+                except Exception as exc:
+                    self._errors += 1
+                    try:
+                        store.retry(row["id"], row["token"], exc,
+                            max_attempts=self.policies[row["kind"]].max_attempts,
+                            retry_model=isinstance(exc, ValueError))
+                    except TaskLeaseLost:
+                        pass
+                    print(f"[memory-dispatch] task {row['id']}: {type(exc).__name__}: {exc}",
+                          file=sys.stderr, flush=True)
+            self._processed += done
+            return done
+        finally:
+            self._busy.release()

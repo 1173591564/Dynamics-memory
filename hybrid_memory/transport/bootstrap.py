@@ -107,9 +107,10 @@ def main() -> None:
 
     trio = None
     if service.trio_mode and not args.no_agent:
-        from ..agent.trio import TrioWorker, OpenCodeRunner
-        trio = TrioWorker(service, OpenCodeRunner(Path(args.project)))
-        service.trio_worker = trio
+        from ..agents.opencode import OpenCodeRunner
+        from ..dispatch.worker import DispatchWorker
+        trio = DispatchWorker(service, OpenCodeRunner(Path(args.project)))
+        service.attach_dispatch(trio)
         trio.start()
 
     view = service.health_view()
