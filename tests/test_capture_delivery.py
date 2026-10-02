@@ -11,7 +11,7 @@ from test_ouroboros import _svc
 from test_server import _http, _service
 
 from hybrid_memory.logstore import LogStore
-from hybrid_memory.taskstore import CaptureConflict, TaskQueueFull
+from hybrid_memory.store.tasks import CaptureConflict, TaskQueueFull
 
 RID = "observe-retry-01"
 FID = "feedback-retry-01"

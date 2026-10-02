@@ -20,7 +20,7 @@ from typing import Callable
 
 from ..service.context import CausalViolation, InvestigationContext
 from ..core.signals import Signal
-from ..taskstore import TaskLeaseLost
+from ..store.tasks import TaskLeaseLost
 from .investigator import Budget, Investigation, build_payload
 
 ORIGIN_BY_KIND = {"recall_miss": "repair", "extract_due": "extract"}
@@ -105,7 +105,9 @@ class AgentWorker:
             return stats
         try:
             store = self.svc.tasks
-            store.recover_expired(self.max_attempts, self.max_apply_attempts)
+            store.recover_expired(self.max_attempts, self.max_apply_attempts,
+                                kinds=("recall_miss", "extract_due"),
+                                reset_next_run_at=False)
             batch = store.list_tasks(states=("pending", "ready"), kinds=ORIGIN_BY_KIND)
             stats["taken"] = len(batch)
             processed = 0

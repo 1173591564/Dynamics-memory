@@ -1,0 +1,431 @@
+[
+ {
+  "op": "enqueue",
+  "out": 1,
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "conflict_pending": 1
+   },
+   "revision": 0,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "conflict_pending",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "pairs": [
+       [
+        0,
+        1
+       ]
+      ]
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "claim",
+  "out": {
+   "attempts": 1,
+   "state": "running"
+  },
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "running": 1
+   },
+   "queued": {},
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 1,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "conflict_pending",
+     "last_error": "",
+     "lease_until": 1120.0,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "pairs": [
+       [
+        0,
+        1
+       ]
+      ]
+     },
+     "result": null,
+     "state": "running",
+     "t": 0,
+     "task_key": "",
+     "token": "<tok>",
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "store_result",
+  "out": "ready",
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "ready": 1
+   },
+   "queued": {
+    "conflict_pending": 1
+   },
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 1,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "conflict_pending",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "pairs": [
+       [
+        0,
+        1
+       ]
+      ]
+     },
+     "result": {
+      "verdicts": [
+       "update"
+      ]
+     },
+     "state": "ready",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "claim_applying",
+  "out": "applying",
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "applying": 1,
+    "operations": 0
+   },
+   "queued": {},
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 1,
+     "attempts": 1,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "conflict_pending",
+     "last_error": "",
+     "lease_until": 1120.0,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "pairs": [
+       [
+        0,
+        1
+       ]
+      ]
+     },
+     "result": {
+      "verdicts": [
+       "update"
+      ]
+     },
+     "state": "applying",
+     "t": 0,
+     "task_key": "",
+     "token": "<tok>",
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "complete",
+  "out": [
+   {
+    "recog_fail": true,
+    "resolved": 1
+   },
+   1
+  ],
+  "state": {
+   "checkpoint": "state-1",
+   "checkpoint_error": null,
+   "counts": {
+    "done": 1,
+    "operations": 1,
+    "pending": 1
+   },
+   "queued": {
+    "reviewer_due": 1
+   },
+   "revision": 1,
+   "tasks": [
+    {
+     "apply_attempts": 1,
+     "attempts": 1,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "conflict_pending",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "pairs": [
+       [
+        0,
+        1
+       ]
+      ]
+     },
+     "result": {
+      "verdicts": [
+       "update"
+      ]
+     },
+     "state": "done",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 2,
+     "kind": "reviewer_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "u": 1
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "rx",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "operations",
+  "out": [
+   {
+    "op_key": "semantic",
+    "response": "{\"recog_fail\":true,\"resolved\":1}"
+   }
+  ],
+  "state": {
+   "checkpoint": "state-1",
+   "checkpoint_error": null,
+   "counts": {
+    "done": 1,
+    "operations": 1,
+    "pending": 1
+   },
+   "queued": {
+    "reviewer_due": 1
+   },
+   "revision": 1,
+   "tasks": [
+    {
+     "apply_attempts": 1,
+     "attempts": 1,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "conflict_pending",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "pairs": [
+       [
+        0,
+        1
+       ]
+      ]
+     },
+     "result": {
+      "verdicts": [
+       "update"
+      ]
+     },
+     "state": "done",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 2,
+     "kind": "reviewer_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "u": 1
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "rx",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "rule_uses",
+  "out": [
+   {
+    "rule_id": 7,
+    "task_id": 1
+   }
+  ],
+  "state": {
+   "checkpoint": "state-1",
+   "checkpoint_error": null,
+   "counts": {
+    "done": 1,
+    "operations": 1,
+    "pending": 1
+   },
+   "queued": {
+    "reviewer_due": 1
+   },
+   "revision": 1,
+   "tasks": [
+    {
+     "apply_attempts": 1,
+     "attempts": 1,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "conflict_pending",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "pairs": [
+       [
+        0,
+        1
+       ]
+      ]
+     },
+     "result": {
+      "verdicts": [
+       "update"
+      ]
+     },
+     "state": "done",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 2,
+     "kind": "reviewer_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "u": 1
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "rx",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ }
+]

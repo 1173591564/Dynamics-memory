@@ -15,7 +15,7 @@ import threading
 import time
 
 from ..core.types import Pool
-from ..taskstore import TaskLeaseLost, WORKFLOW_KINDS
+from ..store.tasks import TaskLeaseLost, WORKFLOW_KINDS
 from ..core import triggers
 
 
@@ -143,11 +143,12 @@ class TrioWorker:
         done = 0
         try:
             store = self.svc.tasks
-            store.recover_semantic_expired()
+            store.recover_expired(kinds=WORKFLOW_KINDS, reset_next_run_at=True)
             for item in store.list_tasks(states=("pending", "ready"), kinds=WORKFLOW_KINDS)[:limit]:
                 if self._stop.is_set():
                     break
-                row = store.claim_semantic(item["id"], item["version"], lease_s=self.lease_s)
+                row = store.claim(item["id"], expected_version=item["version"],
+                                          lease_s=self.lease_s)
                 if row is None:
                     continue
                 try:
@@ -155,13 +156,14 @@ class TrioWorker:
                         name = row["kind"].removesuffix("_due")
                         payload = self._payload(row)
                         result = self.run_agent(name, payload)
-                        store.store_semantic_result(row["id"], row["token"], result,
+                        store.store_result(row["id"], row["token"], result,
                             rule_ids=[r["id"] for r in payload["rules"]])
-                        row = store.claim_semantic(row["id"], row["version"], lease_s=self.lease_s)
+                        row = store.claim(row["id"], expected_version=row["version"],
+                                          lease_s=self.lease_s)
                         if row is None:
                             continue
                     with self.svc.lock, self.svc._rollback_effect():
-                        _, revision = store.complete_semantic(
+                        _, revision = store.complete(
                             row["id"], row["token"],
                             lambda conn, output: self._apply(conn, row, output),
                             self.svc._dump_state, self.svc._checkpoint_revision)
@@ -169,8 +171,8 @@ class TrioWorker:
                     done += 1
                 except Exception as exc:
                     try:
-                        store.retry_semantic(row["id"], row["token"], exc,
-                            retry_model=isinstance(exc, ValueError), max_attempts=5)
+                        store.retry(row["id"], row["token"], exc,
+                            retry_model=isinstance(exc, ValueError))
                     except TaskLeaseLost:
                         pass
                     print(f"[memory-trio] task {row['id']}: {type(exc).__name__}: {exc}",

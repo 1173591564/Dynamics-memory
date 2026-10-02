@@ -1,0 +1,255 @@
+[
+ {
+  "op": "enqueue",
+  "out": 1,
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "recall_miss": 1
+   },
+   "revision": 0,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "q": "one"
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "q",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "claim",
+  "out": {
+   "apply_attempts": 0,
+   "attempts": 1,
+   "before_t": 5,
+   "created_at": 1000.0,
+   "dedupe_id": null,
+   "id": 1,
+   "kind": "recall_miss",
+   "last_error": "",
+   "lease_until": 1010.0,
+   "next_run_at": 0.0,
+   "origin": "repair",
+   "payload": {
+    "q": "one"
+   },
+   "result": null,
+   "revision": 1,
+   "state": "running",
+   "t": 0,
+   "task_key": "q",
+   "token": "<tok>",
+   "updated_at": 1000.0,
+   "version": 0
+  },
+  "state": {
+   "checkpoint": "state-0",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "running": 1
+   },
+   "queued": {},
+   "revision": 1,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 1,
+     "before_t": 5,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": 1010.0,
+     "next_run_at": 0.0,
+     "origin": "repair",
+     "payload": {
+      "q": "one"
+     },
+     "result": null,
+     "state": "running",
+     "t": 0,
+     "task_key": "q",
+     "token": "<tok>",
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "store_result",
+  "out": 2,
+  "state": {
+   "checkpoint": "state-2",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "ready": 1
+   },
+   "queued": {
+    "recall_miss": 1
+   },
+   "revision": 2,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 1,
+     "before_t": 5,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": "repair",
+     "payload": {
+      "q": "one"
+     },
+     "result": {
+      "answer": "x"
+     },
+     "state": "ready",
+     "t": 0,
+     "task_key": "q",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "claim_applying",
+  "out": {
+   "apply_attempts": 1,
+   "attempts": 1,
+   "before_t": 5,
+   "created_at": 1000.0,
+   "dedupe_id": null,
+   "id": 1,
+   "kind": "recall_miss",
+   "last_error": "",
+   "lease_until": 1010.0,
+   "next_run_at": 0.0,
+   "origin": "repair",
+   "payload": {
+    "q": "one"
+   },
+   "result": {
+    "answer": "x"
+   },
+   "revision": 3,
+   "state": "applying",
+   "t": 0,
+   "task_key": "q",
+   "token": "<tok>",
+   "updated_at": 1000.0,
+   "version": 0
+  },
+  "state": {
+   "checkpoint": "state-2",
+   "checkpoint_error": null,
+   "counts": {
+    "applying": 1,
+    "operations": 0
+   },
+   "queued": {},
+   "revision": 3,
+   "tasks": [
+    {
+     "apply_attempts": 1,
+     "attempts": 1,
+     "before_t": 5,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": 1010.0,
+     "next_run_at": 0.0,
+     "origin": "repair",
+     "payload": {
+      "q": "one"
+     },
+     "result": {
+      "answer": "x"
+     },
+     "state": "applying",
+     "t": 0,
+     "task_key": "q",
+     "token": "<tok>",
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "finish",
+  "out": null,
+  "state": {
+   "checkpoint": "state-2",
+   "checkpoint_error": null,
+   "counts": {
+    "done": 1,
+    "operations": 0
+   },
+   "queued": {},
+   "revision": 3,
+   "tasks": [
+    {
+     "apply_attempts": 1,
+     "attempts": 1,
+     "before_t": 5,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": "repair",
+     "payload": {
+      "q": "one"
+     },
+     "result": {
+      "answer": "x"
+     },
+     "state": "done",
+     "t": 0,
+     "task_key": "q",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ }
+]

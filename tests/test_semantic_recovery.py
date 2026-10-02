@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 
 from hybrid_memory.core.types import Event, Memory
-from hybrid_memory.taskstore import TaskLeaseLost, TaskQueueFull
+from hybrid_memory.store.tasks import (SEMANTIC_KINDS, TaskLeaseLost,
+                                       TaskQueueFull)
 from test_server import _http, _service
 
 
@@ -95,15 +96,15 @@ def test_expired_semantic_lease_fences_old_token(tmp_path):
         svc.process_semantic_tasks = lambda: {}
         svc.feedback(rid, "部署在哪", "B")
         task = svc.tasks.list_tasks(kinds=("feedback_pending",))[0]
-        first = svc.tasks.claim_semantic(task["id"], task["version"])
+        first = svc.tasks.claim(task["id"], expected_version=task["version"])
         with svc.tasks._conn:
             svc.tasks._conn.execute("UPDATE tasks SET lease_until=0 WHERE id=?", (task["id"],))
-        svc.tasks.recover_semantic_expired()
-        second = svc.tasks.claim_semantic(task["id"], task["version"])
+        svc.tasks.recover_expired(kinds=SEMANTIC_KINDS, reset_next_run_at=True)
+        second = svc.tasks.claim(task["id"], expected_version=task["version"])
         assert second["token"] != first["token"]
         with pytest.raises(TaskLeaseLost):
-            svc.tasks.store_semantic_result(task["id"], first["token"], {"used": [True]})
-        svc.tasks.store_semantic_result(task["id"], second["token"],
+            svc.tasks.store_result(task["id"], first["token"], {"used": [True]})
+        svc.tasks.store_result(task["id"], second["token"],
                                         {"used": [True], "recog_fail": False})
         assert svc.tasks.list_tasks(kinds=("feedback_pending",))[0]["state"] == "ready"
     finally:
@@ -116,8 +117,8 @@ def test_saved_model_result_is_not_invoked_again_after_restart(tmp_path):
         svc.process_semantic_tasks = lambda: {}
         svc.feedback(rid, "部署在哪", "B")
         row = svc.tasks.list_tasks(kinds=("feedback_pending",))[0]
-        claim = svc.tasks.claim_semantic(row["id"], row["version"])
-        svc.tasks.store_semantic_result(row["id"], claim["token"],
+        claim = svc.tasks.claim(row["id"], expected_version=row["version"])
+        svc.tasks.store_result(row["id"], claim["token"],
                                         {"used": [True], "recog_fail": False})
     finally:
         _close(svc)
@@ -143,12 +144,12 @@ def test_crashes_before_effect_and_after_atomic_commit(tmp_path):
 import os,sys
 from test_server import _service
 svc=_service(sys.argv[1], texts=())
-original=svc.tasks.complete_semantic
+original=svc.tasks.complete
 def crash(*args, **kwargs):
     if sys.argv[2]=='before': os._exit(77)
     result=original(*args, **kwargs)
     os._exit(77)
-svc.tasks.complete_semantic=crash
+svc.tasks.complete=crash
 svc.process_semantic_tasks()
 '''
         root = Path(__file__).resolve().parents[1]
@@ -350,9 +351,9 @@ def test_stale_verdict_requeues_current_tension_with_capacity_one(tmp_path):
         svc.tasks.capacity = 1
         svc._commit_sidecar_effect(lambda: svc.engine.step(svc._t))
         row = svc.tasks.list_tasks(kinds=("conflict_pending",))[0]
-        claim = svc.tasks.claim_semantic(row["id"], row["version"])
+        claim = svc.tasks.claim(row["id"], expected_version=row["version"])
         result = svc._semantic_model(claim)
-        svc.tasks.store_semantic_result(row["id"], claim["token"], result)
+        svc.tasks.store_result(row["id"], claim["token"], result)
         # 模型调用完成后同一张力又收到新观察；旧 verdict 不得覆盖新版本。
         svc.engine.add_tension(0, 1, svc._t)
         svc._commit_sidecar_effect(lambda: None)
@@ -420,8 +421,8 @@ def test_recognizer_none_handoff_is_atomic_with_credit(tmp_path):
         svc.process_semantic_tasks = lambda: {}
         svc.feedback(rid, "部署在哪", "与之无关")
         row = svc.tasks.list_tasks(kinds=("feedback_pending",))[0]
-        claim = svc.tasks.claim_semantic(row["id"], row["version"])
-        svc.tasks.store_semantic_result(row["id"], claim["token"],
+        claim = svc.tasks.claim(row["id"], expected_version=row["version"])
+        svc.tasks.store_result(row["id"], claim["token"],
                                         {"used": [False], "recog_fail": False})
         svc.tasks._conn.execute("CREATE TRIGGER reject_miss BEFORE INSERT ON tasks "
                                 "WHEN NEW.kind='recall_miss' "
@@ -521,8 +522,8 @@ def test_stale_reflection_requeues_changed_sources_once(tmp_path):
         judge = _Judge(svc.semantics)
         svc.semantics = svc.engine.semantics = judge
         row = svc.tasks.list_tasks(kinds=("maintenance_due",))[0]
-        claim = svc.tasks.claim_semantic(row["id"], row["version"])
-        svc.tasks.store_semantic_result(row["id"], claim["token"],
+        claim = svc.tasks.claim(row["id"], expected_version=row["version"])
+        svc.tasks.store_result(row["id"], claim["token"],
                                         svc._semantic_model(claim))
         svc._commit_sidecar_effect(lambda: setattr(svc.engine.mems[0], "last_seen", svc._t + 1))
         assert svc.process_semantic_tasks()["reflected"] == 0
@@ -555,7 +556,7 @@ from test_server import _service
 from test_semantic_recovery import _Judge
 svc=_service(sys.argv[1], texts=())
 svc.semantics=svc.engine.semantics=_Judge(svc.semantics)
-svc.tasks.complete_semantic=lambda *args,**kwargs: os._exit(77)
+svc.tasks.complete=lambda *args,**kwargs: os._exit(77)
 svc.process_semantic_tasks()
 '''
     proc = subprocess.run([sys.executable, "-c", code, str(tmp_path)], cwd=root,

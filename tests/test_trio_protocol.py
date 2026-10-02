@@ -154,8 +154,8 @@ def test_stored_agent_result_survives_restart_without_rerunning_model(tmp_path):
 
     svc.observe("项目统一使用 bun 工具", "好的")
     row = svc.tasks.list_tasks(states=("pending",), kinds={"hauler_due"})[0]
-    owned = svc.tasks.claim_semantic(row["id"], row["version"])
-    svc.tasks.store_semantic_result(row["id"], owned["token"], fake("hauler", {"unit_id": 0}))
+    owned = svc.tasks.claim(row["id"], expected_version=row["version"])
+    svc.tasks.store_result(row["id"], owned["token"], fake("hauler", {"unit_id": 0}))
     svc.tasks.close()
     svc.log.close()
     fresh = _svc(tmp_path)
@@ -387,7 +387,7 @@ def test_direct_agent_mutations_denied_in_trio_http_mode(tmp_path):
 
 def test_existing_agent_rules_table_is_migrated_without_disabling_rules(tmp_path):
     import sqlite3
-    from hybrid_memory.taskstore import TaskStore
+    from hybrid_memory.store.tasks import TaskStore
     path = tmp_path / "tasks.sqlite"
     conn = sqlite3.connect(path)
     conn.execute("CREATE TABLE agent_rules (id INTEGER PRIMARY KEY AUTOINCREMENT,"

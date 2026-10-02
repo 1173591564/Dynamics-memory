@@ -11,7 +11,7 @@ import pytest
 
 from hybrid_memory.candgen.base import CandidateGeneration, MemoryCandidate
 from hybrid_memory.logstore import LogStore
-from hybrid_memory.taskstore import CheckpointConflict, TaskQueueFull
+from hybrid_memory.store.tasks import CheckpointConflict, TaskQueueFull
 from test_ouroboros import _svc
 from test_server import _http
 

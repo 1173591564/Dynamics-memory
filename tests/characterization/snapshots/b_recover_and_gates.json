@@ -1,0 +1,202 @@
+[
+ {
+  "op": "claim",
+  "out": "running",
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "running": 1
+   },
+   "queued": {},
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 1,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "maintenance_due",
+     "last_error": "",
+     "lease_until": 1010.0,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "scene": "s"
+     },
+     "result": null,
+     "state": "running",
+     "t": 0,
+     "task_key": "",
+     "token": "<tok>",
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "recover",
+  "out": {
+   "next_run_at": 1011.0,
+   "state": "pending"
+  },
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "maintenance_due": 1
+   },
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 1,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "maintenance_due",
+     "last_error": "lease expired",
+     "lease_until": null,
+     "next_run_at": 1011.0,
+     "origin": null,
+     "payload": {
+      "scene": "s"
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1011.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "reclaim",
+  "out": "running",
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "running": 1
+   },
+   "queued": {},
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "maintenance_due",
+     "last_error": "lease expired",
+     "lease_until": 1131.0,
+     "next_run_at": 1011.0,
+     "origin": null,
+     "payload": {
+      "scene": "s"
+     },
+     "result": null,
+     "state": "running",
+     "t": 0,
+     "task_key": "",
+     "token": "<tok>",
+     "updated_at": 1011.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "store_old_token",
+  "out": "TaskLeaseLost: task 1 租约已失效",
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "running": 1
+   },
+   "queued": {},
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "maintenance_due",
+     "last_error": "lease expired",
+     "lease_until": 1131.0,
+     "next_run_at": 1011.0,
+     "origin": null,
+     "payload": {
+      "scene": "s"
+     },
+     "result": null,
+     "state": "running",
+     "t": 0,
+     "task_key": "",
+     "token": "<tok>",
+     "updated_at": 1011.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "claim_version_mismatch",
+  "out": null,
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "running": 1
+   },
+   "queued": {},
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "maintenance_due",
+     "last_error": "lease expired",
+     "lease_until": 1131.0,
+     "next_run_at": 1011.0,
+     "origin": null,
+     "payload": {
+      "scene": "s"
+     },
+     "result": null,
+     "state": "running",
+     "t": 0,
+     "task_key": "",
+     "token": "<tok>",
+     "updated_at": 1011.0,
+     "version": 0
+    }
+   ]
+  }
+ }
+]

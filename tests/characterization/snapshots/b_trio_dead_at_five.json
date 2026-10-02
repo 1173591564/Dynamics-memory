@@ -1,0 +1,439 @@
+[
+ {
+  "op": "claim0",
+  "out": 1,
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "running": 1
+   },
+   "queued": {},
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 1,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "hauler_due",
+     "last_error": "",
+     "lease_until": 1520.0,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 3
+     },
+     "result": null,
+     "state": "running",
+     "t": 0,
+     "task_key": "",
+     "token": "<tok>",
+     "updated_at": 1400.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "retry0",
+  "out": "pending",
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "hauler_due": 1
+   },
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 1,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "hauler_due",
+     "last_error": "bad shape",
+     "lease_until": null,
+     "next_run_at": 1402.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 3
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1400.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "claim1",
+  "out": 2,
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "running": 1
+   },
+   "queued": {},
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "hauler_due",
+     "last_error": "bad shape",
+     "lease_until": 1920.0,
+     "next_run_at": 1402.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 3
+     },
+     "result": null,
+     "state": "running",
+     "t": 0,
+     "task_key": "",
+     "token": "<tok>",
+     "updated_at": 1800.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "retry1",
+  "out": "pending",
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "hauler_due": 1
+   },
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "hauler_due",
+     "last_error": "bad shape",
+     "lease_until": null,
+     "next_run_at": 1804.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 3
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1800.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "claim2",
+  "out": 3,
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "running": 1
+   },
+   "queued": {},
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 3,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "hauler_due",
+     "last_error": "bad shape",
+     "lease_until": 2320.0,
+     "next_run_at": 1804.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 3
+     },
+     "result": null,
+     "state": "running",
+     "t": 0,
+     "task_key": "",
+     "token": "<tok>",
+     "updated_at": 2200.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "retry2",
+  "out": "pending",
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "hauler_due": 1
+   },
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 3,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "hauler_due",
+     "last_error": "bad shape",
+     "lease_until": null,
+     "next_run_at": 2208.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 3
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 2200.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "claim3",
+  "out": 4,
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "running": 1
+   },
+   "queued": {},
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 4,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "hauler_due",
+     "last_error": "bad shape",
+     "lease_until": 2720.0,
+     "next_run_at": 2208.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 3
+     },
+     "result": null,
+     "state": "running",
+     "t": 0,
+     "task_key": "",
+     "token": "<tok>",
+     "updated_at": 2600.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "retry3",
+  "out": "pending",
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "hauler_due": 1
+   },
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 4,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "hauler_due",
+     "last_error": "bad shape",
+     "lease_until": null,
+     "next_run_at": 2616.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 3
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 2600.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "claim4",
+  "out": 5,
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "running": 1
+   },
+   "queued": {},
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 5,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "hauler_due",
+     "last_error": "bad shape",
+     "lease_until": 3120.0,
+     "next_run_at": 2616.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 3
+     },
+     "result": null,
+     "state": "running",
+     "t": 0,
+     "task_key": "",
+     "token": "<tok>",
+     "updated_at": 3000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "retry4",
+  "out": "dead",
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "dead": 1,
+    "operations": 0
+   },
+   "queued": {},
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 5,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "hauler_due",
+     "last_error": "bad shape",
+     "lease_until": null,
+     "next_run_at": 3032.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 3
+     },
+     "result": null,
+     "state": "dead",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 3000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "claim5",
+  "out": null,
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "dead": 1,
+    "operations": 0
+   },
+   "queued": {},
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 5,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "hauler_due",
+     "last_error": "bad shape",
+     "lease_until": null,
+     "next_run_at": 3032.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 3
+     },
+     "result": null,
+     "state": "dead",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 3000.0,
+     "version": 0
+    }
+   ]
+  }
+ }
+]

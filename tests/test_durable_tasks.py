@@ -195,7 +195,7 @@ def test_durable_checkpoint_corruption_fails_closed(tmp_path, corruption):
 
 def test_expired_running_lease_recovers_and_rejects_old_token(tmp_path):
     from hybrid_memory.investigation_context import InvestigationContext
-    from hybrid_memory.taskstore import TaskLeaseLost
+    from hybrid_memory.store.tasks import TaskLeaseLost
 
     svc = _queued(tmp_path)
     agent = AgentWorker(svc, _fake(), lease_s=1)
@@ -267,7 +267,7 @@ def test_sqlite_receipt_failure_rolls_back_checkpoint_and_preserves_memory_ident
 
 
 def test_uncertain_commit_stops_service_until_restart(tmp_path, monkeypatch):
-    from hybrid_memory.taskstore import CheckpointConflict
+    from hybrid_memory.store.tasks import CheckpointConflict
 
     svc = _queued(tmp_path)
     original = svc.tasks.apply_operation
@@ -560,7 +560,7 @@ def test_inflight_observe_cannot_publish_after_checkpoint_becomes_uncertain(monk
     import threading
     from hybrid_memory.candgen.base import CandidateGeneration
     from hybrid_memory.server import triggers
-    from hybrid_memory.taskstore import CheckpointConflict
+    from hybrid_memory.store.tasks import CheckpointConflict
 
     svc = _queued()
     entered, release = threading.Event(), threading.Event()

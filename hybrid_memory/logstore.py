@@ -31,7 +31,7 @@ from typing import Iterable
 import numpy as np
 
 from .embed.base import cosine
-from .taskstore import CaptureConflict
+from .store.tasks import CaptureConflict
 
 # ---------------------------------------------------------------- 实体正则
 # 顺序即优先级；全部只覆盖 ASCII 类"硬实体"——这些在项目日志里最稳定、

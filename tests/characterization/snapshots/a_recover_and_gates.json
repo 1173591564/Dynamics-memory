@@ -1,0 +1,273 @@
+[
+ {
+  "op": "claim",
+  "out": "running",
+  "state": {
+   "checkpoint": "state-0",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "running": 1
+   },
+   "queued": {},
+   "revision": 1,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 1,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": 1010.0,
+     "next_run_at": 0.0,
+     "origin": "repair",
+     "payload": {},
+     "result": null,
+     "state": "running",
+     "t": 0,
+     "task_key": "",
+     "token": "<tok>",
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "recover_expired",
+  "out": "pending",
+  "state": {
+   "checkpoint": "state-0",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "recall_miss": 1
+   },
+   "revision": 1,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 1,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "lease expired",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": "repair",
+     "payload": {},
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1011.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "retry_delay100",
+  "out": 1111.0,
+  "state": {
+   "checkpoint": "state-1",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "recall_miss": 1
+   },
+   "revision": 2,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "x",
+     "lease_until": null,
+     "next_run_at": 1111.0,
+     "origin": "repair",
+     "payload": {},
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1011.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "claim_gated_by_next_run_at",
+  "out": null,
+  "state": {
+   "checkpoint": "state-1",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "recall_miss": 1
+   },
+   "revision": 2,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "x",
+     "lease_until": null,
+     "next_run_at": 1111.0,
+     "origin": "repair",
+     "payload": {},
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1011.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "claim_version_mismatch",
+  "out": null,
+  "state": {
+   "checkpoint": "state-1",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "recall_miss": 1
+   },
+   "revision": 2,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "x",
+     "lease_until": null,
+     "next_run_at": 1111.0,
+     "origin": "repair",
+     "payload": {},
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1011.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "claim_daily_cap",
+  "out": null,
+  "state": {
+   "checkpoint": "state-1",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "recall_miss": 1
+   },
+   "revision": 2,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "x",
+     "lease_until": null,
+     "next_run_at": 1111.0,
+     "origin": "repair",
+     "payload": {},
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1011.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "store_bad_token",
+  "out": "TaskLeaseLost: task 1 租约已失效",
+  "state": {
+   "checkpoint": "state-1",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "recall_miss": 1
+   },
+   "revision": 2,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "x",
+     "lease_until": null,
+     "next_run_at": 1111.0,
+     "origin": "repair",
+     "payload": {},
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1011.0,
+     "version": 0
+    }
+   ]
+  }
+ }
+]

@@ -1,0 +1,569 @@
+[
+ {
+  "op": "rule_snapshot",
+  "out": [
+   {
+    "id": 1,
+    "instruction": "prefer B",
+    "scope": "project",
+    "target": "selector"
+   },
+   {
+    "id": 2,
+    "instruction": "avoid C",
+    "scope": "entity:特殊",
+    "target": "selector"
+   }
+  ],
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0
+   },
+   "queued": {},
+   "revision": 0,
+   "tasks": []
+  }
+ },
+ {
+  "op": "rules_for",
+  "out": [
+   "prefer B",
+   "avoid C"
+  ],
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0
+   },
+   "queued": {},
+   "revision": 0,
+   "tasks": []
+  }
+ },
+ {
+  "op": "rule_report_uses",
+  "out": [
+   {
+    "enabled": 1,
+    "id": 1,
+    "instruction": "prefer B",
+    "scope": "project",
+    "source_task": 1,
+    "target": "selector",
+    "uses": 0
+   },
+   {
+    "enabled": 1,
+    "id": 2,
+    "instruction": "avoid C",
+    "scope": "entity:特殊",
+    "source_task": 2,
+    "target": "selector",
+    "uses": 0
+   }
+  ],
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0
+   },
+   "queued": {},
+   "revision": 0,
+   "tasks": []
+  }
+ },
+ {
+  "op": "disable_rule",
+  "out": [
+   {
+    "enabled": 0,
+    "id": 1,
+    "instruction": "prefer B",
+    "scope": "project",
+    "source_task": 1,
+    "target": "selector",
+    "uses": 0
+   },
+   {
+    "enabled": 1,
+    "id": 2,
+    "instruction": "avoid C",
+    "scope": "entity:特殊",
+    "source_task": 2,
+    "target": "selector",
+    "uses": 0
+   }
+  ],
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0
+   },
+   "queued": {},
+   "revision": 0,
+   "tasks": []
+  }
+ },
+ {
+  "op": "pending_reviews",
+  "out": [
+   {
+    "candidate": "cand",
+    "created_at": 1000.0,
+    "decision": null,
+    "id": 1,
+    "reason": "why",
+    "source_task": 1,
+    "status": "pending",
+    "target_id": 9
+   }
+  ],
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0
+   },
+   "queued": {},
+   "revision": 0,
+   "tasks": []
+  }
+ },
+ {
+  "op": "queued_counts",
+  "out": {
+   "hauler_due": 1,
+   "reviewer_due": 1
+  },
+  "state": {
+   "checkpoint": "sel",
+   "checkpoint_error": null,
+   "counts": {
+    "done": 1,
+    "operations": 1,
+    "pending": 2
+   },
+   "queued": {
+    "hauler_due": 1,
+    "reviewer_due": 1
+   },
+   "revision": 1,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "hauler_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 5
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 1,
+     "attempts": 1,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 2,
+     "kind": "selector_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "candidates": [
+       {
+        "text": "t"
+       }
+      ],
+      "parent_task": 1,
+      "unit_id": 5
+     },
+     "result": {
+      "decisions": [
+       "keep"
+      ]
+     },
+     "state": "done",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1005.0,
+     "dedupe_id": null,
+     "id": 3,
+     "kind": "reviewer_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 5
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1005.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "semantic_stats",
+  "out": {
+   "errors": [],
+   "recog_fail": 0,
+   "retrying": 0,
+   "states": {}
+  },
+  "state": {
+   "checkpoint": "sel",
+   "checkpoint_error": null,
+   "counts": {
+    "done": 1,
+    "operations": 1,
+    "pending": 2
+   },
+   "queued": {
+    "hauler_due": 1,
+    "reviewer_due": 1
+   },
+   "revision": 1,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "hauler_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 5
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 1,
+     "attempts": 1,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 2,
+     "kind": "selector_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "candidates": [
+       {
+        "text": "t"
+       }
+      ],
+      "parent_task": 1,
+      "unit_id": 5
+     },
+     "result": {
+      "decisions": [
+       "keep"
+      ]
+     },
+     "state": "done",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1005.0,
+     "dedupe_id": null,
+     "id": 3,
+     "kind": "reviewer_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 5
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1005.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "workflow_trace",
+  "out": [
+   {
+    "kind": "hauler_due",
+    "state": "pending_at_complaint",
+    "task_id": 1,
+    "unit_id": 5
+   },
+   {
+    "agent_output": {
+     "decisions": [
+      "keep"
+     ]
+    },
+    "candidates": [
+     {
+      "text": "t"
+     }
+    ],
+    "committed_effect": {
+     "applied": 1
+    },
+    "kind": "selector_due",
+    "parent_task": 1,
+    "rule_ids": [],
+    "state": "done",
+    "task_id": 2,
+    "unit_id": 5
+   }
+  ],
+  "state": {
+   "checkpoint": "sel",
+   "checkpoint_error": null,
+   "counts": {
+    "done": 1,
+    "operations": 1,
+    "pending": 2
+   },
+   "queued": {
+    "hauler_due": 1,
+    "reviewer_due": 1
+   },
+   "revision": 1,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "hauler_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 5
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 1,
+     "attempts": 1,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 2,
+     "kind": "selector_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "candidates": [
+       {
+        "text": "t"
+       }
+      ],
+      "parent_task": 1,
+      "unit_id": 5
+     },
+     "result": {
+      "decisions": [
+       "keep"
+      ]
+     },
+     "state": "done",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1005.0,
+     "dedupe_id": null,
+     "id": 3,
+     "kind": "reviewer_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 5
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1005.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "trace_missing_trigger",
+  "out": "ValueError: review trigger task missing",
+  "state": {
+   "checkpoint": "sel",
+   "checkpoint_error": null,
+   "counts": {
+    "done": 1,
+    "operations": 1,
+    "pending": 2
+   },
+   "queued": {
+    "hauler_due": 1,
+    "reviewer_due": 1
+   },
+   "revision": 1,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "hauler_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 5
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 1,
+     "attempts": 1,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 2,
+     "kind": "selector_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "candidates": [
+       {
+        "text": "t"
+       }
+      ],
+      "parent_task": 1,
+      "unit_id": 5
+     },
+     "result": {
+      "decisions": [
+       "keep"
+      ]
+     },
+     "state": "done",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1005.0,
+     "dedupe_id": null,
+     "id": 3,
+     "kind": "reviewer_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "unit_id": 5
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1005.0,
+     "version": 0
+    }
+   ]
+  }
+ }
+]

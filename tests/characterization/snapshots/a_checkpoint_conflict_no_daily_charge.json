@@ -1,0 +1,123 @@
+[
+ {
+  "op": "save_checkpoint",
+  "out": 1,
+  "state": {
+   "checkpoint": "newer",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "recall_miss": 1
+   },
+   "revision": 1,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {},
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "claim_stale_revision",
+  "out": "CheckpointConflict: checkpoint 已由其他服务实例推进；请重启加载最新状态",
+  "state": {
+   "checkpoint": "newer",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "recall_miss": 1
+   },
+   "revision": 1,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {},
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "after",
+  "out": {
+   "checkpoint": 1,
+   "runs": 0,
+   "state": "pending"
+  },
+  "state": {
+   "checkpoint": "newer",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "recall_miss": 1
+   },
+   "revision": 1,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {},
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ }
+]

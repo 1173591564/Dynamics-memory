@@ -1,0 +1,117 @@
+[
+ {
+  "op": "apply_unit",
+  "out": [
+   {
+    "next_memory_id": 5,
+    "units": 1
+   },
+   1,
+   false
+  ],
+  "state": {
+   "checkpoint": "u0",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0
+   },
+   "queued": {},
+   "revision": 1,
+   "tasks": []
+  }
+ },
+ {
+  "op": "apply_unit_replay",
+  "out": [
+   {
+    "next_memory_id": 5,
+    "units": 1
+   },
+   1,
+   true
+  ],
+  "state": {
+   "checkpoint": "u0",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0
+   },
+   "queued": {},
+   "revision": 1,
+   "tasks": []
+  }
+ },
+ {
+  "op": "remember_capture",
+  "out": [
+   {
+    "ok": 1
+   },
+   false
+  ],
+  "state": {
+   "checkpoint": "u0",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0
+   },
+   "queued": {},
+   "revision": 1,
+   "tasks": []
+  }
+ },
+ {
+  "op": "apply_captured",
+  "out": [
+   {
+    "n": 1
+   },
+   2,
+   false
+  ],
+  "state": {
+   "checkpoint": "c1",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0
+   },
+   "queued": {},
+   "revision": 2,
+   "tasks": []
+  }
+ },
+ {
+  "op": "apply_captured_replay",
+  "out": [
+   {
+    "n": 1
+   },
+   2,
+   true
+  ],
+  "state": {
+   "checkpoint": "c1",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0
+   },
+   "queued": {},
+   "revision": 2,
+   "tasks": []
+  }
+ },
+ {
+  "op": "capture_conflict",
+  "out": "CaptureConflict: request_id r2 已绑定不同请求",
+  "state": {
+   "checkpoint": "c1",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0
+   },
+   "queued": {},
+   "revision": 2,
+   "tasks": []
+  }
+ }
+]

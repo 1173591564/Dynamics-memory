@@ -14,7 +14,7 @@ def main():
     args = ap.parse_args()
     root = Path(args.project) / ".opencode" / "memory"
     if args.list_rules or args.disable_rule is not None:
-        from ..taskstore import TaskStore
+        from ..store.tasks import TaskStore
         store = TaskStore(root / "tasks.sqlite")
         try:
             if args.disable_rule is not None:

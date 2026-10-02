@@ -1,0 +1,246 @@
+[
+ {
+  "op": "enqueue",
+  "out": 1,
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "extract_due": 1
+   },
+   "revision": 0,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "extract_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "u": 1
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "claim0",
+  "out": {
+   "attempts": 1,
+   "state": "running"
+  },
+  "state": {
+   "checkpoint": "state-0",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "running": 1
+   },
+   "queued": {},
+   "revision": 1,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 1,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "extract_due",
+     "last_error": "",
+     "lease_until": 1010.0,
+     "next_run_at": 0.0,
+     "origin": "repair",
+     "payload": {
+      "u": 1
+     },
+     "result": null,
+     "state": "running",
+     "t": 0,
+     "task_key": "",
+     "token": "<tok>",
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "retry0",
+  "out": "pending",
+  "state": {
+   "checkpoint": "state-0",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "extract_due": 1
+   },
+   "revision": 1,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 1,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "extract_due",
+     "last_error": "boom0",
+     "lease_until": null,
+     "next_run_at": 1010.0,
+     "origin": "repair",
+     "payload": {
+      "u": 1
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "claim1",
+  "out": {
+   "attempts": 2,
+   "state": "running"
+  },
+  "state": {
+   "checkpoint": "state-1",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "running": 1
+   },
+   "queued": {},
+   "revision": 2,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "extract_due",
+     "last_error": "boom0",
+     "lease_until": 1021.0,
+     "next_run_at": 1010.0,
+     "origin": "repair",
+     "payload": {
+      "u": 1
+     },
+     "result": null,
+     "state": "running",
+     "t": 0,
+     "task_key": "",
+     "token": "<tok>",
+     "updated_at": 1011.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "retry1",
+  "out": "dead",
+  "state": {
+   "checkpoint": "state-1",
+   "checkpoint_error": null,
+   "counts": {
+    "dead": 1,
+    "operations": 0
+   },
+   "queued": {},
+   "revision": 2,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "extract_due",
+     "last_error": "boom1",
+     "lease_until": null,
+     "next_run_at": 1021.0,
+     "origin": "repair",
+     "payload": {
+      "u": 1
+     },
+     "result": null,
+     "state": "dead",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1011.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "claim2",
+  "out": null,
+  "state": {
+   "checkpoint": "state-1",
+   "checkpoint_error": null,
+   "counts": {
+    "dead": 1,
+    "operations": 0
+   },
+   "queued": {},
+   "revision": 2,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "extract_due",
+     "last_error": "boom1",
+     "lease_until": null,
+     "next_run_at": 1021.0,
+     "origin": "repair",
+     "payload": {
+      "u": 1
+     },
+     "result": null,
+     "state": "dead",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1011.0,
+     "version": 0
+    }
+   ]
+  }
+ }
+]

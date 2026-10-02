@@ -3,7 +3,8 @@ import threading
 
 import pytest
 
-from hybrid_memory.taskstore import CheckpointConflict, TaskLeaseLost, TaskQueueFull, TaskStore
+from hybrid_memory.store.tasks import (CheckpointConflict, TaskLeaseLost,
+                                       TaskQueueFull, TaskStore)
 
 
 def _claim(store, task_id, **overrides):
@@ -39,7 +40,8 @@ def test_stale_claim_token_cannot_store_result_or_finish():
     tid = store.enqueue("recall_miss", {}, 0)
     old = _claim(store, tid)
     now[0] += 11
-    store.recover_expired(3, 3)
+    store.recover_expired(3, 3, kinds=("recall_miss", "extract_due"),
+                            reset_next_run_at=False)
     fresh = _claim(store, tid, expected_revision=1)
     with pytest.raises(TaskLeaseLost):
         store.store_result(tid, old["token"], {}, checkpoint=b"stale",

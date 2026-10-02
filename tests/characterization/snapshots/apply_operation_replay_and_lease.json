@@ -1,0 +1,129 @@
+[
+ {
+  "op": "apply_operation",
+  "out": [
+   {
+    "v": [
+     0.1
+    ]
+   },
+   2,
+   false
+  ],
+  "state": {
+   "checkpoint": "op1",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 1,
+    "running": 1
+   },
+   "queued": {},
+   "revision": 2,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 1,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": 1100.0,
+     "next_run_at": 0.0,
+     "origin": "repair",
+     "payload": {},
+     "result": null,
+     "state": "running",
+     "t": 0,
+     "task_key": "",
+     "token": "<tok>",
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "apply_operation_replay",
+  "out": [
+   {
+    "v": [
+     0.1
+    ]
+   },
+   2,
+   true
+  ],
+  "state": {
+   "checkpoint": "op1",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 1,
+    "running": 1
+   },
+   "queued": {},
+   "revision": 2,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 1,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": 1100.0,
+     "next_run_at": 0.0,
+     "origin": "repair",
+     "payload": {},
+     "result": null,
+     "state": "running",
+     "t": 0,
+     "task_key": "",
+     "token": "<tok>",
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "apply_operation_bad_token",
+  "out": "TaskLeaseLost: task 1 租约已失效",
+  "state": {
+   "checkpoint": "op1",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 1,
+    "running": 1
+   },
+   "queued": {},
+   "revision": 2,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 1,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": 1100.0,
+     "next_run_at": 0.0,
+     "origin": "repair",
+     "payload": {},
+     "result": null,
+     "state": "running",
+     "t": 0,
+     "task_key": "",
+     "token": "<tok>",
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ }
+]

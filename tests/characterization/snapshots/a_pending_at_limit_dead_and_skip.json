@@ -1,0 +1,374 @@
+[
+ {
+  "op": "attempts2",
+  "out": 2,
+  "state": {
+   "checkpoint": "state-1",
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "recall_miss": 1
+   },
+   "revision": 2,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "e",
+     "lease_until": null,
+     "next_run_at": 1001.0,
+     "origin": "repair",
+     "payload": {
+      "q": "d"
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "dedupe",
+     "token": null,
+     "updated_at": 1001.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "recover_dead_at_limit",
+  "out": "dead",
+  "state": {
+   "checkpoint": "state-1",
+   "checkpoint_error": null,
+   "counts": {
+    "dead": 1,
+    "operations": 0
+   },
+   "queued": {},
+   "revision": 2,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "attempt limit exhausted",
+     "lease_until": null,
+     "next_run_at": 1001.0,
+     "origin": "repair",
+     "payload": {
+      "q": "d"
+     },
+     "result": null,
+     "state": "dead",
+     "t": 0,
+     "task_key": "dedupe",
+     "token": null,
+     "updated_at": 1002.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "enqueue_same_key",
+  "out": {
+   "dedupe": 2,
+   "id": 3
+  },
+  "state": {
+   "checkpoint": "state-4",
+   "checkpoint_error": null,
+   "counts": {
+    "dead": 1,
+    "done": 1,
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "extract_due": 1
+   },
+   "revision": 5,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "attempt limit exhausted",
+     "lease_until": null,
+     "next_run_at": 1001.0,
+     "origin": "repair",
+     "payload": {
+      "q": "d"
+     },
+     "result": null,
+     "state": "dead",
+     "t": 0,
+     "task_key": "dedupe",
+     "token": null,
+     "updated_at": 1002.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 1,
+     "attempts": 1,
+     "before_t": 1,
+     "created_at": 1002.0,
+     "dedupe_id": null,
+     "id": 2,
+     "kind": "extract_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": "repair",
+     "payload": {
+      "q": "s"
+     },
+     "result": {},
+     "state": "done",
+     "t": 0,
+     "task_key": "skipme",
+     "token": null,
+     "updated_at": 1002.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1002.0,
+     "dedupe_id": 2,
+     "id": 3,
+     "kind": "extract_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "q": "s2"
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "skipme",
+     "token": null,
+     "updated_at": 1002.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "skip_recent_hit",
+  "out": "skipped",
+  "state": {
+   "checkpoint": "state-4",
+   "checkpoint_error": null,
+   "counts": {
+    "dead": 1,
+    "done": 1,
+    "operations": 0,
+    "skipped": 1
+   },
+   "queued": {},
+   "revision": 5,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "attempt limit exhausted",
+     "lease_until": null,
+     "next_run_at": 1001.0,
+     "origin": "repair",
+     "payload": {
+      "q": "d"
+     },
+     "result": null,
+     "state": "dead",
+     "t": 0,
+     "task_key": "dedupe",
+     "token": null,
+     "updated_at": 1002.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 1,
+     "attempts": 1,
+     "before_t": 1,
+     "created_at": 1002.0,
+     "dedupe_id": null,
+     "id": 2,
+     "kind": "extract_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": "repair",
+     "payload": {
+      "q": "s"
+     },
+     "result": {},
+     "state": "done",
+     "t": 0,
+     "task_key": "skipme",
+     "token": null,
+     "updated_at": 1002.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1002.0,
+     "dedupe_id": 2,
+     "id": 3,
+     "kind": "extract_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "q": "s2"
+     },
+     "result": null,
+     "state": "skipped",
+     "t": 0,
+     "task_key": "skipme",
+     "token": null,
+     "updated_at": 1002.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "skip_recent_miss",
+  "out": "pending",
+  "state": {
+   "checkpoint": "state-4",
+   "checkpoint_error": null,
+   "counts": {
+    "dead": 1,
+    "done": 1,
+    "operations": 0,
+    "pending": 1,
+    "skipped": 1
+   },
+   "queued": {
+    "extract_due": 1
+   },
+   "revision": 5,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 2,
+     "before_t": 1,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "attempt limit exhausted",
+     "lease_until": null,
+     "next_run_at": 1001.0,
+     "origin": "repair",
+     "payload": {
+      "q": "d"
+     },
+     "result": null,
+     "state": "dead",
+     "t": 0,
+     "task_key": "dedupe",
+     "token": null,
+     "updated_at": 1002.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 1,
+     "attempts": 1,
+     "before_t": 1,
+     "created_at": 1002.0,
+     "dedupe_id": null,
+     "id": 2,
+     "kind": "extract_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": "repair",
+     "payload": {
+      "q": "s"
+     },
+     "result": {},
+     "state": "done",
+     "t": 0,
+     "task_key": "skipme",
+     "token": null,
+     "updated_at": 1002.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1002.0,
+     "dedupe_id": 2,
+     "id": 3,
+     "kind": "extract_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "q": "s2"
+     },
+     "result": null,
+     "state": "skipped",
+     "t": 0,
+     "task_key": "skipme",
+     "token": null,
+     "updated_at": 1002.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1002.0,
+     "dedupe_id": 2,
+     "id": 4,
+     "kind": "extract_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "q": "s3"
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "skipme",
+     "token": null,
+     "updated_at": 1002.0,
+     "version": 0
+    }
+   ]
+  }
+ }
+]

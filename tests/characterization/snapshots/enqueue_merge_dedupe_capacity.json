@@ -1,0 +1,304 @@
+[
+ {
+  "op": "enqueue",
+  "out": 1,
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "recall_miss": 1
+   },
+   "revision": 0,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "q": "old"
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "q",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "merge",
+  "out": {
+   "payload": {
+    "q": "new"
+   },
+   "t": 8,
+   "version": 1
+  },
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "recall_miss": 1
+   },
+   "revision": 0,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "q": "new"
+     },
+     "result": null,
+     "state": "pending",
+     "t": 8,
+     "task_key": "q",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 1
+    }
+   ]
+  }
+ },
+ {
+  "op": "enqueue_b",
+  "out": 2,
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 2
+   },
+   "queued": {
+    "recall_miss": 2
+   },
+   "revision": 0,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "q": "new"
+     },
+     "result": null,
+     "state": "pending",
+     "t": 8,
+     "task_key": "q",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 1
+    },
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 2,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "q": "b"
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "k2",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "capacity_full",
+  "out": "TaskQueueFull: 任务队列容量 2 已满；未接受新任务",
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 2
+   },
+   "queued": {
+    "recall_miss": 2
+   },
+   "revision": 0,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "q": "new"
+     },
+     "result": null,
+     "state": "pending",
+     "t": 8,
+     "task_key": "q",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 1
+    },
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 2,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "q": "b"
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "k2",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "memory_next_id",
+  "out": 42,
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": null,
+   "counts": {
+    "operations": 0,
+    "pending": 3
+   },
+   "queued": {
+    "extract_due": 1,
+    "recall_miss": 2
+   },
+   "revision": 0,
+   "tasks": [
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "q": "new"
+     },
+     "result": null,
+     "state": "pending",
+     "t": 8,
+     "task_key": "q",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 1
+    },
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 2,
+     "kind": "recall_miss",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {
+      "q": "b"
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "k2",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    },
+    {
+     "apply_attempts": 0,
+     "attempts": 0,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 3,
+     "kind": "extract_due",
+     "last_error": "",
+     "lease_until": null,
+     "next_run_at": 0.0,
+     "origin": null,
+     "payload": {},
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ }
+]

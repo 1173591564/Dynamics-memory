@@ -1,0 +1,93 @@
+[
+ {
+  "op": "retry_model",
+  "out": {
+   "next_run_at": 1002.0,
+   "result": null,
+   "state": "pending"
+  },
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "feedback_pending": 1
+   },
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 1,
+     "attempts": 1,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "feedback_pending",
+     "last_error": "model 502",
+     "lease_until": null,
+     "next_run_at": 1002.0,
+     "origin": null,
+     "payload": {
+      "r": 1
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 1000.0,
+     "version": 0
+    }
+   ]
+  }
+ },
+ {
+  "op": "backoff",
+  "out": [
+   4.0,
+   8.0,
+   16.0,
+   32.0
+  ],
+  "state": {
+   "checkpoint": null,
+   "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
+   "counts": {
+    "operations": 0,
+    "pending": 1
+   },
+   "queued": {
+    "feedback_pending": 1
+   },
+   "revision": null,
+   "tasks": [
+    {
+     "apply_attempts": 1,
+     "attempts": 5,
+     "before_t": null,
+     "created_at": 1000.0,
+     "dedupe_id": null,
+     "id": 1,
+     "kind": "feedback_pending",
+     "last_error": "x",
+     "lease_until": null,
+     "next_run_at": 2632.0,
+     "origin": null,
+     "payload": {
+      "r": 1
+     },
+     "result": null,
+     "state": "pending",
+     "t": 0,
+     "task_key": "",
+     "token": null,
+     "updated_at": 2600.0,
+     "version": 0
+    }
+   ]
+  }
+ }
+]

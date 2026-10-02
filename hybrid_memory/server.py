@@ -86,8 +86,8 @@ from .semantics import normalize
 from .semantics.llm import LLMSemantics
 from .core import maintenance
 from .core.types import FeedbackSemantics, ConsolidationSemantics, is_visible
-from .taskstore import SEMANTIC_KINDS, WORKFLOW_KINDS, TaskLeaseLost
-from .taskstore import TaskStore, TaskQueueFull, CheckpointConflict, CaptureConflict, encode
+from .store.tasks import SEMANTIC_KINDS, WORKFLOW_KINDS, TaskLeaseLost
+from .store.tasks import TaskStore, TaskQueueFull, CheckpointConflict, CaptureConflict, encode
 
 _RETRIEVAL_KEEP = 512   # retrieval 注册表上限（feedback 用，防无界增长）
 # [^>]* 单趟即可：匹配内部不含 '>'，嵌套 payload 被整体吃掉，
@@ -836,7 +836,7 @@ class MemoryService:
                     finally:
                         q.on_emit = old_emit
 
-                out, revision = self.tasks.complete_semantic(
+                out, revision = self.tasks.complete(
                     row["id"], row["token"], mutate,
                     self._dump_state, self._checkpoint_revision)
                 self._checkpoint_revision = revision
@@ -857,23 +857,26 @@ class MemoryService:
         try:
             with self._lock:
                 stats["thin"] = len(self.engine.signals.take(("thin_recall",)))
-            self.tasks.recover_semantic_expired()
+            self.tasks.recover_expired(kinds=SEMANTIC_KINDS,
+                                       reset_next_run_at=True)
             for item in self.tasks.list_tasks(states=("pending", "ready"), kinds=SEMANTIC_KINDS)[:limit]:
                 row = None
                 try:
                     with self._lock:
                         self._ensure_healthy()
-                        row = self.tasks.claim_semantic(item["id"], item["version"])
+                        row = self.tasks.claim(item["id"],
+                                                       expected_version=item["version"])
                     if row is None:
                         continue
                     if row["state"] == "running":
                         result = self._semantic_model(row)
                         if row["kind"] == "conflict_pending":
                             stats["judged"] += len(result["verdicts"])
-                        self.tasks.store_semantic_result(row["id"], row["token"], result)
+                        self.tasks.store_result(row["id"], row["token"], result)
                         with self._lock:
                             self._ensure_healthy()
-                            row = self.tasks.claim_semantic(row["id"], row["version"])
+                            row = self.tasks.claim(row["id"],
+                                                           expected_version=row["version"])
                         if row is None:
                             continue
                     out = self._apply_semantic(row)
@@ -883,7 +886,7 @@ class MemoryService:
                     stats["errors"] += 1
                     if row is not None:
                         try:
-                            self.tasks.retry_semantic(row["id"], row["token"], exc)
+                            self.tasks.retry(row["id"], row["token"], exc)
                         except TaskLeaseLost:
                             pass  # 产物已落库或其他领取者获权，不覆盖它
                     print(f"[memory-sidecar] 语义任务 {item['id']} 待重试: "
