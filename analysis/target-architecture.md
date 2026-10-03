@@ -733,6 +733,28 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
   CLI → verify_channel Fatal；端到端子进程：缺通道 CLI → bootstrap 非零退出
   且报错含 --file）。真 CLI 行为未验证（沙箱无 opencode），manual_opencode_smoke
   保留为真实环境验证入口。全量 489 passed。
+- **N45 store/schema.py 接线三库身份版本（P0-2，修 §10.4 schema 项 / H10/N23）**：
+  决定：open_db(path, kind∈{log,tasks,cache}) 成为三个 Store（TaskStore/
+  LogStore/SqliteEmbeddingCache）的唯一连接入口——WAL/FULL/FK/busy_timeout、
+  isolation_level=None（自动提交模式，事务由调用方显式 BEGIN IMMEDIATE/
+  COMMIT/ROLLBACK，消除 sqlite3 legacy 隐式事务坑：executescript 隐式提交、
+  悬挂事务）；migrate 高版本先 Fatal（在任何新 DDL 之前，不留半迁移痕迹）；
+  无版本 legacy 库（v0，pre-schema 真实老库）由 ensure_schema 幂等建表 +
+  增量补列（tasks: version/dedupe_id/scope；log: unit_work.context）迁入并
+  登记 schema_version(kind, version)，不清数据、不降级；业务表 DDL 唯一来源
+  收敛到 schema.py（tasks/evidence/cache 三处内联 _SCHEMA 删除）。
+  理由：H10 版本保护此前未生效（open_db 零调用）；双 DDL 源让"库形状"不可
+  判定；隐式事务模式下单条 DML 与 executescript 的提交语义易错。
+  被否决备选：Store 各自保留内联 DDL（双源正是缺陷）；isolation_level 默认
+  legacy 模式 + `with conn`（隐式开启事务的坑仍在）；迁移时清库重建（违背
+  "不清数据"）。
+  影响符号：`store/schema.py`（_DDL×3/KINDS/open_db/migrate/ensure_schema
+  重写）、`store/tasks.py::TaskStore.__init__/transaction`、
+  `store/evidence.py::LogStore.__init__`、`embed/cache.py::SqliteEmbeddingCache`。
+  验证：`tests/unit/test_store_schema.py` 8 条（先红后绿：三库身份独立登记、
+  高版本 Fatal 先于 DDL、tasks/log legacy 库迁移保数据补列、
+  isolation_level=None + 回滚完整 + 无悬挂事务、cache 高版本拒绝、
+  双 DDL 消除 grep 断言）；全量 497 passed。
 
 ### 9.1 旧目标条目的最终去向
 
@@ -776,7 +798,7 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 | `prepare_effect` | worker/效果事务 | 未接；`svc.embedder` 不存在、`embed(str)` 形状错误 |
 | `SemanticsProvider` | `service.semantics` + `/health` | 未接；其单测断言恒真 |
 
-**未兑现契约**：N01（未知 `MEMORY_PIPELINE` 应拒绝；当前放行且被测试固化）、N06（SEM 模型上限与 dead 未实现）、OpenCode 文件通道形状（指令应为位置参数，当前全塞进文件且未验证 CLI 行为）、`store/schema.py` 未接入 Store（H10 版本保护未生效）、HTTP 稳定 `code` 覆盖不全、`assert_consumers` 对 legacy 类 applier 无 callable 校验。
+**未兑现契约（收尾轮已清，见 §9.3）**：N01 未知 `MEMORY_PIPELINE` 拒绝启动（N40）；N06 SEM 模型上限与耗尽 dead（N43）；OpenCode 文件通道形状与缺通道拒绝启动（N44，真实 CLI 行为未验证）；`store/schema.py` 接入三 Store（N45）；HTTP 稳定 `code` 全覆盖（N42）；`assert_consumers` 真 callable 检查与显式外部循环所有权（N42）。五处孤岛符号接线（plan_capacity 背压 N35、conflict_ledger N37、store_call_context N38、prepare_effect N36、SemanticsProvider N39）与 canonical 导入切换（N41）同轮完成。
 
 **声明与事实不符已修正**：N29–N33 由 decision-register 移入本文 §9.2 并改为如实状态；附录计数以重新生成为准（145 模块 / 1360 符号 / 69 常量）。
 
