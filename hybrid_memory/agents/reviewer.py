@@ -20,9 +20,15 @@ def validate(reply, row, svc):
     rule_reviews = reply.get("rule_reviews", [])
     if not isinstance(rule_reviews, list) or len(rule_reviews) > 10:
         raise ValueError("Reviewer rule reviews must be a list of at most 10")
-    review_context = payload.build_payload("reviewer_due", svc, row)
-    used = {rid for task in review_context["handoffs"]
-            for rid in task.get("rule_ids", [])}
+    # N10：优先用封存观测集（模型当时实际可见的规则使用），
+    # 无封存（历史任务）才回退重建。
+    seal = hauler.sealed_context(svc, row)
+    if seal is not None and "handoff_rule_ids" in seal:
+        used = set(seal["handoff_rule_ids"])
+    else:
+        review_context = payload.build_payload("reviewer_due", svc, row)
+        used = {rid for task in review_context["handoffs"]
+                for rid in task.get("rule_ids", [])}
     seen = set()
     for rr in rule_reviews:
         if (not isinstance(rr, dict) or type(rr.get("rule_id")) is not int
@@ -44,6 +50,7 @@ def validate(reply, row, svc):
     candidates = reply.get("repair_candidates", [])
     if not isinstance(candidates, list) or len(candidates) > 20:
         raise ValueError("Reviewer repairs must be a list of at most 20")
-    hauler.validate_sources(svc, candidates, row["payload"]["unit_id"])
+    hauler.validate_sources(svc, candidates, row["payload"]["unit_id"],
+                            sealed=hauler.sealed_window(svc, row))
     return {"diagnosis": reply["diagnosis"], "rules": rules,
             "rule_reviews": rule_reviews, "repair_candidates": candidates}

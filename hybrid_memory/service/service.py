@@ -22,7 +22,7 @@ from . import budgets, feedback, lifecycle, observe, operate, recall, review, to
 from .context import InvestigationContext
 from ..dispatch import effects, policy, worker
 from .operate import ProposalRejected  # noqa: F401 — trio/review 经门面复用
-from ..logstore import LogStore
+from ..store.evidence import LogStore
 from ..store import state
 from ..store.state import _COUNTERS, _SERVICE_COUNTERS
 from ..store.tasks import TaskStore
@@ -100,10 +100,19 @@ class MemoryService:
         lifecycle.ensure_healthy(self)
 
     def _check_checkpoint_error(self, revision):
+        """提交确认丢失检测（N43）：只比较 durable revision 是否越过回滚前值。
+
+        不复用启动校验器 TaskStore.checkpoint()——它在"durable 缺失但存在
+        已领取任务"时抛错，会把干净回滚误判成 fault（首次提交前的失败、
+        无 durable 的测试库都会触发，服务被砖死）。durable 缺失且内存
+        revision 为 0 = 不可能有已提交但确认丢失的 checkpoint，回滚安全。
+        """
         try:
-            self._checkpoint_fault = self.tasks.checkpoint()[0] != revision
+            row = self.tasks.durable_revision()
         except Exception:
             self._checkpoint_fault = True
+            return
+        self._checkpoint_fault = (0 if row is None else row) != revision
 
     def _journal_signal(self, kind, payload, t, key, merge):
         return effects.journal_signal(self, kind, payload, t, key, merge)

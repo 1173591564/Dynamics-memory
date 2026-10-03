@@ -12,11 +12,12 @@ import signal as _signal
 import sys
 from pathlib import Path
 
-from ..llm import chat
+from ..llm.client import chat
 from ..config import Cfg, load_env_key, resolve_pipeline
 from ..legacy.candgen import ChatGenerator
-from ..logstore import LogStore
+from ..store.evidence import LogStore
 from ..semantics.llm import LLMSemantics
+from ..semantics.provider import SemanticsProvider
 from ..service.service import MemoryService
 from .http import serve
 
@@ -42,7 +43,9 @@ def build_default_service(project_dir: str | Path,
 
     emb = ZhipuEmbedder(api_key=key,
                         cache=SqliteEmbeddingCache(mem_dir / "emb.sqlite3"))
-    semantics = LLMSemantics(None, chat_fn=chat_fn, model=model)
+    # H27/N15/N22：真实语义经 SemanticsProvider 包装（双通路 + 降级计数）
+    semantics = SemanticsProvider(LLMSemantics(None, chat_fn=chat_fn, model=model),
+                                  provider="zhipu", model=model)
     cfg = Cfg(theta=0.35, cap_m=8, k=5, tau_dup=0.85, tau_sim=0.78,
               useful_hit=True, defer_credit=True)
     log = LogStore(mem_dir / "log.sqlite", embedder=emb if embed_log else None)
@@ -78,11 +81,25 @@ def main() -> None:
         ap.error("--agent-retry-delay must be finite and non-negative")
 
     service = build_default_service(args.project, model=args.model, task_capacity=args.task_queue_cap)
-    service.trio_mode = resolve_pipeline() != "legacy"
+    # N01：未知管线值拒绝启动（Fatal，不进 HTTP）；地基层 resolve_pipeline
+    # 只抛 ValueError（只用标准库），转换在此完成。
+    from ..errors import Fatal
+    try:
+        pipeline = resolve_pipeline()
+    except ValueError as exc:
+        raise Fatal(str(exc)) from exc
+    service.trio_mode = pipeline != "legacy"
     if not service.trio_mode:
         from ..legacy import warn_once  # P1：§2.11 legacy 启动提示（唯一新增行，行为不变）
         warn_once()
     service.start_unit_recovery()  # 即使 --no-agent，已提交 L0 也必须能恢复
+    # §3.7：trio 管线启用真实 agent 前，先探测 CLI 文件通道；缺失拒绝
+    # 启动（serve 之前，不进 HTTP），不回退超长 argv。
+    trio_runner = None
+    if service.trio_mode and not args.no_agent:
+        from ..agents.opencode import OpenCodeRunner
+        trio_runner = OpenCodeRunner(Path(args.project))
+        trio_runner.verify_channel()
     httpd = serve(service, args.port)
     port = httpd.server_address[1]
 
@@ -107,9 +124,8 @@ def main() -> None:
 
     trio = None
     if service.trio_mode and not args.no_agent:
-        from ..agents.opencode import OpenCodeRunner
         from ..dispatch.worker import DispatchWorker
-        trio = DispatchWorker(service, OpenCodeRunner(Path(args.project)))
+        trio = DispatchWorker(service, trio_runner)
         service.attach_dispatch(trio)
         trio.start()
 

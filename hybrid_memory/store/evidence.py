@@ -31,6 +31,7 @@ from typing import Iterable
 import numpy as np
 
 from ..core.types import cosine
+from . import schema
 from .tasks import CaptureConflict
 
 # ---------------------------------------------------------------- 实体正则
@@ -88,52 +89,6 @@ def entities_in(text: str, limit: int = 64) -> list[tuple[str, str]]:
 
 
 # ---------------------------------------------------------------- 存储
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS units (
-    id INTEGER PRIMARY KEY,
-    t INTEGER NOT NULL,
-    ts REAL NOT NULL,
-    scene TEXT NOT NULL DEFAULT '',
-    user_text TEXT NOT NULL,
-    assistant_text TEXT NOT NULL,
-    assistant_turns INTEGER NOT NULL DEFAULT 1
-);
-CREATE INDEX IF NOT EXISTS units_t ON units(t);
-CREATE VIRTUAL TABLE IF NOT EXISTS units_fts USING fts5(
-    user_text, assistant_text, content='units', content_rowid='id',
-    tokenize='trigram');
-CREATE TRIGGER IF NOT EXISTS units_ai AFTER INSERT ON units BEGIN
-    INSERT INTO units_fts(rowid, user_text, assistant_text)
-    VALUES (new.id, new.user_text, new.assistant_text);
-END;
-CREATE TABLE IF NOT EXISTS mentions (
-    entity TEXT NOT NULL,
-    kind TEXT NOT NULL,
-    unit_id INTEGER NOT NULL,
-    PRIMARY KEY (entity, unit_id)
-);
-CREATE INDEX IF NOT EXISTS mentions_unit ON mentions(unit_id);
-CREATE TABLE IF NOT EXISTS unit_emb (
-    unit_id INTEGER PRIMARY KEY,
-    dims INTEGER NOT NULL,
-    vec BLOB NOT NULL
-);
--- Only online append creates a row. Legacy units are deliberately not replayed.
-CREATE TABLE IF NOT EXISTS unit_work (
-    unit_id INTEGER PRIMARY KEY REFERENCES units(id),
-    state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','done')),
-    result TEXT, context TEXT NOT NULL DEFAULT '{}', attempts INTEGER NOT NULL DEFAULT 0,
-    last_error TEXT NOT NULL DEFAULT '', next_run_at REAL NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS unit_work_order ON unit_work(state,unit_id);
-CREATE TABLE IF NOT EXISTS capture_receipts (
-    request_id TEXT PRIMARY KEY,
-    unit_id INTEGER NOT NULL REFERENCES units(id),
-    fingerprint TEXT NOT NULL,
-    created_at REAL NOT NULL
-);
-"""
-
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_#./+-]{2,}|[\u4e00-\u9fff]+")
 _MAX_EMBED_CHARS = 1800
 
@@ -171,17 +126,10 @@ def _snippet(text: str, tokens: list[str], width: int) -> str:
 class LogStore:
     def __init__(self, path: str | Path | None = None, embedder=None):
         self.path = Path(path) if path else None
-        if self.path:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.path) if self.path else ":memory:",
-                                     check_same_thread=False)
-        if self.path:
-            self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=FULL")
-        self._conn.execute("PRAGMA foreign_keys=ON")
-        self._conn.executescript(_SCHEMA)
-        if "context" not in {r[1] for r in self._conn.execute("PRAGMA table_info(unit_work)")}:
-            self._conn.execute("ALTER TABLE unit_work ADD COLUMN context TEXT NOT NULL DEFAULT '{}'")
+        # H10/N45：连接与建表统一经 schema.open_db（kind=log 身份版本、
+        # legacy 增量迁移、isolation_level=None 显式事务）。
+        self._conn = schema.open_db(str(self.path) if self.path else ":memory:",
+                                    kind="log")
         self._lock = threading.RLock()
         self._embedder = embedder
         self.n_embed_fail = 0

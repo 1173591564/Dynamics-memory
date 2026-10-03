@@ -14,7 +14,7 @@
 - 公开产品符号的目标契约（含结构化返回字段）在 `architecture_contract.py` 逐条固定；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。计划新增与删除项同样在该文件冻结，见 §5.9 与 §9。产品代码的模块级常量/别名在 `CONSTANTS` 表逐条登记（判定范围＝顶层 Assign/AnnAssign 且全大写或 `_` 开头，dunder 除外），检查器强制未登记即红。
 - 后续清理只执行第 9 节的明确处置。漏登是覆盖检查失败，不是自动删除授权；调用方、状态/部署兼容和替代测试迁完才删。数据目录、证据、凭据、Git 历史、第三方源码未获删除授权。
 - 测试和 TIDE 是验收资产，不能按“生产没 import”判断死代码。本文与附录不得各自保存不同的目标策略；附录只自动记录现状形态，行为决策只在本文。
-- 过程标准（开发行为、五维 DoD、门禁链）见 [`engineering-charter.md`](engineering-charter.md)；其例外与计划错误码见 §9.2 N35。本文仍是唯一系统设计，章程不替代它。
+- 过程标准（开发行为、五维 DoD、门禁链）见 [`engineering-charter.md`](engineering-charter.md)；其例外与计划错误码见 §9.2 N46。本文仍是唯一系统设计，章程不替代它。
 
 ## 1. 公理、闭环与目录
 
@@ -442,7 +442,7 @@ semantics.llm._one_word/_index_set关系/编号容错，合法NONE不是失败�
 - Legacy 公共 parse（`parse_ids/parse_salience`）迁 guards 供新协议严格校验；Legacy 宽容解析保留兼容。
 - `LLMSemantics` 包装为 SemanticsProvider 并接 `/health`、`/signals`；存量 judge 通路保留但显式。
 
-**同步状态（arena 01a10032，2026-10-03）**：上述模块与符号已落地；`plan_capacity`/`conflict_ledger`/`store_call_context`/`prepare_effect`/`SemanticsProvider` 目前**只被单元测试调用，尚未接入运行时**；`prepare_effect` 的 `svc.embedder` 属性不存在（服务为 `svc.emb`），向量分支恒空。逐项缺口与修复顺序见 §10.4。
+**同步状态（收尾轮 2026-10-03）**：上述模块与符号已落地**且已接入运行时**——五处孤岛符号接线（N35–N39）、`prepare_effect` 三硬伤修复（`svc.emb`、批量 `embed`、向量真消费）、canonical 导入切换（N41）均完成；逐项结果与回归证据见 §9.3/§10.4。
 
 ## 6. 传输与部署逐函数
 
@@ -531,9 +531,232 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 - **N32 调用上下文与效果准备**：`store_call_context`、`prepare_effect` 已实现；**均未接线**；`prepare_effect` 的 `svc.embedder` 属性不存在（服务为 `svc.emb`），向量分支恒空。
 - **N33 清理收敛**：`clamp`、`cited_text`、`_has_int_gt` 删除完成，DELETIONS 已同步；不含其他行为变更。
 - **N34 模块级常量登记**：产品代码模块级常量/别名进入 `CONSTANTS` 逐条登记，检查器强制（未登记/失效/缺理由即红）；测试与评测常量随所属模块（TIDE 冻结）。本轮登记 69 条，判定范围＝顶层 Assign/AnnAssign 且全大写或 `_` 开头（dunder 除外）。
-- **N35 工程规范章程采纳（含已声明例外与计划错误码）**：采纳 [`engineering-charter.md`](engineering-charter.md)（14 条 + 五维 DoD + 门禁链）为开发过程标准。**已声明例外**（属契约认可行为，不得当作违规去"修"）：① `thin_recall` 易失遥测可丢但必须计数（N02）；② 裸引擎 `SignalWorker` 内存队列丢最旧、无 SQLite 死信（N26 兼容形态）；③ Legacy 调查兼容上限（INV 模型 2/应用 3）与 `skip_recent` TTL；④ §10.4 跟踪的未接线/未兑现项允许暂时存在，但不得长期滞留；⑤ 章程第 1 条约束生产代码（`hybrid_memory/**`），测试/评测资产受"保留登记"约束而非调用链约束；⑥ shim 仅允许无逻辑转发（第 3 条）。**计划错误码**（实现时必须进 `_STATUS`，并配"代码中出现的所有 code 均有映射"的回归）：`capacity_backpressure`→503（容量背压，`plan_capacity` 拒收路径）、`already_credited`→409（feedback 重复回执；插件已按此对齐，`test_http_feedback_retry_and_already_credited_are_distinct` 需同步断言 code）。**门禁边界**：完整 Bun 超时用例与 bench smoke 仍属 §10.4 未验证项，按"如实记录、不得过滤"执行；门禁只规定"提交前必须跑什么"，不授权 AI 自宣布完成——该判断属于人。
+- **N46 工程规范章程采纳（含已声明例外与计划错误码）**（编号重排：原为 N35，因与收尾轮 N35–N45 撞号，合并时重排为 N46）：采纳 [`engineering-charter.md`](engineering-charter.md)（14 条 + 五维 DoD + 门禁链）为开发过程标准。**已声明例外**（属契约认可行为，不得当作违规去"修"）：① `thin_recall` 易失遥测可丢但必须计数（N02）；② 裸引擎 `SignalWorker` 内存队列丢最旧、无 SQLite 死信（N26 兼容形态）；③ Legacy 调查兼容上限（INV 模型 2/应用 3）与 `skip_recent` TTL；④ §10.4 跟踪的未接线/未兑现项允许暂时存在，但不得长期滞留；⑤ 章程第 1 条约束生产代码（`hybrid_memory/**`），测试/评测资产受"保留登记"约束而非调用链约束；⑥ shim 仅允许无逻辑转发（第 3 条）。**计划错误码**（实现时必须进 `_STATUS`，并配"代码中出现的所有 code 均有映射"的回归）：`capacity_backpressure`→503（容量背压，`plan_capacity` 拒收路径）、`already_credited`→409（feedback 重复回执；插件已按此对齐，`test_http_feedback_retry_and_already_credited_are_distinct` 需同步断言 code）。**门禁边界**：完整 Bun 超时用例与 bench smoke 仍属 §10.4 未验证项，按"如实记录、不得过滤"执行；门禁只规定"提交前必须跑什么"，不授权 AI 自宣布完成——该判断属于人。
 
 未兑现契约与未接线清单见 §10.4；N29–N33 的"已完成"式表述作废，以本节如实状态为准。
+
+### 9.3 收尾轮决策（N35 起）
+
+- **N35 容量收口与背压落地（P0-1.1，兑现 §10.4 未接线项 plan_capacity）**：
+  决定：`apply_selector`/`apply_maintenance`/`decide_human_review` 的提交路径统一经
+  `effects.enforce_capacity` → `plan_capacity(mems, cfg, pinned, t=当前 t)`；模拟迁 A 以当前 t
+  打戳（t 缺省按最新处理），存量快照缺 archived_at 仍按 H11 视为最旧；cap_context 计非退役
+  版本总数（C+M+A 含归档、不计 retired），上下文超限按 FIFO 补删无保护非退役 A，删除 retired
+  条目不减少上下文；全 pin 无法收口抛 `Degraded("capacity_backpressure")` → HTTP 503，整批
+  回滚、合法产物留 ready 退避、应用上限耗尽 dead（保留产物）。`engine.step` 维护路径维持
+  `overflow_policy` 语义（H11/H12，无背压——单元交付不接受因容量失败，旧库超限走 degraded 治理）。
+  理由：§4.2 要求收口点在效果事务提交前且不为收容量额外 step；背压异常不能是 ValueError 子类，
+  否则 worker 按 retry_model 清产物重跑模型，违反"合法产物留 ready"。
+  被否决备选：背压用 Rejected（错域：这是暂时性 503，不是调用方错）；run_maintenance 内加背压
+  （单元交付语义不允许容量失败；且 step 会额外衰减）；人审路径不收口（§4.2 明确人审属收口点）。
+  影响符号：`core/dynamics.py::plan_capacity`(+t 参数)、`dispatch/effects.py::enforce_capacity`(新增)、
+  `apply_selector`、`apply_maintenance`、`service/review.py::decide_human_review`、
+  `config.py::Cfg`(+cap_context=500)、`errors._STATUS`(+capacity_backpressure:503)、
+  `transport/http.py::_run`(+Degraded 映射)。
+  验证：`tests/unit/test_capacity_backpressure.py` 9 条回归（FIFO 方向、cap_context 补删与
+  retired 口径、全 pin 背压回滚、产物保留、应用耗尽 dead、contradiction/人审路径不打错戳）。
+- **N36 prepare_effect 接线与向量预计算落地（P0-1.4，兑现 §10.4 未接线项）**：
+  决定：修复三处硬伤（`svc.embedder`→`svc.emb`；`embed(str)`→`embed(list, keys)` 批量且带
+  embedding_key；返回值 vectors 真正消费）；`run_ingest`/`MemoryEngine.propose` 增可选
+  `vectors=`、`admit_reflection`/`add_reflection` 增可选 `vector=`（裸调用 None 兼容，
+  §2.5）；worker 两路径接线：`DispatchWorker.process_once`（ready 领取后、进服务锁前
+  prepare）与 `apply_semantic`（锁外 prepare），计划经 `plan=` 穿进 applier；
+  `apply_selector` 复用已验证 Event 与向量（候选正文全链路只 embed 一次），并在事务内
+  复核目标邮戳（superseded_by/aggregated_into/last_seen），漂移整批拒绝重判；
+  `apply_maintenance` 的 reflection 向量仅在正文一致时复用（防串档）。
+  理由：守则"模型/向量计算一律锁外"；原实现 embedding 在服务锁内（apply 事务里 propose
+  内嵌 embed），且 svc.embedder 属性不存在使向量分支恒空。
+  被否决备选：worker 在锁内 prepare（违背锁外计算守则）；apply_selector 完全信任计划跳过
+  动态复核（计划只省去重算，不替代事务内权威复核）；vector 复用不校验正文（可能把旧产物
+  向量套到新正文上）。
+  影响符号：`dispatch/effects.py::prepare_effect/apply_selector/apply_maintenance`（及全部
+  applier 统一 `plan=None` 形参）、`dispatch/worker.py::process_once/_apply/apply_semantic`、
+  `core/engine.py::propose/add_reflection`、`core/ingest.py::run_ingest`、
+  `core/consolidation.py::admit_reflection`。
+  验证：`tests/unit/test_prepare_effect_wiring.py` 8 条（先红后绿：旧实现 vectors 恒空、
+  候选正文 embed 两次均被抓住）；全量 454 passed。
+- **N37 conflict_ledger 修复与统一冲突读模型接线（P0-1.2，兑现 §10.4 未接线项）**：
+  决定：aggregates 改为"待裁决聚合容器（pending_review 且 agg_members）及其成员"，
+  不再误用 kind=="reflection"；truncated 真实反映有界输出（conflicts ≤200、
+  pending_reviews ≤512、aggregates ≤200，超界标注不静默截断）；conflict 行补
+  first_seen/observations/stale，正文一律 ≤200 字符。tools.conflicts 以
+  conflict_ledger 为唯一数据源：旧字段（conflicts/t 及行内 left/right/left_text/
+  right_text/first_seen/observations）保持，新增 tensions/pending_reviews/
+  aggregates/pin_roots/truncated（A7 字段只增）；HTTP /conflicts 经
+  handle_conflicts→svc.conflicts→tools.conflicts 自动获得统一台账；signal_id
+  路径维持因果集过滤（causal_memory_ids/causal_tensions），ledger 取全量后筛。
+  理由：旧 tools.conflicts 泄全文正文（违背"不泄超界正文"）；truncated 恒 False
+  让调用方无法感知截断；reflection 是巩固产物不是聚合台账。
+  被否决备选：把 before 直接传给 ledger 过滤 signal 路径（before 是单元因果界，
+  不能当 memory id 比较——会错杀合法冲突，实测被 investigation_scope 回归抓住）；
+  tools.conflicts 保持双实现（第二份读模型违背统一台账契约）。
+  影响符号：`service/review.py::conflict_ledger`（+3 个上界常量）、
+  `service/tools.py::conflicts`；HTTP 无需改动（经 service 传导）。
+  验证：`tests/unit/test_conflict_ledger.py` 6 条（先红后绿）；全量 460 passed。
+- **N38 store_call_context 封存接线（P0-1.3，兑现 §10.4 未接线项 / N10）**：
+  决定：worker 两路径在模型调用前封存输入上下文——workflow（process_once）封
+  `payload.seal_context(kind, build_payload 产物, 快照 revision)`（窗口/规则/候选/
+  移交规则 ids + canonical json sha256 摘要 + PROTOCOL_VERSION）；语义路径
+  （run_semantic_tasks）封 kind+协议版本+快照 revision+payload 摘要。TaskStore 增
+  `call_context(task_id)` 读取器（多次尝试取最新）。校验对照封存口径：
+  `hauler.validate_sources` 接受 `sealed=` 窗口（selector 取父 hauler 任务的封存窗口，
+  因为候选引用边界由父任务建立）；`reviewer.validate` 优先用封存 handoff_rule_ids；
+  `selector.validate`/`apply_selector` 同走 sealed_window。无封存（历史任务）回退
+  重建口径，保持兼容。
+  理由：N10 问题是"校验用重建口径，迟到数据（旧单元导入/新规则使用）会事后混进
+  合法观测集，批准模型从未见过的引用"——只有封存当时的观测集才能挡住。
+  被否决备选：校验时直接重建 recent_ids/rules（现状，即漏洞本身）；封存窗口按
+  selector 自身 payload 取（selector payload 无 window，会得到空窗口全拒——实测
+  被 trio 回归抓住）；payload.seal_context import store.tasks 取 encode（agents 碰
+  store 边界违规，被 import_boundaries 抓住，改为本地 canonical dumps）。
+  影响符号：`agents/payload.py::PROTOCOL_VERSION/seal_context`、
+  `agents/hauler.py::sealed_context/sealed_window/validate_sources/validate`、
+  `agents/reviewer.py::validate`、`agents/selector.py::validate`、
+  `dispatch/effects.py::apply_selector`、`dispatch/worker.py::process_once/
+  run_semantic_tasks`、`store/tasks.py::TaskStore.call_context`。
+  验证：`tests/unit/test_call_context_sealing.py` 5 条（先红后绿：迟到旧单元、
+  迟到规则使用在封存口径下被拒而重建口径会放行均有前置断言）；全量 465 passed。
+- **N39 SemanticsProvider 接线（P0-1.5，兑现 §10.4 未接线项 / H27/N15/N22）**：
+  决定：provider 补齐 MemorySemantics 写路径委托（embedding_key/valid/relevant/
+  scope/fingerprint 透传 delegate，构造时验证委托具备全部 MemorySemantics 方法，
+  MemorySemantics 是 Protocol 不可 runtime_checkable——包装层显式验证，启动即失败
+  而非首条 observe 写入途中 AttributeError）；relevant_set/consolidate 委托缺失该
+  能力时返回 None 且不计失败（能力缺失不是错误，缺失语义退化由 worker 兜底）。
+  bootstrap.build_default_service 以 SemanticsProvider(LLMSemantics(...)) 装配真实
+  语义；worker.semantic_model 对包装解包 delegate 做 isinstance 能力判定、调用仍走
+  provider（judge/relevant_set/consolidate 计数与降级可观测）；telemetry.health_view
+  增 semantic_provider 段（A7 只增；地基层不 import 语义层，鸭子类型探测 health()）。
+  理由：§10.4 该符号"已定义未接线"——真实装配从未经过 provider，双通路与健康
+  可观测性是空转的；且 provider 若无写路径委托，一经接线每条 ingest 都会炸。
+  被否决备选：telemetry import SemanticsProvider 做类型判定（地基层越界，被
+  import_boundaries 抓住）；worker 对 provider 也做能力判定（包装层不声明
+  relevant_set 时 isinstance 恒 False，recognizer 被静默跳过——改为解包判 delegate）；
+  委托缺失能力时抛错（把"合法无能力"当故障，违背缺失语义兼容）。
+  影响符号：`semantics/provider.py::SemanticsProvider`（+委托方法与构造验证）、
+  `transport/bootstrap.py::build_default_service`、`dispatch/worker.py::semantic_model`、
+  `telemetry.py::health_view/_provider_health`。
+  验证：`tests/unit/test_provider_wiring.py` 7 条（先红后绿）；
+  `tests/unit/test_defects_regression.py::test_semantics_provider_health_and_calls`
+  空洞断言（`res is not None or failures >= 0` 恒真）重写为逐字段可失败断言；
+  A7 health.json 快照按"字段只增"规则补 semantic_provider（无 provider 装配时
+  None/NoneType，装配后为 health() dict）；全量 472 passed。
+- **N40 resolve_pipeline 未知值拒绝启动（P0-2，修 N01 遗留）**：
+  决定：未知 MEMORY_PIPELINE 从"静默落 opencode"改为拒绝启动——地基层
+  resolve_pipeline 抛 ValueError（带合法值说明），bootstrap.main 在 serve 之前
+  转 Fatal（不进 HTTP）；未设置仍默认 opencode。
+  理由：静默换管线是静默失败（N01 原始缺陷正是"未知值默认"）。
+  被否决备选：config 直接 import errors 抛 Fatal（地基层只用标准库的 eternal
+  guard 禁止，被 test_foundation_is_leaf 抓住）；函数内 importlib 懒加载绕过
+  AST 扫描（绕护栏违背守则精神，否决）。
+  影响符号：`config.py::resolve_pipeline`、`transport/bootstrap.py::main`、
+  `tests/unit/test_config.py`（含进程级拒绝启动回归）、
+  `tests/unit/test_defects_regression.py::test_resolve_pipeline_matrix_behavior`。
+  验证：全量 473 passed。
+- **N41 生产代码 canonical 导入切换（P0-2，修 §10.4 canonical 项）**：
+  决定：8 处生产导入全部切到 canonical——dispatch/effects、service/{observe,
+  operate,service}、transport/bootstrap、legacy/inline 的 `..logstore`→
+  `..store.evidence`；transport/bootstrap、legacy/inline、semantics/llm 的
+  `..llm`→`..llm.client`。shim（hybrid_memory/logstore.py、llm 包 __init__
+  再导出）保留，旧消费者（含本仓库旧测试，作为 shim 存活证据）不受影响；
+  新增锁定测试扫描生产模块禁止再走 shim 导入。
+  理由：双导入位让"迁移完成"不可判定（H23/N24/N26 的收尾）；shim 只为兼容，
+  不为自用。
+  影响符号：上述 7 个文件的 import 行（无行为变化）+ 新增
+  `test_production_uses_canonical_imports`。
+  验证：全量 474 passed。
+- **N42 HTTP 稳定错误码 + 收据/任务 kind 分离 + assert_consumers 真检查（P0-2，
+  修 §10.4 HTTP 项）**：
+  决定：(a) 所有可预见 HTTP 错误回包带机器 code——HttpError 增 mcode 贯穿
+  dto 全部 raise 点；_run 各分支（TaskQueueFull→queue_full、CheckpointConflict→
+  checkpoint_conflict、PermissionError→rate_limited、SignalClosed→signal_closed、
+  CausalViolation→causal_violation、ValueError→bad_request、兜底→internal）；
+  401/404/405 白名单回包同步带码；_STATUS 新增 already_credited(409)/
+  checkpoint_conflict(503)/signal_closed(403)/causal_violation(403)/
+  method_not_allowed(405)。(b) feedback 重复回包带 code="already_credited"
+  （服务层注入，HTTP 机器码优先、文本 "already" 仅兜底），与 memory-bridge.ts
+  `r.data?.code === "already_credited"` 检查一致。(c) 收据 kind 与任务 kind
+  分离：EFFECTS 表删除零消费者的 "feedback" 项（收据 kind 只是 capture_receipts
+  的字符串列），assert_consumers 删除 `kind != "feedback"` 硬编码豁免。
+  (d) assert_consumers 重写：dispatch applier 的 apply 必须 callable（真检查）；
+  legacy-agent/service 为显式外部循环所有权（apply 可缺省，存在则必须 callable）；
+  未知 runner 拒绝启动——删除 hasattr(app,"runner") 恒真死分支。
+  理由：插件靠机器码分支，文本匹配脆；_STATUS 未注册的码会 KeyError→500，
+  "所有源码码已注册"用扫描测试锁定（含负向探针：伪造未注册码必被抓）。
+  被否决备选：保留文本 "already" 判定为唯一依据（插件已用 code 字段，文本
+  是英文实现细节）；EFFECTS 保留 feedback 项+豁免（零消费者条目只能靠豁免
+  活着，正是要删的东西）。
+  影响符号：`errors._STATUS`、`transport/dto.py::HttpError`、`transport/http.py`
+  （handle_feedback/handle_human_review/_run/do_GET/do_POST/_dispatch）、
+  `service/feedback.py::feedback`、`dispatch/effects.py::EFFECTS`、
+  `dispatch/policy.py::assert_consumers`。
+  验证：`tests/unit/test_http_codes.py` 6 条（先红后绿，含扫描器负向探针）；
+  全量 480 passed。
+- **N43 语义任务上限定案 + 回滚误判 fault 修复（P0-2，修 N06/§10.4）**：
+  决定：_SEMANTIC 定案——max_attempts 5（不再 None）、max_apply_attempts 5、
+  on_exhausted dead（耗尽 dead 且保留产物；瞬时错误由退避吸收，requeue 无上限
+  是无限循环）、lease_s 120→360（llm.chat 最坏 300s，120 会把慢模型误判成租约
+  丢失）；_INVESTIGATION 定案 INV=2/3（模型 2：证据/输入问题重试不改变输入）。
+  连带缺陷修复：`_rollback_effect` 的提交确认丢失检测原调启动校验器
+  `TaskStore.checkpoint()`，在"durable checkpoint 缺失但存在已领取任务"时抛错
+  → 任何干净回滚（含容量背压、首次提交前的失败、无 durable 的测试库）都被
+  误置 checkpoint_fault 把服务砖死。新增 `TaskStore.durable_revision()` 裸读，
+  `_check_checkpoint_error` 只比较 durable revision 是否越过回滚前值（缺失且
+  内存 revision 0 = 不可能丢提交，回滚安全）。
+  理由：SEM 无上限 requeue 与背压组合 = 永久重试占死语义循环；误判 fault 违背
+  "回滚必须完整恢复可重试状态"。该缺陷由 apply 耗尽回归测试暴露（首轮回滚后
+  服务即 CheckpointConflict 砖死，后续重试全部跳过）。
+  被否决备选：保留 requeue + 靠人工清理（无静默失败哲学下无限循环不可接受）；
+  lease 维持 120（慢模型 300s 超时后租约被 recover_expired 重发，双跑模型）；
+  _check_checkpoint_error 吞掉"缺失"异常（掩盖 durable 真丢失——改为裸读 +
+  显式比较，语义清晰）。
+  影响符号：`dispatch/policy.py::_SEMANTIC/_INVESTIGATION`（快照重冻
+  b_lifecycle/b_retry_model/b_recover 三件）、`store/tasks.py::TaskStore.
+  durable_revision`（新）、`service/service.py::_check_checkpoint_error`。
+  验证：`tests/unit/test_sem_exhaustion.py` 5 条（先红后绿：模型 5 次耗尽 dead、
+  应用 5 次耗尽 dead 保留产物、租约过期 5 轮计数不重置最终 dead、INV=2/3、
+  退避有界）；characterization 快照 FREEZE_CHAR=1 重冻；全量 485 passed。
+- **N44 OpenCode 文件通道落地（P0-2，修 §10.4 文件通道项 / §3.7）**：
+  决定：run 命令形状改为 `opencode run --pure --agent <role> --format json
+  '<短协议指令>' --file <payload.json>`——短协议指令（PROTOCOL_INSTRUCTION 常量）
+  是位置参数，payload 全量经 --file 私有临时文件传递（mkstemp + fchmod 0600 +
+  UTF-8 + finally unlink，不进 argv——Windows 40k argv 已复现崩溃，无长 argv
+  回退）；子进程环境继承父环境，PYTHONPATH 用 os.pathsep 拼接；
+  verify_channel() 能力探测（run --help 输出须含 --file），bootstrap 在 serve
+  之前调用，缺失即 Fatal 拒绝启动（不进 HTTP）。
+  理由：§3.7 明确要求该命令形状与"不支持该通道的版本拒绝启动"；旧实现把
+  指令+payload 全塞文件、且 NamedTemporaryFile 系统临时目录权限非 0600。
+  被否决备选：保留全量进文件的旧形状（指令应在 argv，代理加载失败时无从
+  分辨）；探测缺失时回退 argv 传递（40k 崩溃路径，明确禁止）；探测在 serve
+  之后（缺通道的进程会先暴露 HTTP 再死）。
+  影响符号：`agents/opencode.py::OpenCodeRunner.run/verify_channel/_spawn_argv/
+  PROTOCOL_INSTRUCTION`、`transport/bootstrap.py::main`（serve 前探测）。
+  验证：`tests/unit/test_opencode_file_channel.py` 4 条（先红后绿：fake CLI
+  观测 argv 形状/文件内容= payload JSON/0600/用后删除/环境继承；无 --file 的
+  CLI → verify_channel Fatal；端到端子进程：缺通道 CLI → bootstrap 非零退出
+  且报错含 --file）。真 CLI 行为未验证（沙箱无 opencode），manual_opencode_smoke
+  保留为真实环境验证入口。全量 489 passed。
+- **N45 store/schema.py 接线三库身份版本（P0-2，修 §10.4 schema 项 / H10/N23）**：
+  决定：open_db(path, kind∈{log,tasks,cache}) 成为三个 Store（TaskStore/
+  LogStore/SqliteEmbeddingCache）的唯一连接入口——WAL/FULL/FK/busy_timeout、
+  isolation_level=None（自动提交模式，事务由调用方显式 BEGIN IMMEDIATE/
+  COMMIT/ROLLBACK，消除 sqlite3 legacy 隐式事务坑：executescript 隐式提交、
+  悬挂事务）；migrate 高版本先 Fatal（在任何新 DDL 之前，不留半迁移痕迹）；
+  无版本 legacy 库（v0，pre-schema 真实老库）由 ensure_schema 幂等建表 +
+  增量补列（tasks: version/dedupe_id/scope；log: unit_work.context）迁入并
+  登记 schema_version(kind, version)，不清数据、不降级；业务表 DDL 唯一来源
+  收敛到 schema.py（tasks/evidence/cache 三处内联 _SCHEMA 删除）。
+  理由：H10 版本保护此前未生效（open_db 零调用）；双 DDL 源让"库形状"不可
+  判定；隐式事务模式下单条 DML 与 executescript 的提交语义易错。
+  被否决备选：Store 各自保留内联 DDL（双源正是缺陷）；isolation_level 默认
+  legacy 模式 + `with conn`（隐式开启事务的坑仍在）；迁移时清库重建（违背
+  "不清数据"）。
+  影响符号：`store/schema.py`（_DDL×3/KINDS/open_db/migrate/ensure_schema
+  重写）、`store/tasks.py::TaskStore.__init__/transaction`、
+  `store/evidence.py::LogStore.__init__`、`embed/cache.py::SqliteEmbeddingCache`。
+  验证：`tests/unit/test_store_schema.py` 8 条（先红后绿：三库身份独立登记、
+  高版本 Fatal 先于 DDL、tasks/log legacy 库迁移保数据补列、
+  isolation_level=None + 回滚完整 + 无悬挂事务、cache 高版本拒绝、
+  双 DDL 消除 grep 断言）；全量 497 passed。
 
 ### 9.1 旧目标条目的最终去向
 
@@ -557,28 +780,28 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 - Pool门：C/M/A/context组合、全pin背压、A保护/戳/引用、CREATE/EXIST/复活/聚合/reflection/审批同commit收口、截对手仍警告、一次衰减/迟信用/registry硬界。
 - IO门：Legacy直写成功立即checkpoint、双库crash、人审403、high schema拒、UTF-8/大附件/CLI权限与清理、完整Bun timeout。
 - Python/Bun/旧checker/TIDE meta继续；A6/A8/A9转真实行为，A7查旧字段子集+类型语义并准合法新增，不静默重冻。
-- CI脚本组合门，不新增会递归跑整套pytest的test_acceptance。旧测试/fixtures/子进程import随迁，.env不是测试修复的删除对象。门禁链与五维 DoD 见 `engineering-charter.md` 第 12/13 条；执行边界（Bun/bench 未验证项、禁止自宣布完成）见 §9.2 N35。
+- CI脚本组合门，不新增会递归跑整套pytest的test_acceptance。旧测试/fixtures/子进程import随迁，.env不是测试修复的删除对象。门禁链与五维 DoD 见 `engineering-charter.md` 第 12/13 条；执行边界（Bun/bench 未验证项、禁止自宣布完成）见 §9.2 N46。
 
 收尾顺序：先失败回归和关键漏洞→接Settings/schema/policy/provider/ledger/telemetry及统一effects/dispatch/context→plan_capacity与公共parse去Legacy→迁evidence/client/harness/测试夹具修CLI与preview→更新登记、README、doc地图、CI，只执行N25明确代码清理。数据删除另行确认。
 
 本轮没有改运行代码或删源文件。`mvp/agent/`是之后改造，不进入本轮白名单/清理判断。
 
-### 10.4 本轮同步状态（arena 01a10032）：已落地、未接线、未兑现
+### 10.4 同步状态（收尾轮 2026-10-03）：已落地、已接线、已兑现
 
 **已读码确认的修复**：Selector 严格类型（`verified_correction is True`、`type(index) is int`）、A 池淘汰过滤 pinned、退役补 `archived_at`、任务 due 前置筛选、WF 过期判死、Trio `/miss` 403、`Rejected`→HTTP 映射、人审 capability 403、contested 省略对手标注、preview 导入修复、四个空壳删除。
 
-**未接线（函数已存在，生产零调用，仅单元测试覆盖）**：
+**已接线（收尾轮完成，生产调用与回归见 §9.3 N35–N45）**：
 
-| 符号 | 应接入点 | 现状 |
+| 符号 | 接入点 | 收尾轮结果 |
 |---|---|---|
-| `plan_capacity` | 效果提交前容量收口 | `apply_selector` 仍用 `overflow_policy`，无背压路径；全 pin 静默超限 |
-| `conflict_ledger` | `/conflicts` 与 `tools.conflicts` | 未接；`aggregates` 误用 reflection、`truncated` 硬编码 False |
-| `store_call_context` | worker 模型调用前封存 | 未接 |
-| `prepare_effect` | worker/效果事务 | 未接；`svc.embedder` 不存在、`embed(str)` 形状错误 |
-| `SemanticsProvider` | `service.semantics` + `/health` | 未接；其单测断言恒真 |
+| `plan_capacity` | `effects.enforce_capacity`（apply_selector/apply_maintenance/decide_human_review 提交前） | 容量收口+全 pin 背压 Degraded→503（N35）；engine.step 维护路径保留 overflow_policy（H11/H12） |
+| `conflict_ledger` | `tools.conflicts` → HTTP `/conflicts` | 统一读模型，aggregates/truncated/有界正文修复（N37） |
+| `store_call_context` | `DispatchWorker.process_once`/`run_semantic_tasks` 模型调用前 | 封存窗口/规则/摘要+revision；校验对照封存口径（N38/N10） |
+| `prepare_effect` | worker 两路径锁外预计算，计划穿进事务 | 三硬伤修复+向量只 embed 一次+目标邮戳复核（N36/N08） |
+| `SemanticsProvider` | `build_default_service` 真实装配 + `health_view` | 写路径委托+缺失语义兼容+worker 解包+降级可观测（N39） |
 
-**未兑现契约**：N01（未知 `MEMORY_PIPELINE` 应拒绝；当前放行且被测试固化）、N06（SEM 模型上限与 dead 未实现）、OpenCode 文件通道形状（指令应为位置参数，当前全塞进文件且未验证 CLI 行为）、`store/schema.py` 未接入 Store（H10 版本保护未生效）、HTTP 稳定 `code` 覆盖不全、`assert_consumers` 对 legacy 类 applier 无 callable 校验、产品代码仍从 shim 导入（canonical 切换未做：`effects.py`/`observe.py`/`operate.py`/`service.py`/`bootstrap.py`×2/`semantics/llm.py`/`legacy/inline.py` 共 8 处；shim 保留给外部与旧测试，章程第 3 条要求生产核心路径不得依赖 shim）。
+**未兑现契约（收尾轮已清，见 §9.3）**：N01 未知 `MEMORY_PIPELINE` 拒绝启动（N40）；N06 SEM 模型上限与耗尽 dead（N43）；OpenCode 文件通道形状与缺通道拒绝启动（N44，真实 CLI 行为未验证）；`store/schema.py` 接入三 Store（N45）；HTTP 稳定 `code` 全覆盖（N42）；`assert_consumers` 真 callable 检查与显式外部循环所有权（N42）。五处孤岛符号接线（plan_capacity 背压 N35、conflict_ledger N37、store_call_context N38、prepare_effect N36、SemanticsProvider N39）与 canonical 导入切换（N41）同轮完成。
 
-**声明与事实不符已修正**：N29–N33 由 decision-register 移入本文 §9.2 并改为如实状态；附录计数以重新生成为准（145 模块 / 1360 符号 / 69 常量）。
+**声明与事实不符已修正**：N29–N33 由 decision-register 移入本文 §9.2 并改为如实状态；附录计数以重新生成为准（收尾轮后：154 模块 / 1487 符号）。
 
-**收尾建议顺序**：先接线五处并修 `prepare_effect` → 修 N01/N06/文件通道/schema 接入 → 修 `plan_capacity` 语义与容量背压 → 重跑三门并核实测试数字（arena 声称 437，按基线+新增应为 436+1，未复现）。
+**收尾轮执行记录**：五处接线（N35–N39）→ N01/N06/文件通道/schema/HTTP code/消费者自检（N40–N45）→ canonical 导入（N41）→ 三门重跑。测试数字：基线 pytest 437 passed（Linux 实测，非任务书所写 427+1）；收尾轮后 500 passed（437 基线 + 63 新增回归）；checker 0 failures；acceptance 21 PASS/2 SKIP/0 FAIL（bun 与真实 opencode CLI 沙箱未装，记未验证）。

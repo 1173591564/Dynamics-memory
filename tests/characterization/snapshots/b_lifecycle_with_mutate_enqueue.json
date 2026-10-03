@@ -70,7 +70,7 @@
      "id": 1,
      "kind": "conflict_pending",
      "last_error": "",
-     "lease_until": 1120.0,
+     "lease_until": 1360.0,
      "next_run_at": 0.0,
      "origin": null,
      "payload": {
@@ -164,7 +164,7 @@
      "id": 1,
      "kind": "conflict_pending",
      "last_error": "",
-     "lease_until": 1120.0,
+     "lease_until": 1360.0,
      "next_run_at": 0.0,
      "origin": null,
      "payload": {

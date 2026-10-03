@@ -7,22 +7,26 @@ from pathlib import Path
 
 import numpy as np
 
-_SCHEMA = ("CREATE TABLE IF NOT EXISTS embeddings ("
-           "cache_key TEXT PRIMARY KEY, "
-           "dimensions INTEGER NOT NULL, "
-           "vector BLOB NOT NULL)")
+from ..store.schema import open_db
 
 
 class SqliteEmbeddingCache:
+    """向量缓存（kind=cache 三库身份之一，N45）：启动时经 schema.open_db
+    建表与版本登记；读写走短连接（自动提交模式，单条语句即时生效）。"""
+
     def __init__(self, path: str | Path):
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(sqlite3.connect(str(self.path))) as conn:
-            with conn:
-                conn.execute(_SCHEMA)
+        conn = open_db(self.path, kind="cache")
+        conn.close()
+
+    def _short(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(str(self.path), check_same_thread=False,
+                               isolation_level=None)
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
 
     def get(self, cache_key: str) -> np.ndarray | None:
-        with closing(sqlite3.connect(str(self.path))) as conn:
+        with closing(self._short()) as conn:
             row = conn.execute(
                 "SELECT dimensions, vector FROM embeddings WHERE cache_key = ?",
                 (cache_key,)).fetchone()
@@ -35,9 +39,8 @@ class SqliteEmbeddingCache:
 
     def put(self, cache_key: str, vector: np.ndarray) -> None:
         vec = np.ascontiguousarray(vector, dtype="<f4").reshape(-1)
-        with closing(sqlite3.connect(str(self.path))) as conn:
-            with conn:
-                conn.execute(
-                    "INSERT OR REPLACE INTO embeddings"
-                    " (cache_key, dimensions, vector) VALUES (?, ?, ?)",
-                    (cache_key, int(vec.size), vec.tobytes()))
+        with closing(self._short()) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO embeddings"
+                " (cache_key, dimensions, vector) VALUES (?, ?, ?)",
+                (cache_key, int(vec.size), vec.tobytes()))

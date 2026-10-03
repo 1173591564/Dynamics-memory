@@ -36,8 +36,8 @@
 | [ouroboros](ouroboros.md) | 草稿 | 下一阶段方向，非承诺 |
 | [cleanup-review](cleanup-review.md) | 归档 | 历史清理审查记录 |
 | [opencode-learning](opencode-learning/README.md) | 参考 | 源码阅读笔记 |
-| [analysis/target-architecture](../analysis/target-architecture.md) | 目标·待实施 | 唯一架构规范；N01–N35 收口决策及 H 条款修订 |
-| [analysis/engineering-charter](../analysis/engineering-charter.md) | 现行 | 工程规范章程（14 条 + 五维 DoD + 门禁链；例外见 §9.2 N35） |
+| [analysis/target-architecture](../analysis/target-architecture.md) | 目标·待实施 | 唯一架构规范；N01–N46 收口决策及 H 条款修订 |
+| [analysis/engineering-charter](../analysis/engineering-charter.md) | 现行 | 工程规范章程（14 条 + 五维 DoD + 门禁链；例外见 §9.2 N46） |
 | [源符号附录](architecture-inventory.md) | 基线登记 | 逐模块/函数输入输出、源码位置、处置与覆盖检查 |
 | [analysis/decision-register](../analysis/decision-register.md) | 历史基线 | H1–H42 依据；当前修订在唯一目标 §9 |
 | [analysis/acceptance-criteria](../analysis/acceptance-criteria.md) | 机械基线 | 已有 A1–A10 + PENDING；新增闸门在唯一目标 §10 |

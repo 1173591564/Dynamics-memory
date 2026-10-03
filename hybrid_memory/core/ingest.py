@@ -12,12 +12,17 @@ from ..core.types import Event, Memory, Pool, is_visible
 from .types import cosine
 
 
-def run_ingest(eng, events: list[Event], t: int) -> None:
+def run_ingest(eng, events: list[Event], t: int, vectors=None) -> None:
+    """vectors：prepare_effect 锁外预计算的向量（与 events 对齐）；None 时
+    裸兼容路径内部 embed（§2.5：sidecar 事务必须供给预计算值）。"""
     if not events:
         return
     cfg, semantics = eng.cfg, eng.semantics
     keys = [semantics.embedding_key(e.belief_id, e.value) for e in events]
-    vecs = eng.emb.embed([e.text for e in events], keys=keys)
+    if vectors is None:
+        vecs = eng.emb.embed([e.text for e in events], keys=keys)
+    else:
+        vecs = vectors
     active = [m for m in eng.mems.values() if is_visible(m)]
 
     for ev, vec in zip(events, vecs):

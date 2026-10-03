@@ -10,9 +10,12 @@ from ..guards.bounds import validate_request_id as _validate_request_id
 
 
 class HttpError(Exception):
-    def __init__(self, code: int, msg: str):
+    """HTTP 层可预见错误：状态码 + 机器 code（N42，回包必带 code）。"""
+
+    def __init__(self, code: int, msg: str, mcode: str = "bad_request"):
         super().__init__(msg)
         self.code = code
+        self.mcode = mcode
 
 
 SIGNAL_PATHS = {"/recall", "/search", "/conflicts", "/resolve", "/propose",
@@ -46,7 +49,7 @@ def req_str(body: dict, key: str) -> str:
 def parse_body(headers, rfile) -> dict:
     ct = (headers.get("Content-Type") or "").split(";")[0].strip()
     if ct != "application/json":
-        raise HttpError(415, "Content-Type must be application/json")
+        raise HttpError(415, "Content-Type must be application/json", "unsupported_media_type")
     try:
         n = int(headers.get("Content-Length") or 0)
     except ValueError:
@@ -54,7 +57,7 @@ def parse_body(headers, rfile) -> dict:
     if n < 0:
         raise HttpError(400, "bad Content-Length")
     if n > MAX_BODY:
-        raise HttpError(413, "body too large")
+        raise HttpError(413, "body too large", "payload_too_large")
     if not n:
         return {}
     try:

@@ -10,7 +10,7 @@ import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from ..errors import Rejected, http_status
+from ..errors import Degraded, Rejected, http_status
 from ..service.context import CausalViolation, SignalClosed
 from ..service.operate import VERDICTS
 from ..service.service import MemoryService
@@ -103,10 +103,12 @@ class Handler(BaseHTTPRequestHandler):
         out = self.service.feedback(p["retrieval_id"], p["question"], p["answer"],
                                     request_id=p["request_id"])
         if "error" in out:
-            if "already" in out["error"]:
+            # N42：机器码优先（memory-bridge.ts 检查 code === "already_credited"），
+            # 文本 "already" 仅兜底旧服务。
+            if out.get("code") == "already_credited" or "already" in out["error"]:
                 self._reply(409, out)
                 return
-            raise HttpError(404, out["error"])
+            raise HttpError(404, out["error"], "not_found")
         self._reply(200, out)
 
     def handle_human_reviews(self, q, body, sid) -> None:
@@ -118,15 +120,15 @@ class Handler(BaseHTTPRequestHandler):
             raise HttpError(400, "review_id required")
         cap = self.headers.get("X-Human-Review-Token", "")
         if not secrets.compare_digest(cap, self.service.human_review_token):
-            raise HttpError(403, "human review capability required")
+            raise HttpError(403, "human review capability required", "forbidden")
         try:
             out = self.service.decide_human_review(rid, str(body.get("decision", "")), cap)
         except ValueError as exc:
             if "not found" in str(exc):
-                raise HttpError(404, str(exc)) from exc
+                raise HttpError(404, str(exc), "not_found") from exc
             if "changed" in str(exc) or "conflicting" in str(exc):
-                raise HttpError(409, str(exc)) from exc
-            raise HttpError(400, str(exc)) from exc
+                raise HttpError(409, str(exc), "conflict") from exc
+            raise HttpError(400, str(exc), "bad_request") from exc
         self._reply(200, out)
 
     def handle_resolve(self, q, body, sid) -> None:
@@ -228,10 +230,11 @@ class Handler(BaseHTTPRequestHandler):
         if sid is not None and path != "/health" and path not in dto.SIGNAL_PATHS:
             raise SignalClosed(f"调查员不允许访问 {path}")
         if svc.trio_mode and path in TRIO_DISABLED:
-            raise HttpError(403, TRIO_DISABLED[path])
+            raise HttpError(403, TRIO_DISABLED[path], "direct_write_disabled")
         handler = ROUTES.get(path)
         if handler is None:
-            self._reply(404, {"error": f"no such path: {path}"})
+            self._reply(404, {"error": f"no such path: {path}",
+                              "code": "not_found"})
             return
         getattr(self, handler)(q, body, sid)
 
@@ -240,25 +243,32 @@ class Handler(BaseHTTPRequestHandler):
             self._dispatch(path, q, body)
         except Rejected as exc:
             self._reply(http_status(exc.code), {"error": str(exc), "code": exc.code})
+        except Degraded as exc:
+            self._reply(http_status(exc.code), {"error": str(exc), "code": exc.code})
         except HttpError as exc:
-            self._reply(exc.code, {"error": str(exc)})
+            self._reply(exc.code, {"error": str(exc), "code": exc.mcode})
         except CaptureConflict as exc:
             self._reply(409, {"error": str(exc), "code": "conflict"})
-        except (TaskQueueFull, CheckpointConflict) as exc:
-            payload = {"error": str(exc)}
+        except TaskQueueFull as exc:
+            payload = {"error": str(exc), "code": "queue_full"}
             if getattr(exc, "accepted", False):
                 payload.update(accepted=True, pending=True, unit_id=exc.unit_id)
                 if getattr(exc, "request_id", None):
                     payload["request_id"] = exc.request_id
             self._reply(503, payload)
+        except CheckpointConflict as exc:
+            self._reply(503, {"error": str(exc), "code": "checkpoint_conflict"})
         except PermissionError as exc:          # 预算用尽
-            self._reply(429, {"error": str(exc)})
-        except (SignalClosed, CausalViolation) as exc:             # 信号号无效/已关闭
-            self._reply(403, {"error": str(exc)})
+            self._reply(429, {"error": str(exc), "code": "rate_limited"})
+        except SignalClosed as exc:             # 信号号无效/已关闭
+            self._reply(403, {"error": str(exc), "code": "signal_closed"})
+        except CausalViolation as exc:          # 因果界违规
+            self._reply(403, {"error": str(exc), "code": "causal_violation"})
         except ValueError as exc:
-            self._reply(400, {"error": str(exc)})
+            self._reply(400, {"error": str(exc), "code": "bad_request"})
         except Exception as exc:  # noqa: BLE001
-            self._reply(500, {"error": f"{type(exc).__name__}: {exc}"})
+            self._reply(500, {"error": f"{type(exc).__name__}: {exc}",
+                              "code": "internal"})
 
     def do_GET(self) -> None:    # noqa: N802
         u = urlparse(self.path)
@@ -266,10 +276,11 @@ class Handler(BaseHTTPRequestHandler):
             self._run(u.path, {}, {})
             return
         if not auth.authorized(self.headers, self.service.token):
-            self._reply(401, {"error": "unauthorized"})
+            self._reply(401, {"error": "unauthorized", "code": "unauthorized"})
             return
         if u.path not in dto.GET_PATHS:
-            self._reply(405, {"error": f"{u.path} requires POST"})
+            self._reply(405, {"error": f"{u.path} requires POST",
+                              "code": "method_not_allowed"})
             return
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         self._run(u.path, q, {})
@@ -277,10 +288,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:   # noqa: N802
         u = urlparse(self.path)
         if not auth.authorized(self.headers, self.service.token):
-            self._reply(401, {"error": "unauthorized"})
+            self._reply(401, {"error": "unauthorized", "code": "unauthorized"})
             return
         if u.path not in dto.POST_PATHS:
-            self._reply(405, {"error": f"{u.path} requires GET"})
+            self._reply(405, {"error": f"{u.path} requires GET",
+                              "code": "method_not_allowed"})
             return
         try:
             body = dto.parse_body(self.headers, self.rfile)

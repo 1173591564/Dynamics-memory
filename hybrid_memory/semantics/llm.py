@@ -11,7 +11,7 @@ from pathlib import Path
 
 from ..guards.redact import redact_secrets
 from ..core.types import Event
-from ..llm import ZhipuChatError, chat
+from ..llm.client import ZhipuChatError, chat
 from .real import RealChatSemantics, VERDICTS, normalize
 
 _JUDGE_SYS = (

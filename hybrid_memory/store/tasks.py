@@ -21,6 +21,7 @@ import threading
 import time
 
 from ..dispatch.policy import policy_for
+from . import schema
 from ..service.context import SignalClosed
 
 
@@ -49,96 +50,28 @@ def encode(value) -> str:
                       separators=(",", ":"), allow_nan=False)
 
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS tasks (
- id INTEGER PRIMARY KEY AUTOINCREMENT,
- kind TEXT NOT NULL, task_key TEXT NOT NULL, payload TEXT NOT NULL, t INTEGER NOT NULL,
- version INTEGER NOT NULL DEFAULT 0, dedupe_id INTEGER,
- state TEXT NOT NULL CHECK(state IN ('pending','running','ready','applying','done','dead','skipped')),
- attempts INTEGER NOT NULL DEFAULT 0, apply_attempts INTEGER NOT NULL DEFAULT 0,
- before_t INTEGER, origin TEXT, token TEXT, lease_until REAL,
- result TEXT, last_error TEXT NOT NULL DEFAULT '', next_run_at REAL NOT NULL DEFAULT 0,
- created_at REAL NOT NULL, updated_at REAL NOT NULL
-);
-CREATE INDEX IF NOT EXISTS tasks_state ON tasks(state, next_run_at, id);
-CREATE INDEX IF NOT EXISTS tasks_key ON tasks(kind, task_key, state, updated_at);
-CREATE UNIQUE INDEX IF NOT EXISTS tasks_mergeable ON tasks(kind, task_key)
- WHERE state='pending' AND attempts=0 AND task_key<>'';
-CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS daily_runs (day TEXT PRIMARY KEY, runs INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS checkpoint (
- id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, state BLOB NOT NULL
-);
-CREATE TABLE IF NOT EXISTS operations (
- task_id INTEGER NOT NULL REFERENCES tasks(id), op_key TEXT NOT NULL,
- request TEXT NOT NULL, response TEXT NOT NULL, created_at REAL NOT NULL,
- PRIMARY KEY(task_id, op_key)
-);
-CREATE TABLE IF NOT EXISTS unit_receipts (
- unit_id INTEGER PRIMARY KEY, response TEXT NOT NULL, created_at REAL NOT NULL
-);
-CREATE TABLE IF NOT EXISTS agent_rules (
- id INTEGER PRIMARY KEY AUTOINCREMENT, source_task INTEGER NOT NULL, target TEXT NOT NULL,
- instruction TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at REAL NOT NULL,
- scope TEXT NOT NULL DEFAULT 'project',
- UNIQUE(source_task,target,instruction)
-);
-CREATE TABLE IF NOT EXISTS agent_rule_uses (
- task_id INTEGER NOT NULL, rule_id INTEGER NOT NULL, PRIMARY KEY(task_id,rule_id)
-);
-CREATE TABLE IF NOT EXISTS agent_rule_audit (
- id INTEGER PRIMARY KEY, rule_id INTEGER NOT NULL, action TEXT NOT NULL,
- actor TEXT NOT NULL, at REAL NOT NULL
-);
-CREATE TABLE IF NOT EXISTS agent_rule_feedback (
- reviewer_task INTEGER NOT NULL, rule_id INTEGER NOT NULL, assessment TEXT NOT NULL,
- reason TEXT NOT NULL, at REAL NOT NULL, PRIMARY KEY(reviewer_task,rule_id)
-);
-CREATE TABLE IF NOT EXISTS human_reviews (
- id INTEGER PRIMARY KEY AUTOINCREMENT, source_task INTEGER NOT NULL, target_id INTEGER NOT NULL,
- candidate TEXT NOT NULL, reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
- decision TEXT, created_at REAL NOT NULL, UNIQUE(source_task,target_id,candidate)
-);
-CREATE TABLE IF NOT EXISTS capture_receipts (
- request_id TEXT PRIMARY KEY, kind TEXT NOT NULL, fingerprint TEXT NOT NULL,
- response TEXT NOT NULL, created_at REAL NOT NULL
-);
-CREATE TABLE IF NOT EXISTS task_call_contexts (
- task_id INTEGER NOT NULL REFERENCES tasks(id), token TEXT NOT NULL,
- context TEXT NOT NULL, created_at REAL NOT NULL,
- PRIMARY KEY(task_id, token)
-);
-"""
-
-
 class TaskStore:
     def __init__(self, path: str | Path | None = None, *, clock=None, capacity=4096):
         self.clock = clock or time.time
         self.capacity = max(1, int(capacity))
-        if path is not None:
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(path) if path else ":memory:",
-                                     check_same_thread=False)
+        # H10/N45：连接与建表统一经 schema.open_db（三库身份版本、高版本
+        # 先 Fatal、legacy 增量迁移、isolation_level=None 显式事务）。
+        self._conn = schema.open_db(str(path) if path else ":memory:", kind="tasks")
         self._conn.row_factory = sqlite3.Row
         self._lock = threading.RLock()
-        self._conn.execute("PRAGMA foreign_keys=ON")
-        if path:
-            self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=FULL")
-        self._conn.executescript(_SCHEMA)
-        columns = {r[1] for r in self._conn.execute("PRAGMA table_info(tasks)")}
-        for name, definition in (("version", "INTEGER NOT NULL DEFAULT 0"), ("dedupe_id", "INTEGER")):
-            if name not in columns:
-                self._conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {definition}")
-        rule_columns = {r[1] for r in self._conn.execute("PRAGMA table_info(agent_rules)")}
-        if "scope" not in rule_columns:
-            self._conn.execute("ALTER TABLE agent_rules ADD COLUMN scope TEXT NOT NULL DEFAULT 'project'")
 
     @contextmanager
     def transaction(self):
-        with self._lock, self._conn:
+        # isolation_level=None（自动提交）下事务显式 BEGIN/COMMIT/ROLLBACK；
+        # 不依赖 sqlite3 legacy 隐式事务语义（N45）。
+        with self._lock:
             self._conn.execute("BEGIN IMMEDIATE")
-            yield self._conn
+            try:
+                yield self._conn
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
 
     @staticmethod
     def _decode(row):
@@ -209,6 +142,17 @@ class TaskStore:
         with self._lock:
             row = self._conn.execute("SELECT value FROM metadata WHERE key='memory_next_id'").fetchone()
             return row[0] if row else 0
+
+    def durable_revision(self):
+        """读 durable checkpoint revision（无则 None）。
+
+        运行时提交确认丢失检测用（N43）：不做启动一致性校验——干净回滚
+        遇上"durable 缺失但存在已领取任务"不得误判 fault。
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT revision FROM checkpoint WHERE id=1").fetchone()
+            return row[0] if row else None
 
     def checkpoint(self):
         with self._lock:
@@ -365,6 +309,19 @@ class TaskStore:
     def check_owned(self, task_id, token):
         with self._lock:
             self._owned(self._conn, task_id, token)
+
+    def call_context(self, task_id: int) -> dict | None:
+        """读取该任务最近一次模型调用的封存上下文（N10）。
+
+        无封存（早于接线的历史任务）返回 None，校验方回退重建口径。
+        同任务多次尝试取最新一次（与产出 result 的那次调用一致）。
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT context FROM task_call_contexts WHERE task_id=? "
+                "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                (task_id,)).fetchone()
+        return json.loads(row[0]) if row else None
 
     def store_call_context(self, task_id: int, token: str, context: dict) -> None:
         """封存一次模型调用的原始输入上下文（N10）。"""

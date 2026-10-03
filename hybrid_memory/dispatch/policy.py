@@ -2,10 +2,8 @@
 
 收敛说明（P3 只抄现状，不改语义）：
 - claim_from：现状两机都是 (pending, ready)，如实记录，供未来 kind 收窄。
-- on_exhausted：调查类 + trio 类 → dead；语义类 → requeue（H8）。
-- max_attempts：调查类由 worker 调用参数持有（AgentWorker 配置），政策为 None；
-  语义类现状无上限（无调用方传 max），政策为 None（H8 的 cap 待调优 PR 引入）；
-  trio 类照抄 trio 当前硬编码 5（H8 上限见 KindPolicy）。
+- on_exhausted：全部 dead（N06：语义类 requeue 无上限是无限循环，已改 dead）。
+- max_attempts：INV=2/3、SEM=5/5、WF=5/5（N06 定案；调查类调用方可传更小值）。
 - lease_s：调查类由 worker 传入，政策为 None；语义/trio 类默认 120（旧 claim_semantic 默认值）。
 - backoff：重试退避公式 `min(300, backoff ** min(8, attempts))` 的底数；
   语义/trio 类为 2.0（旧 retry_semantic 公式）；调查类调用方必传 delay，本值不用。
@@ -38,7 +36,7 @@ _INVESTIGATION = KindPolicy(
     kinds=("recall_miss", "extract_due"),
     claim_from=("pending", "ready"),
     daily_cap=None,                 # worker 调用参数持有
-    max_attempts=3,                 # INV=3
+    max_attempts=2,                 # INV=2/3（N06：模型 2 次，输入问题重试不改变输入）
     max_apply_attempts=3,
     on_exhausted="dead",            # H8：证据/输入问题，重试不改变输入
     lease_s=None,                   # worker 调用参数持有
@@ -49,10 +47,10 @@ _SEMANTIC = KindPolicy(
     kinds=("conflict_pending", "feedback_pending", "maintenance_due"),
     claim_from=("pending", "ready"),
     daily_cap=None,
-    max_attempts=None,              # H8 现状：模型重试无上限（或由调用方指定）
+    max_attempts=5,                 # SEM=5（N06：不再 None——requeue 无上限是无限循环）
     max_apply_attempts=5,           # SEM=5 (N06)
-    on_exhausted="requeue",         # H8：模型瞬时错误，输入依然有效
-    lease_s=120.0,                  # 旧 claim_semantic 默认值
+    on_exhausted="dead",            # N06：耗尽 dead 且保留产物；瞬时错误由退避吸收
+    lease_s=360.0,                  # N06：llm.chat 最坏 300s，120 会误判租约丢失
     backoff=2.0,                    # 旧 retry_semantic 公式底数
 )
 
@@ -83,16 +81,29 @@ def policy_for(kind: str) -> KindPolicy:
 
 
 def assert_consumers(appliers) -> None:  # noqa: ANN001 — applier 类型 P5 定
-    """启动自检（H25/A6/Defect10）：POLICIES 的每个 kind 必须在 appliers 有真实消费者，反向无野项。"""
+    """启动自检（H25/A6/N42）：POLICIES 的每个 kind 必须在 appliers 有真实
+    消费者，反向无野项（收据 kind 不是任务 kind，无硬编码豁免）。
+
+    外部循环所有权由 runner 显式声明：dispatch 必须带 callable apply；
+    legacy-agent/service 由外部循环消费，apply 可缺省（存在则必须 callable）；
+    未知 runner 拒绝启动。"""
     missing = [kind for kind in POLICIES if kind not in appliers]
     if missing:
         raise Fatal(f"task kinds without consumers: {sorted(missing)}")
-    wild = [kind for kind in appliers if kind not in POLICIES and kind != "feedback"]
+    wild = [kind for kind in appliers if kind not in POLICIES]
     if wild:
         raise Fatal(f"unknown applier kinds not in POLICIES: {sorted(wild)}")
     for kind, app in appliers.items():
-        if hasattr(app, "runner") and getattr(app, "runner") == "dispatch":
-            if not callable(getattr(app, "apply", None)):
+        runner = getattr(app, "runner", None)
+        apply_fn = getattr(app, "apply", None)
+        if runner == "dispatch":
+            if not callable(apply_fn):
                 raise Fatal(f"dispatch applier for {kind} must be callable")
-        elif not callable(app) and not hasattr(app, "runner"):
-            raise Fatal(f"applier for {kind} is not callable")
+        elif runner in ("legacy-agent", "service"):
+            # 外部循环所有权：apply 可缺省；存在则必须可调用
+            if apply_fn is not None and not callable(apply_fn):
+                raise Fatal(f"applier for {kind} has non-callable apply")
+        elif callable(app):
+            continue  # 裸函数 applier（非 Applier 包装）
+        else:
+            raise Fatal(f"applier for {kind} declares unknown runner: {runner!r}")

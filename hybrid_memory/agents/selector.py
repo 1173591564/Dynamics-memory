@@ -29,6 +29,7 @@ def validate(reply, row, svc) -> list[Decision]:
             != list(range(len(candidates)))):
         raise ValueError("Selector must return exactly one decision per candidate")
     uid = row["payload"]["unit_id"]
+    sealed_window = hauler.sealed_window(svc, row)
     for d in decisions:
         idx, action = d["candidate_index"], d.get("action")
         c = candidates[idx]
@@ -37,7 +38,7 @@ def validate(reply, row, svc) -> list[Decision]:
         if action == "REJECT":
             continue
         # The selector cannot widen a source boundary established by its parent.
-        hauler.validate_sources(svc, [c], uid)
+        hauler.validate_sources(svc, [c], uid, sealed=sealed_window)
         # Treat even model-produced recommendations as untrusted input.
         ev, _ = svc._validate_proposal(c, None)
         ev.origin = "agent"

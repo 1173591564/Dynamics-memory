@@ -38,6 +38,8 @@ class Cfg:
     cap_m: int = 40              # M 池容量
     cap_c: int = 200             # C 池容量（P2 新增，未启用；H11/H12）
     cap_a: int = 2000            # A 池容量（P2 新增，未启用；H11/H12）
+    cap_context: int = 500       # 非退役版本总数上限（N12：含 A，不计临时
+                                 # candidate 与 retired；效果提交前收口）
     eta_c: float = 0.60          # merge 继承折损
     tension_delay: int = 20
 
@@ -105,12 +107,18 @@ class Settings:
 
 
 def resolve_pipeline(env: Mapping[str, str] | None = None) -> str:
-    """唯一读 `MEMORY_PIPELINE` 的地方（N01）。支持 opencode | legacy，未知值默认 opencode。"""
+    """唯一读 `MEMORY_PIPELINE` 的地方（N01）。
+
+    支持 opencode | legacy；未设置默认 opencode；未知值抛 ValueError（拒绝
+    启动语义：地基层只用标准库，bootstrap.main 转 Fatal 不进 HTTP——静默
+    换管线是静默失败）。"""
     source = os.environ if env is None else env
     raw = source.get("MEMORY_PIPELINE", "opencode").lower()
+    if raw == "opencode":
+        return "opencode"
     if raw == "legacy":
         return "legacy"
-    return "opencode"
+    raise ValueError(f"MEMORY_PIPELINE must be 'opencode' or 'legacy', got {raw!r}")
 
 
 def resolve_settings(argv: list[str] | None = None,

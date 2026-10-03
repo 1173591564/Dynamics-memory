@@ -84,15 +84,36 @@ def test_require_batch_size_guard():
 
 
 def test_semantics_provider_health_and_calls():
-    provider = SemanticsProvider()
-    initial_health = provider.health()
-    assert initial_health["calls"] == 0
-    assert initial_health["failures"] == 0
-    assert initial_health["last_error"] is None
+    """Defect 3 回归：health 计数/失败/最近错误逐字段断言（原
+    `res is not None or failures >= 0` 恒真，重写为可失败断言）。"""
+    class _Sem:
+        def fingerprint(self, text): return 1
+        def scope(self, bid): return "project"
+        def judge(self, a, b, c, d): return "synonym"
+        def relevant(self, bid, v, q, t): return True
+        def valid(self, bid, v, t): return True
+        def embedding_key(self, bid, v): return (0, bid, v)
+        def relevant_set(self, texts, q, a): raise RuntimeError("recognizer down")
+        def consolidate(self, memories, t): return None
 
-    # Test relevant_set with dummy semantics
-    res = provider.relevant_set(["text1"], "q", "a")
-    assert res is not None or initial_health["failures"] >= 0
+    provider = SemanticsProvider(_Sem())
+    initial_health = provider.health()
+    assert initial_health == {"provider": "zhipu", "model": "glm-5.3-flash",
+                              "calls": 0, "failures": 0, "last_error": None}
+
+    assert provider.judge(1, "a", 2, "b") == "synonym"
+    assert provider.relevant_set(["text1"], "q", "a") is None  # 异常降级 None
+    h = provider.health()
+    assert h["calls"] == 2 and h["failures"] == 1
+    assert "recognizer down" in h["last_error"]
+    # 缺失语义兼容：委托无 relevant_set 时不计失败
+    class _Bare(_Sem):
+        relevant_set = None
+        consolidate = None
+    p2 = SemanticsProvider(_Bare())
+    assert p2.relevant_set(["t"], "q", "a") is None
+    assert p2.consolidate([], 0) is None
+    assert p2.health()["failures"] == 0
 
 
 def test_task_store_call_context_and_fencing(tmp_path):
@@ -129,6 +150,23 @@ def test_evidence_and_llm_shims(tmp_path):
     assert old_llm.ZhipuChatError is new_llm.ZhipuChatError
 
 
+def test_production_uses_canonical_imports():
+    """Defect 7 收口：8 个生产模块全部走 canonical 导入
+    （store.evidence / llm.client）；shim 仅供旧消费者。"""
+    from pathlib import Path
+    import hybrid_memory
+    root = Path(hybrid_memory.__file__).parent
+    prod = [
+        "dispatch/effects.py", "service/observe.py", "service/operate.py",
+        "service/service.py", "transport/bootstrap.py", "legacy/inline.py",
+        "semantics/llm.py",
+    ]
+    for rel in prod:
+        src = (root / rel).read_text(encoding="utf-8")
+        assert "from ..logstore import" not in src, f"{rel} 必须走 store.evidence"
+        assert "from ..llm import" not in src, f"{rel} 必须走 llm.client"
+
+
 def test_policy_consumers_registration():
     policy.assert_consumers(effects.EFFECTS)
     for kind, app in effects.EFFECTS.items():
@@ -138,4 +176,7 @@ def test_policy_consumers_registration():
 def test_resolve_pipeline_matrix_behavior():
     assert resolve_pipeline({}) == "opencode"
     assert resolve_pipeline({"MEMORY_PIPELINE": "legacy"}) == "legacy"
-    assert resolve_pipeline({"MEMORY_PIPELINE": "UNKNOWN"}) == "opencode"
+    # Defect 10 修正：未知值拒绝启动（地基层 ValueError，bootstrap 转 Fatal），
+    # 静默落 opencode 是静默失败
+    with pytest.raises(ValueError, match="MEMORY_PIPELINE"):
+        resolve_pipeline({"MEMORY_PIPELINE": "UNKNOWN"})

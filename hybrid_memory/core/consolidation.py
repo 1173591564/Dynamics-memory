@@ -64,11 +64,15 @@ def maybe_consolidate(eng, t: int) -> None:
     deferred[scene] = signature
 
 
-def admit_reflection(eng, event, chosen, t: int) -> Memory:
-    """add_reflection 入库：嵌入、novelty 计算、建档、清理 pending/deferred。"""
+def admit_reflection(eng, event, chosen, t: int, vector=None) -> Memory:
+    """add_reflection 入库：嵌入、novelty 计算、建档、清理 pending/deferred。
+
+    vector：prepare_effect 预计算值（§2.5）；None 时裸兼容路径内部 embed。"""
     cfg = eng.cfg
-    key = eng.semantics.embedding_key(event.belief_id, event.value)
-    vec = eng.emb.embed([event.text], keys=[key])[0]
+    if vector is None:
+        key = eng.semantics.embedding_key(event.belief_id, event.value)
+        vector = eng.emb.embed([event.text], keys=[key])[0]
+    vec = vector
     active = [m for m in eng.mems.values() if is_visible(m)]
     nearest = max((cosine(vec, m.emb) for m in active), default=None)
     novelty = 1.0 if nearest is None else max(0.0, min(1.0, 1.0 - nearest))

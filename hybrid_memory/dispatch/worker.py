@@ -50,27 +50,36 @@ def semantic_model(svc, row):
                            if (m := svc.engine.mems.get(i)) is not None
                            and is_visible(m) and not m.pending_review and m.kind == "fact"),
                           key=lambda m: (m.birth, m.id))
+    # H27/N15：svc.semantics 可能是 SemanticsProvider 包装——能力判定看
+    # delegate，调用走 provider（计数与降级可观测）。
+    from ..semantics.provider import SemanticsProvider
+    sem = svc.semantics
+    delegate = sem.delegate if isinstance(sem, SemanticsProvider) else sem
     if kind == "conflict_pending":
-        return {"verdicts": [[a, b, svc.semantics.judge(*args) if args else "pending", stamp]
+        return {"verdicts": [[a, b, sem.judge(*args) if args else "pending", stamp]
                              for a, b, args, stamp in jobs]}
     if kind == "feedback_pending":
-        fn = svc.semantics.relevant_set if isinstance(svc.semantics, FeedbackSemantics) else None
+        fn = sem.relevant_set if isinstance(delegate, FeedbackSemantics) else None
         used = fn(texts, payload["question"], payload["answer"]) if fn else [True] * len(texts)
         failed = used is None or len(used) != len(texts)
         if failed:
             used = [True] * len(texts)
         return {"used": [bool(u) for u in used], "recog_fail": failed}
     if kind == "maintenance_due":
-        if (not isinstance(svc.semantics, ConsolidationSemantics)
+        if (not isinstance(delegate, ConsolidationSemantics)
                 or len(mems) < svc.cfg.consolidation_min_items):
             return {"event": None, "sources": sources}
-        event = svc.semantics.consolidate(mems, row["t"])
+        event = sem.consolidate(mems, row["t"])
         return {"event": asdict(event) if event is not None else None, "sources": sources}
     raise ValueError(f"未知语义任务 {kind}")
 
 
 def apply_semantic(svc, row):
-    """事务性应用已落库的模型结果；分支走 EFFECTS 表。"""
+    """事务性应用已落库的模型结果；分支走 EFFECTS 表。
+
+    prepare_effect 在锁外预计算向量（N08：模型/向量准备一律锁外），
+    计划经 plan 参数穿进 applier。"""
+    plan = effects.prepare_effect(svc, row)
     with svc._lock, svc._rollback_effect():
         old_ret = None
         if row["kind"] == "feedback_pending":
@@ -93,7 +102,7 @@ def apply_semantic(svc, row):
                     applier = effects.EFFECTS[row["kind"]].apply
                     if applier is None:
                         raise ValueError(f"无 dispatch applier: {row['kind']}")
-                    return applier(svc, row, result)
+                    return applier(svc, row, result, plan=plan)
                 finally:
                     q.on_emit = old_emit
 
@@ -132,6 +141,14 @@ def run_semantic_tasks(svc, limit: int = 8) -> dict:
                 if row is None:
                     continue
                 if row["state"] == "running":
+                    # N10：语义路径同样封存（payload 已冻结在库，摘要绑定 +
+                    # 快照 revision + 协议版本）。
+                    with svc._lock:
+                        seal_revision = svc._checkpoint_revision
+                    svc.tasks.store_call_context(
+                        row["id"], row["token"],
+                        payload.seal_context(row["kind"], row["payload"],
+                                             seal_revision))
                     result = svc._semantic_model(row)
                     if row["kind"] == "conflict_pending":
                         stats["judged"] += len(result["verdicts"])
@@ -214,11 +231,11 @@ class DispatchWorker:
                 print(f"[memory-dispatch] {type(exc).__name__}: {exc}",
                       file=sys.stderr, flush=True)
 
-    def _apply(self, conn, row, output):
+    def _apply(self, conn, row, output, plan=None):
         applier = effects.EFFECTS[row["kind"]].apply
         if applier is None:
             raise ValueError(f"无 dispatch applier: {row['kind']}")
-        return applier(self.svc, row, output, conn)
+        return applier(self.svc, row, output, conn, plan=plan)
 
     def process_once(self, limit=8):
         if not self._busy.acquire(False):
@@ -241,6 +258,13 @@ class DispatchWorker:
                     if row["state"] == "running":
                         name = row["kind"].removesuffix("_due")
                         task_payload = payload.build_payload(row["kind"], self.svc, row)
+                        with self.svc.lock:
+                            revision = self.svc._checkpoint_revision
+                        # N10：模型调用前封存输入上下文（窗口/规则/移交 ids、
+                        # 快照 revision、协议版本、正文摘要）；校验对照封存值。
+                        store.store_call_context(
+                            row["id"], row["token"],
+                            payload.seal_context(row["kind"], task_payload, revision))
                         result = self.run_agent(name, task_payload)
                         store.store_result(row["id"], row["token"], result,
                             rule_ids=[r["id"] for r in task_payload["rules"]])
@@ -248,10 +272,13 @@ class DispatchWorker:
                                           lease_s=self.lease_s)
                         if row is None:
                             continue
+                    # N08：向量/静态校验在服务锁外完成（prepare_effect），
+                    # 计划穿进事务；事务内逐目标复核邮戳漂移。
+                    plan = effects.prepare_effect(self.svc, row)
                     with self.svc.lock, self.svc._rollback_effect():
                         _, revision = store.complete(
                             row["id"], row["token"],
-                            lambda conn, output: self._apply(conn, row, output),
+                            lambda conn, output: self._apply(conn, row, output, plan),
                             self.svc._dump_state, self.svc._checkpoint_revision)
                         self.svc._checkpoint_revision = revision
                     done += 1

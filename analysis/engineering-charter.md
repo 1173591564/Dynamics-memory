@@ -1,7 +1,7 @@
 # 复杂系统工程与闭环开发规范章程
 
 > 状态：现行 · 开发过程标准（14 条 + 五维 DoD + 门禁链）。
-> 采纳记录与**已声明例外**、计划错误码见 [target-architecture.md](target-architecture.md) §9.2 N35；
+> 采纳记录与**已声明例外**、计划错误码见 [target-architecture.md](target-architecture.md) §9.2 N46；
 > 本文件约束开发行为，不替代系统设计（唯一设计仍是 target-architecture.md）。
 
 *(Engineering Charter & Execution Standards for Complex Systems)*
@@ -115,7 +115,7 @@
    bun test tests/memory_bridge.test.ts
    ```
 
-> 执行边界（N35）：完整 Bun 超时用例与 bench smoke 目前仍属未验证项，按“如实记录，不得过滤”执行；
+> 执行边界（N46）：完整 Bun 超时用例与 bench smoke 目前仍属未验证项，按“如实记录，不得过滤”执行；
 > 门禁只规定“提交前必须跑什么”，不授权 AI 自行宣布“完成/可验收”——该判断属于人。
 
 ---
