@@ -638,6 +638,18 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
   空洞断言（`res is not None or failures >= 0` 恒真）重写为逐字段可失败断言；
   A7 health.json 快照按"字段只增"规则补 semantic_provider（无 provider 装配时
   None/NoneType，装配后为 health() dict）；全量 472 passed。
+- **N40 resolve_pipeline 未知值拒绝启动（P0-2，修 N01 遗留）**：
+  决定：未知 MEMORY_PIPELINE 从"静默落 opencode"改为拒绝启动——地基层
+  resolve_pipeline 抛 ValueError（带合法值说明），bootstrap.main 在 serve 之前
+  转 Fatal（不进 HTTP）；未设置仍默认 opencode。
+  理由：静默换管线是静默失败（N01 原始缺陷正是"未知值默认"）。
+  被否决备选：config 直接 import errors 抛 Fatal（地基层只用标准库的 eternal
+  guard 禁止，被 test_foundation_is_leaf 抓住）；函数内 importlib 懒加载绕过
+  AST 扫描（绕护栏违背守则精神，否决）。
+  影响符号：`config.py::resolve_pipeline`、`transport/bootstrap.py::main`、
+  `tests/unit/test_config.py`（含进程级拒绝启动回归）、
+  `tests/unit/test_defects_regression.py::test_resolve_pipeline_matrix_behavior`。
+  验证：全量 473 passed。
 
 ### 9.1 旧目标条目的最终去向
 

@@ -81,7 +81,14 @@ def main() -> None:
         ap.error("--agent-retry-delay must be finite and non-negative")
 
     service = build_default_service(args.project, model=args.model, task_capacity=args.task_queue_cap)
-    service.trio_mode = resolve_pipeline() != "legacy"
+    # N01：未知管线值拒绝启动（Fatal，不进 HTTP）；地基层 resolve_pipeline
+    # 只抛 ValueError（只用标准库），转换在此完成。
+    from ..errors import Fatal
+    try:
+        pipeline = resolve_pipeline()
+    except ValueError as exc:
+        raise Fatal(str(exc)) from exc
+    service.trio_mode = pipeline != "legacy"
     if not service.trio_mode:
         from ..legacy import warn_once  # P1：§2.11 legacy 启动提示（唯一新增行，行为不变）
         warn_once()

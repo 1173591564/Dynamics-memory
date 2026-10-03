@@ -159,4 +159,7 @@ def test_policy_consumers_registration():
 def test_resolve_pipeline_matrix_behavior():
     assert resolve_pipeline({}) == "opencode"
     assert resolve_pipeline({"MEMORY_PIPELINE": "legacy"}) == "legacy"
-    assert resolve_pipeline({"MEMORY_PIPELINE": "UNKNOWN"}) == "opencode"
+    # Defect 10 修正：未知值拒绝启动（地基层 ValueError，bootstrap 转 Fatal），
+    # 静默落 opencode 是静默失败
+    with pytest.raises(ValueError, match="MEMORY_PIPELINE"):
+        resolve_pipeline({"MEMORY_PIPELINE": "UNKNOWN"})

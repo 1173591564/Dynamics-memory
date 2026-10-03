@@ -5,7 +5,7 @@
 > 未在本页出现的函数/模块在下一轮统一删除前，必须先在此登记或列入删除项。
 > 生成命令：`python analysis/check_architecture.py --build-inventory`；核对：同命令不带参数。
 > 固定契约数据（目标路径、显式契约、计划新增、删除条件、模块备注）在 `analysis/architecture_contract.py`。
-> 当前登记 145 个 Python 模块、5 个 TS/角色定义模块、1452 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、138 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
+> 当前登记 145 个 Python 模块、5 个 TS/角色定义模块、1453 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、138 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
 
 每符号给出：功能、输入、输出、作用、错误、目标（目标路径/处置/变更）。
 公开产品符号在固定契约里逐条定义目标；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。
@@ -2363,7 +2363,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/config.py`（当前路径）。
 - 模块输入：argv、环境变量、项目与包根 .env、默认值。
 - 模块输出：不可变 Settings 与 Cfg 字段表、凭据字符串或 None；非法值拒绝且不静默回退。
-- 源校验：`f5b8cf041f2596ca7ac50a2b2ab1a6e343b2fd807f36b8e7d0cb3292a1db89a2`。
+- 源校验：`6d1458bd7cfc7cbfba78c7a7271041a4d54495fc8e870d28d1aa37020f9005c7`。
 
 ### `hybrid_memory/config.py::Cfg`
 
@@ -2408,7 +2408,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`不可变 Settings；数值含正负/有限/上下界校验`。
 - 作用：无 I/O；不写全局状态。
 - 错误：非法值拒绝；目标与 bootstrap argparse 合并为同一解析。
-- 目标：`hybrid_memory/config.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/config.py#L118)。
+- 目标：`hybrid_memory/config.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/config.py#L124)。
 
 ### `hybrid_memory/config.py::resolve_settings.pick`
 
@@ -2417,7 +2417,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；cast(source[env_key])；cli；default`。
 - 作用：调用 cast, source.get。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/config.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/config.py#L140)。
+- 目标：`hybrid_memory/config.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/config.py#L146)。
 
 ### `hybrid_memory/config.py::load_env_key`
 
@@ -2426,7 +2426,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`ZAI_API_KEY 字符串或 None`。
 - 作用：读文件；不打印值。
 - 错误：文件不可读不抛业务错误；测试必须隔离两级 .env。
-- 目标：`hybrid_memory/config.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/config.py#L175)。
+- 目标：`hybrid_memory/config.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/config.py#L181)。
 
 ## `hybrid_memory/core/__init__.py`
 
@@ -6849,7 +6849,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/transport/bootstrap.py`（当前路径）。
 - 模块输入：argv/env、项目目录与状态目录。
 - 模块输出：组装好的 MemoryService、HTTP 进程与真停机收尾；唯一组合根。
-- 源校验：`58a511abf96371d134f2e8be48a9c7c735097361c0b1899f220bf4955b7078a4`。
+- 源校验：`7e7928d79a11809a08000d759ecc551cfaf0bb0c38d7f534bdd20138c53c5dd2`。
 
 ### `hybrid_memory/transport/bootstrap.py::build_default_service`
 
@@ -6885,7 +6885,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 SystemExit。
 - 错误：异常 SystemExit(0)。
-- 目标：`hybrid_memory/transport/bootstrap.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/transport/bootstrap.py#L127)。
+- 目标：`hybrid_memory/transport/bootstrap.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/transport/bootstrap.py#L134)。
 
 ## `hybrid_memory/transport/dto.py`
 
@@ -13062,7 +13062,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`tests/unit/test_config.py`（当前路径）。
 - 模块输入：被测对象与 pytest 夹具。
 - 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
-- 源校验：`279c8ebcb3842f9a3a71f59f683ace517797153c1e27bd4ba86738f5716fc2c2`。
+- 源校验：`7589218e88b99ad203c1028957569738b0b93d742c38c60f6f99a086a503d198`。
 
 ### `tests/unit/test_config.py::test_pool_caps_default`
 
@@ -13087,7 +13087,7 @@ vendored `mvp/agent/` 完全排除。
 - 功能：行为断言：resolve_pipeline_matrix；成功正常返回，违约抛 AssertionError/pytest 失败
 - 输入：`无参数`。
 - 输出：`未注解；None`。
-- 作用：调用 resolve_pipeline。
+- 作用：调用 pytest.raises, resolve_pipeline。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
 - 目标：`tests/unit/test_config.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_config.py#L21)。
 
@@ -13098,7 +13098,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 resolve_settings。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`tests/unit/test_config.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_config.py#L29)。
+- 目标：`tests/unit/test_config.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_config.py#L31)。
 
 ### `tests/unit/test_config.py::test_no_agent_flag_and_env`
 
@@ -13107,7 +13107,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 resolve_settings。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`tests/unit/test_config.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_config.py#L41)。
+- 目标：`tests/unit/test_config.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_config.py#L43)。
 
 ### `tests/unit/test_config.py::test_invalid_values_raise`
 
@@ -13116,7 +13116,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 pytest.raises, resolve_settings。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`tests/unit/test_config.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_config.py#L47)。
+- 目标：`tests/unit/test_config.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_config.py#L49)。
 
 ### `tests/unit/test_config.py::test_load_env_key_prefers_process_env`
 
@@ -13125,7 +13125,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 load_env_key, monkeypatch.setenv。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`tests/unit/test_config.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_config.py#L56)。
+- 目标：`tests/unit/test_config.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_config.py#L58)。
 
 ### `tests/unit/test_config.py::test_load_env_key_reads_project_dotenv`
 
@@ -13134,7 +13134,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 (tmp_path / '.env').write_text, load_env_key, monkeypatch.delenv。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`tests/unit/test_config.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_config.py#L61)。
+- 目标：`tests/unit/test_config.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_config.py#L63)。
 
 ### `tests/unit/test_config.py::test_load_env_key_missing_is_none`
 
@@ -13143,7 +13143,16 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 load_env_key, monkeypatch.delenv, monkeypatch.setattr, str。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`tests/unit/test_config.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_config.py#L67)。
+- 目标：`tests/unit/test_config.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_config.py#L69)。
+
+### `tests/unit/test_config.py::test_unknown_pipeline_refuses_startup_via_bootstrap`
+
+- 功能：N01 端到端：MEMORY_PIPELINE 未知值 → bootstrap.main 转 Fatal， 进程拒绝启动（非零退出 + 明确报错，不静默落 opencode）。
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 (proj / '.env').write_text, Path, Path(__file__).resolve, __import__, __import__('os').environ.get, proj.mkdir, str, subprocess.run。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_config.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_config.py#L76)。
 
 ## `tests/unit/test_conflict_ledger.py`
 
@@ -13233,7 +13242,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`tests/unit/test_defects_regression.py`（当前路径）。
 - 模块输入：被测对象与 pytest 夹具。
 - 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
-- 源校验：`4727e1fa0d2e50cc1ae85fc561114d6cc2152e92d161b274af131b9659a08ade`。
+- 源校验：`55ffeea6d0d1ac1b1088ff0da74533c5dbd62c15ab729fa60c4e848102681c36`。
 
 ### `tests/unit/test_defects_regression.py::test_plan_capacity_under_limit`
 
@@ -13402,7 +13411,7 @@ vendored `mvp/agent/` 完全排除。
 - 功能：行为断言：resolve_pipeline_matrix_behavior；成功正常返回，违约抛 AssertionError/pytest 失败
 - 输入：`无参数`。
 - 输出：`未注解；None`。
-- 作用：调用 resolve_pipeline。
+- 作用：调用 pytest.raises, resolve_pipeline。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
 - 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L159)。
 
