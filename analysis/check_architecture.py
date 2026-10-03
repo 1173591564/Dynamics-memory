@@ -8,6 +8,15 @@ import re
 import subprocess
 from pathlib import Path
 
+try:  # 脚本方式运行（python analysis/check_architecture.py）
+    from architecture_contract import (DELETIONS, MODULE_IO, MODULE_NOTES,
+                                       PLANNED_MODULES, PLANNED_SYMBOLS,
+                                       SYMBOL_OVERRIDES, TARGET_PATHS)
+except ImportError:  # 作为 analysis.check_architecture 导入时
+    from analysis.architecture_contract import (DELETIONS, MODULE_IO, MODULE_NOTES,
+                                                PLANNED_MODULES, PLANNED_SYMBOLS,
+                                                SYMBOL_OVERRIDES, TARGET_PATHS)
+
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = ROOT / "docs" / "architecture-inventory.md"
 DESIGN = ROOT / "analysis" / "target-architecture.md"
@@ -50,13 +59,7 @@ MODULES = {
     "eval/": ("迁移修复", "离线 mock、HTTP 驱动及预览 harness", "评测边界"),
 }
 
-OVERRIDES = {
-    "hybrid_memory/guards/bounds.py::clamp": ("删除", "未接线的通用钳制壳；不建立无业务调用的 API"),
-    "hybrid_memory/guards/grounding.py::cited_text": ("删除", "未接线壳；正文联接由 service/operate._cited_text 唯一负责"),
-    "hybrid_memory/store/tasks.py::TaskStore.rules_for": ("迁移后删除", "无作用域旧读法只由测试使用；统一为 rule_snapshot/rule_report 后移除"),
-    "hybrid_memory/core/maintenance.py::_warn_promote_reject_once": ("迁移后删除", "core 内打印违背纯状态层；容量事件由 telemetry 限频呈现"),
-    "analysis/acceptance_check.py::_has_int_gt": ("删除", "未使用的机械检查 helper；删除前更新本索引"),
-}
+
 
 
 def source_paths(root: Path = ROOT) -> list[Path]:
@@ -94,7 +97,7 @@ def clean(text: str, limit: int = 300) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 
 
-def function_io(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[str, str, str, str]:
+def function_io(node: ast.FunctionDef | ast.AsyncFunctionDef):
     inputs = ast.unparse(node.args) or "无参数"
     if node.returns is not None:
         annotation = ast.unparse(node.returns)
@@ -117,7 +120,13 @@ def function_io(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[str, str,
                      if isinstance(n, ast.Raise) and n.exc is not None})
     effects = "调用 " + (", ".join(calls) or "无外部调用")
     errors = "；异常 " + (", ".join(raises) or "无显式 raise；被调用方错误仍可传播")
-    return clean(inputs, 20000), output, clean(effects, 20000), clean(errors, 20000)
+    body = [n for n in node.body
+            if not (isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant)
+                    and isinstance(n.value.value, str))]
+    delegate = None
+    if len(body) == 1 and isinstance(body[0], ast.Return) and isinstance(body[0].value, ast.Call):
+        delegate = clean(ast.unparse(body[0].value.func), 120)
+    return clean(inputs, 20000), output, clean(effects, 20000), clean(errors, 20000), delegate
 
 
 def definitions(tree: ast.AST) -> list[dict]:
@@ -138,10 +147,10 @@ def definitions(tree: ast.AST) -> list[dict]:
                                  "effects": "字段与方法契约；dataclass 自动生成的方法不另建手写符号",
                                  "errors": "见构造函数及方法"})
                 else:
-                    inputs, output, effects, errors = function_io(child)
+                    inputs, output, effects, errors, delegate = function_io(child)
                     rows.append({"name": qualified, "line": child.lineno, "kind": "function",
                                  "doc": clean(doc, 500), "input": inputs, "output": output,
-                                 "effects": effects, "errors": errors})
+                                 "effects": effects, "errors": errors, "delegate": delegate})
                 visit(child, (*scope, child.name))
             else:
                 visit(child, scope)
@@ -436,45 +445,100 @@ def symbol_purpose(row: dict, module: dict) -> str:
     if name == "__init__":
         return "用给定参数与依赖初始化 " + row["name"].removesuffix(".__init__") + "，建立其对象状态；业务归属为" + module["purpose"]
     if module["path"] == "hybrid_memory/service/service.py" and row["kind"] == "function":
-        return "服务门面的 " + name + " 入口；转发/状态边界为 " + row["effects"] + "，具体职责和权限见唯一目标 §5.1"
+        return "服务门面的 " + name + " 入口；转发/状态边界为 " + row["effects"]
     if row["kind"] == "class":
         return "定义 " + row["name"] + " 的数据或接口类型，承载" + module["purpose"] + "；构造字段及继承输出在本项完整登记"
-    return module["purpose"] + "；本操作 " + row["name"] + " 的具体流程为 " + row["effects"] + "；目标约束见主文对应责任家"
+    if row.get("delegate"):
+        return "委托 `" + row["delegate"] + "` 执行；边界与失败由被调用方契约承担"
+    return module["purpose"] + " 的具名操作；流程见作用行，输入输出见本项签名与返回"
+
+
+def module_io(path: str):
+    if path in MODULE_IO:
+        return MODULE_IO[path]
+    for prefix in sorted((k for k in MODULE_IO if k.endswith("/")), key=len, reverse=True):
+        if path.startswith(prefix):
+            return MODULE_IO[prefix]
+    return None
+
+
+def target_path_for(path: str) -> str:
+    return TARGET_PATHS.get(path, path)
+
+
+def symbol_contract(row: dict, module: dict) -> tuple[str, str, str, str, str]:
+    key = module["path"] + "::" + row["name"]
+    parts = SYMBOL_OVERRIDES.get(key)
+    if parts is None:
+        return (symbol_purpose(row, module), row["input"], row["output"],
+                row["effects"], row["errors"].lstrip("；"))
+    pick = lambda idx, fallback: parts[idx] if len(parts) > idx and parts[idx] else fallback  # noqa: E731
+    return (parts[0], pick(1, row["input"]), pick(2, row["output"]),
+            pick(3, row["effects"]), pick(4, row["errors"].lstrip("；")))
 
 
 def render(modules: list[dict]) -> str:
     count = sum(len(m["symbols"]) for m in modules)
-    lines = ["# 架构源符号登记（基线现状，不是自动批准保留）", "",
-             "> 基线：db26787 + 本轮覆盖检查器。唯一目标设计见 [target-architecture](../analysis/target-architecture.md)。",
+    lines = ["# 架构源符号登记与逐符号目标契约（唯一目标架构附录）", "",
+             "> 基线：db26787；唯一目标设计见 [target-architecture](../analysis/target-architecture.md)。",
+             "> 本页是设计文档的组成部分，不是自动批准保留：源码里出现但未在本页登记的符号=覆盖检查失败；",
+             "> 未在本页出现的函数/模块在下一轮统一删除前，必须先在此登记或列入删除项。",
              "> 生成命令：`python analysis/check_architecture.py --build-inventory`；核对：同命令不带参数。",
+             "> 固定契约数据（目标路径、显式契约、计划新增、删除条件、模块备注）在 `analysis/architecture_contract.py`。",
              f"> 当前登记 {sum(m['path'].endswith('.py') for m in modules)} 个 Python 模块、"
              f"{sum(not m['path'].endswith('.py') for m in modules)} 个 TS/角色定义模块、"
-             f"{count} 个显式类/函数/具名回调（含私有、嵌套、测试、评测）。",
+             f"{count} 个显式类/函数/具名回调（含私有、嵌套、测试、评测），"
+             f"{len(PLANNED_MODULES)} 个计划新增模块、{len(PLANNED_SYMBOLS)} 个计划新增符号、{len(DELETIONS)} 个删除项。",
              "",
-             "本登记是主架构的源符号附录。入/出来自语法树，作用来自真实调用与显式异常，不冒充目标接口已实现。",
-             "函数的目标责任及边界由主文决定；这里的迁移/删除项不是产品保留白名单。未来删除只能执行主文明确删除项，",
-             "必须同时迁移调用方、快照/部署契约和测试；仅仅索引遗漏不能授权删除。新源文件无模块归属或未登记符号时检查失败。",
+             "每符号给出：功能、输入、输出、作用、错误、目标（目标路径/处置/变更）。",
+             "公开产品符号在固定契约里逐条定义目标；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。",
              "匿名 lambda/回调属于其具名父函数；dataclass/Enum/TypedDict 隐式方法由类型契约覆盖，不单独删除。",
              "TS 的具名 arrow、hook、tool 与测试回调及三份角色定义也登记；TS 识别是当前语法的有限静态扫描，不冒充完整 TypeScript 解析器。",
-             "vendored `mvp/agent/` 完全排除。主架构解释权限、作用与目标迁移；这里仅核对源形态。", ""]
+             "vendored `mvp/agent/` 完全排除。", ""]
     for module in modules:
+        io = module_io(module["path"])
+        tpath = target_path_for(module["path"])
         lines += [f"## `{module['path']}`", "",
-                  f"- 模块功能：{module['purpose']}。", f"- 设计归属：{module['owner']}；处置：{module['disposition']}。",
+                  f"- 模块功能：{module['purpose']}。",
+                  f"- 设计归属：{module['owner']}；处置：{module['disposition']}。",
+                  f"- 目标路径：`{tpath}`" + ("（当前路径）" if tpath == module["path"] else "（模块迁移）") + "。",
+                  f"- 模块输入：{io[0]}。" if io else "- 模块输入：缺失契约（检查失败）。",
+                  f"- 模块输出：{io[1]}。" if io else "- 模块输出：缺失契约（检查失败）。",
                   f"- 源校验：`{module['sha256']}`。"]
-        if not module["symbols"]:
-            lines.append("- 输入/输出：角色模块接收封存 JSON 并规定 role 输出；Python 空包或 shim 提供 import/re-export 名称，无独立业务函数。")
+        if module["path"] in MODULE_NOTES:
+            lines.append("- 模块备注：" + MODULE_NOTES[module["path"]])
+        if not module["symbols"] and not module["path"].endswith(".py"):
+            lines.append("- 输入/输出：角色模块接收封存 JSON 并规定 role 输出；无源码函数。")
+        elif not module["symbols"]:
+            lines.append("- 输入/输出：本模块只有常量/数据契约，无独立函数；语义见模块输入/输出与备注。")
         if module["path"].startswith(("hybrid_memory/agent/", "hybrid_memory/candgen/")) or not module["symbols"] or not module["path"].endswith(".py"):
             lines.append("- 导出/输入依赖：" + clean("；".join(module["exports"]), 5000))
         for row in module["symbols"]:
-            disposition, reason = OVERRIDES.get(module["path"] + "::" + row["name"],
-                                                (module["disposition"], symbol_purpose(row, module)))
-            lines += ["", f"### `{module['path']}::{row['name']}`", "",
-                      f"- 功能：{reason}", f"- 输入：`{row['input']}`。",
-                      f"- 输出：`{row['output']}`。", f"- 作用：{row['effects']}。",
-                      f"- 错误：{row['errors'].lstrip('；')}。",
-                      f"- 归属/处置：{module['owner']} / {disposition}；"
+            key = module["path"] + "::" + row["name"]
+            func, ins, outs, fx, err = symbol_contract(row, module)
+            if key in DELETIONS:
+                disp, reason = DELETIONS[key]
+                change = "删除条件：" + reason
+            else:
+                disp = module["disposition"]
+                change = "按本项目标契约实施" if key in SYMBOL_OVERRIDES else "保留当前签名与 IO"
+            lines += ["", f"### `{key}`", "",
+                      f"- 功能：{func}", f"- 输入：`{ins}`。",
+                      f"- 输出：`{outs}`。", f"- 作用：{fx}。",
+                      f"- 错误：{err}。",
+                      f"- 目标：`{tpath}`；处置：{disp}；变更：{change}；"
                       f"[源码](../{module['path']}#L{row['line']})。"]
         lines.append("")
+    lines += ["## 计划新增模块（当前源码不存在；实施后并入上方模块章节）", ""]
+    for path, note in PLANNED_MODULES:
+        lines += [f"**`{path}`**", "", f"- 功能：{note}",
+                  f"- 目标：`{path}`；处置：计划新增；变更：实施后迁入模块章节。", ""]
+    lines += ["## 计划新增符号（当前源码不存在；实施后并入对应模块章节）", ""]
+    for mod, name, func, ins, outs, fx, err in PLANNED_SYMBOLS:
+        lines += ["", f"### `{mod}::{name}`", "",
+                  f"- 功能：{func}", f"- 输入：`{ins}`。",
+                  f"- 输出：`{outs}`。", f"- 作用：{fx}。", f"- 错误：{err}。",
+                  f"- 目标：`{mod}`；处置：计划新增；变更：实施后移入模块章节。", ""]
     return "\n".join(lines)
 
 
@@ -484,21 +548,70 @@ def check(modules: list[dict], root: Path = ROOT) -> list[str]:
         return ["analysis/target-architecture.md 或 docs/architecture-inventory.md 缺失"]
     text = INDEX.read_text(encoding="utf-8")
     listed_modules = re.findall(r"^## `([^`]+)`$", text, re.M)
+    listed_modules += re.findall(r"^\*\*`([^`]+)`\*\*$", text, re.M)
     listed_symbols = re.findall(r"^### `([^`]+::[^`]+)`$", text, re.M)
     wanted_modules = {m["path"] for m in modules}
-    wanted_symbols = {m["path"] + "::" + s["name"] for m in modules for s in m["symbols"]}
+    source_symbols = {m["path"] + "::" + s["name"] for m in modules for s in m["symbols"]}
+    planned_symbols = {mod + "::" + name for mod, name, *_ in PLANNED_SYMBOLS}
+    planned_modules = {path for path, _ in PLANNED_MODULES}
     if len(listed_modules) != len(set(listed_modules)) or len(listed_symbols) != len(set(listed_symbols)):
         problems.append("登记存在重复模块或符号")
-    for label, want, have in (("模块", wanted_modules, set(listed_modules)),
-                              ("符号", wanted_symbols, set(listed_symbols))):
+    for label, want, have in (("模块", wanted_modules | planned_modules, set(listed_modules)),
+                              ("符号", source_symbols | planned_symbols, set(listed_symbols))):
         problems += [f"漏登{label}: {n}" for n in sorted(want - have)]
         problems += [f"失效{label}: {n}" for n in sorted(have - want)]
     for module in modules:
+        if module_io(module["path"]) is None:
+            problems.append("模块缺少输入/输出契约: " + module["path"])
         if f"`{module['sha256']}`" not in text:
             problems.append(f"源已变化须复核登记: {module['path']}")
     for block in re.split(r"(?=^### `)", text, flags=re.M)[1:]:
-        if not all(f"- {field}：" in block for field in ("功能", "输入", "输出", "作用", "错误", "归属/处置")):
-            problems.append("符号输入输出字段不齐: " + block.splitlines()[0])
+        if "::" not in block.splitlines()[0]:
+            continue
+        if not all(f"- {field}：" in block for field in ("功能", "输入", "输出", "作用", "错误", "目标")):
+            problems.append("符号契约字段不齐: " + block.splitlines()[0])
+    for module in modules:
+        if not module["path"].startswith("hybrid_memory/"):
+            continue
+        for row in module["symbols"]:
+            name = row["name"].split(".")[-1]
+            key = module["path"] + "::" + row["name"]
+            if name.startswith("_") or name.startswith("test_") or name == "__init__":
+                continue
+            if key in SYMBOL_OVERRIDES or row.get("doc") or row.get("delegate"):
+                continue
+            problems.append("公开符号缺少显式契约（override/docstring/delegate）: " + key)
+    for key, (_disp, reason) in DELETIONS.items():
+        if key not in source_symbols:
+            problems.append("删除项在源码中不存在（失效）: " + key)
+        if not reason:
+            problems.append("删除项缺少条件说明: " + key)
+    for key in SYMBOL_OVERRIDES:
+        if key not in source_symbols:
+            problems.append("显式契约指向不存在符号: " + key)
+    for src, dst in TARGET_PATHS.items():
+        if src not in wanted_modules:
+            problems.append("迁移源模块不存在: " + src)
+        if dst in wanted_modules:
+            problems.append("迁移目标已是现存模块，需合并契约: " + dst)
+    for key in MODULE_NOTES:
+        if key not in wanted_modules:
+            problems.append("模块备注指向不存在模块: " + key)
+    design_text = DESIGN.read_text(encoding="utf-8")
+    for path, _note in PLANNED_MODULES:
+        if path in wanted_modules:
+            problems.append("计划新增模块已存在: " + path)
+        if Path(path).name not in design_text:
+            problems.append("计划新增模块未在主文出现: " + path)
+    for mod, name, *_rest in PLANNED_SYMBOLS:
+        if mod + "::" + name in source_symbols:
+            problems.append("计划新增符号已存在于源码: " + mod + "::" + name)
+        ascii_name = re.search(r"[A-Za-z_][A-Za-z0-9_.]*", name)
+        if ascii_name and ascii_name.group(0).split(".")[-1] not in design_text:
+            problems.append("计划新增符号未在主文出现: " + name)
+    for bad in ("目标约束见主文对应责任家", "具体职责和权限见唯一目标 §5.1", "见主文对应责任家"):
+        if bad in text:
+            problems.append("附录仍含占位说明: " + bad)
     for file in (DESIGN, INDEX):
         body = file.read_text(encoding="utf-8")
         for link in re.findall(r"\]\(([^)]+)\)", body):
@@ -506,10 +619,13 @@ def check(modules: list[dict], root: Path = ROOT) -> list[str]:
                 continue
             target = link.split("#", 1)[0]
             if target and not (file.parent / target).exists():
-                problems.append(f"链接失效: {file.relative_to(root)} -> {link}")
-    design = DESIGN.read_text(encoding="utf-8")
+                try:
+                    shown = file.relative_to(root)
+                except ValueError:
+                    shown = file
+                problems.append(f"链接失效: {shown} -> {link}")
     for section in ("信号与派发", "三 Agent 协议", "三池与领域", "迁移与删除决策", "验收"):
-        if section not in design:
+        if section not in design_text:
             problems.append(f"主设计缺主题: {section}")
     return problems
 

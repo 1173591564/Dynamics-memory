@@ -2,7 +2,7 @@
 
 > 合并版，2026-10-03；代码基线 `db26787`（P6 `1552112` + 本地测试隔离修复）。
 > 本文取代原目标架构及本轮临时 `ARCHITECTURE.md`，只保留这一个规范入口。N01–N28 是本轮委托的明确设计决策；它们修订旧 H 决议的对应条款，不代表运行代码已经实现。
-> [源符号附录](../docs/architecture-inventory.md) 属于本文：逐项登记每个自有模块、类、函数、私有/嵌套 helper 的功能、精确参数、实际返回、调用、错误和处置。附录是源证据，不是另一份目标架构。
+> [源符号附录](../docs/architecture-inventory.md) 属于本文：逐项登记每个自有模块、类、函数、私有/嵌套 helper 的功能、输入、输出、作用、错误、目标路径、处置与变更条件；固定契约数据在 [`architecture_contract.py`](architecture_contract.py)。附录是本文的逐符号白名单：源码里出现但未登记的符号=覆盖检查失败；未登记的函数/模块在统一删除前必须先登记或列入删除项，不能静默消失。
 > 旧决策依据：[H1–H42](decision-register.md)；验收：[A1–A10](acceptance-criteria.md)。`mvp/agent/` 全部排除，`hybrid_memory/agent/` 是自有兼容层，不能混淆。
 
 ## 0. 文档与清理边界
@@ -10,7 +10,8 @@
 - **当前**为基线真实行为；**目标/待实现**为下一轮实施契约，不拿目标证明闭环已通。
 - 处置只有保留、接线、迁移、兼容保留、历史归档、删除、迁移后删除。没有“P6 后再说”的无归属函数。
 - 不为了目录树美观创造第二套包装 API。逻辑已在合理位置就修文档；确实缺功能才补实现。
-- 源符号附录包含全部自有 Python 源文件、显式函数和类，包括测试、评测、验收及 nested helper；TS 可调用入口在第 7 节。匿名 lambda、映射回调、字符串嵌入的测试子进程程序归父函数，隐式 dataclass/Enum 方法归类型契约。
+- 源符号附录包含全部自有 Python 源文件、显式函数和类，包括测试、评测、验收及 nested helper；每个符号给出功能/输入/输出/作用/错误/目标（目标路径、处置、变更条件）。TS 可调用入口在第 7 节。匿名 lambda、映射回调、字符串嵌入的测试子进程程序归父函数，隐式 dataclass/Enum 方法归类型契约。
+- 公开产品符号的目标契约（含结构化返回字段）在 `architecture_contract.py` 逐条固定；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。计划新增与删除项同样在该文件冻结，见 §5.9 与 §9。
 - 后续清理只执行第 9 节的明确处置。漏登是覆盖检查失败，不是自动删除授权；调用方、状态/部署兼容和替代测试迁完才删。数据目录、证据、凭据、Git 历史、第三方源码未获删除授权。
 - 测试和 TIDE 是验收资产，不能按“生产没 import”判断死代码。本文与附录不得各自保存不同的目标策略；附录只自动记录现状形态，行为决策只在本文。
 
@@ -260,7 +261,7 @@ registry硬512：优先淘汰已结清/未反馈对象；已持久feedback已有
 
 ## 5. 从目录到函数：功能与输入输出
 
-本节的人读契约与附录的逐符号实际签名共同完整覆盖源码。每个private/nested函数、构造、导出对象也有附录条目；不再沿用旧“私有helper不列”的豁免。下列路径相对hybrid_memory，纯返回与副作用明确区分；当前/目标签名不一致以目标标注实施。
+本节的人读契约与附录的逐符号实际签名共同完整覆盖源码。每个private/nested函数、构造、导出对象也有附录条目；不再沿用旧“私有helper不列”的豁免。下列路径相对hybrid_memory，纯返回与副作用明确区分；当前/目标签名不一致以目标标注实施。附录每符号的“目标”行给出目标路径、处置与变更条件；公开符号的显式契约与结构化输出字段在 `architecture_contract.py`；计划新增接口汇总在 §5.9。
 
 ### 5.1 配置、门面与编排
 
@@ -416,6 +417,30 @@ semantics.llm._one_word/_index_set关系/编号容错，合法NONE不是失败�
 
 取消旧目标愿望函数build_service/snapshot_status/is_corrupt/quarantine/parse_args/install_signal_handlers；不新增TensionBook、suppression_pairs或重复decay/credit/promote/demote/archive/retention_scale包装。既有engine/maintenance/retrieval/lifecycle真实函数保职责，避免实现两套逻辑。
 
+### 5.9 计划新增与目标变更（实施清单）
+
+计划新增模块：`store/evidence.py`（logstore 迁移，签名与行为不变）、`llm/client.py`（llm 迁移，cache helper 留在本模块）、`semantics/provider.py`（SemanticsProvider：judge/relevant_set/consolidate 包装与 `health()`，合法 NONE 与失败分开）。
+
+计划新增符号：
+
+| 符号 | 功能 | 输入 → 输出 | 关键错误 |
+|---|---|---|---|
+| `TaskStore.store_call_context` | 封存一次模型调用的原始输入 | task_id/token/窗口 ids/规则 id/快照 revision/协议版本/正文摘要 → 写入或冲突 | 租约/版本不符拒绝；同 attempt 不可改绑 |
+| `prepare_effect` | 事务前效果计划 | svc 与任务行 → 已验证 Event、预计算 vectors、目标版本、预期 revision、动作计划 | embedding 失败无内存效果；入事务复核漂移 |
+| `plan_capacity` | 提交前容量收口模拟 | mems/cfg/pinned → {archive,delete,remaining,accepted,reason} | 全 pin 时 accepted=false 背压，禁止破上限 |
+| `conflict_ledger` | 冲突统一读模型 | svc 与可选 before → {conflicts,tensions,pending_reviews,aggregates,pin_roots,truncated} | 只读，不触发裁决 |
+
+目标变更（既有符号，附录已逐条标注）：
+
+- `store/schema.py` 三函数由 stub 实现：三库身份/版本/增量迁移、高版本先 Fatal 且先于 DDL。
+- `guards/provenance.py` 三函数由 stub 实现：注入本地 lookup 的纯校验；`guards/bounds.require_batch_size` 实现接线，`MAX_PROPOSE_BATCH/MAX_BODY_BYTES` 接唯一真源。
+- `KindPolicy.max_apply_attempts`：WF/SEM=5、INV=3，与模型上限分别计入。
+- DTO 会话身份：observe/feedback 增可选 `session_id/turn_id` 并纳入指纹，缺失标 unknown。
+- `OpenCodeRunner.run` 文件通道：payload 经私有 UTF-8 临时文件以 `--file` 传递，不支持则拒绝启动。
+- 统一调度：`run_semantic_tasks` 与 `Legacy.process_once` 降为无独立线程 adapter，统一 due 筛选/额度/策略。
+- Legacy 公共 parse（`parse_ids/parse_salience`）迁 guards 供新协议严格校验；Legacy 宽容解析保留兼容。
+- `LLMSemantics` 包装为 SemanticsProvider 并接 `/health`、`/signals`；存量 judge 通路保留但显式。
+
 ## 6. 传输与部署逐函数
 
 auth.authorized(header,token)->字节常量时间bool，bearer不代capability；dto.HttpError当前status/msg兼容，目标字符串业务code区分status；opt_int严格64位排bool，req_str非空，parse_body只JSON/object/0–4MiB，capture_request_id双位一致，observe_payload/feedback_payload出规范DTO。
@@ -493,7 +518,7 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 25. N25 直接删除clamp/cited_text空壳、acceptance._has_int_gt、NUMPY_OK_IN；调用迁后删rules_for/MAX_ATTEMPTS/core打印helper/_Request/重复collect，bounds常量接唯一真源非重复留。
 26. N26 裸SignalWorker/显式Legacy/全部登记shim/序列化位置/有效测试保留；H23能力退役条件不凭旧名取消。
 27. N27 TIDE冻结、harness显模式且等任务、真实provider/L3仍unverified。
-28. N28 本文唯一规范、附录覆盖+源漂移+回归删除闸、CI/包元数据实施轮落地，不另建架构副本。
+28. N28 本文唯一规范、附录覆盖+源漂移+回归删除闸、CI/包元数据实施轮落地，不另建架构副本。固定契约在 `architecture_contract.py`：未登记符号不得静默删除，先登记或列入删除项；计划新增符号在源码出现前不得被实施为另一形状。
 
 ### 9.1 旧目标条目的最终去向
 
@@ -511,7 +536,7 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 
 上一轮本机证据：Python427通过/1跳过；旧A2–A10机械项/TIDE meta通过；Bun过滤超时用例25过/1过滤。完整Bun和真实provider/L3没有通过验证。本文只是设计；符号齐全不证明目标已实现，人决定验收。
 
-- `python analysis/check_architecture.py`：自有模块/类/private/nested/TS入口覆盖、IO字段、源hash、链接；失败先复核，不自动刷新蒙混。`--build-inventory`显式维护源附录，不自动批准新函数。新模块必须有职责/处置。
+- `python analysis/check_architecture.py`：固定契约核对——模块 IO 齐备；每符号六字段（功能/输入/输出/作用/错误/目标）齐备；显式契约与删除项必须在源码存在；计划新增必须不存在于源码且在主文出现；迁移目标不得与现存模块冲突；附录不得含占位说明；源 hash 漂移即红（本轮已由编辑自身触发验证）。`--build-inventory` 只重建附录，不自动批准；改契约=改 `architecture_contract.py` + 本文。
 - Signal门：kind双向真实消费、payload/version封存、lost wake重启、队满L0接受、due筛选、过期5次耗尽、ready不调模型、lease/CAS/quota/真停机。
 - Agent门：bool ID/'false'proof/非对象/超窗/不在供给source/target/规则引用/批内漂移、人审freeze、输出effect一致；不能fuzz只测json.loads。
 - Pool门：C/M/A/context组合、全pin背压、A保护/戳/引用、CREATE/EXIST/复活/聚合/reflection/审批同commit收口、截对手仍警告、一次衰减/迟信用/registry硬界。
