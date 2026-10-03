@@ -441,7 +441,7 @@ semantics.llm._one_word/_index_set关系/编号容错，合法NONE不是失败�
 - Legacy 公共 parse（`parse_ids/parse_salience`）迁 guards 供新协议严格校验；Legacy 宽容解析保留兼容。
 - `LLMSemantics` 包装为 SemanticsProvider 并接 `/health`、`/signals`；存量 judge 通路保留但显式。
 
-**同步状态（arena 01a10032，2026-10-03）**：上述模块与符号已落地；`plan_capacity`/`conflict_ledger`/`store_call_context`/`prepare_effect`/`SemanticsProvider` 目前**只被单元测试调用，尚未接入运行时**；`prepare_effect` 的 `svc.embedder` 属性不存在（服务为 `svc.emb`），向量分支恒空。逐项缺口与修复顺序见 §10.4。
+**同步状态（收尾轮 2026-10-03）**：上述模块与符号已落地**且已接入运行时**——五处孤岛符号接线（N35–N39）、`prepare_effect` 三硬伤修复（`svc.emb`、批量 `embed`、向量真消费）、canonical 导入切换（N41）均完成；逐项结果与回归证据见 §9.3/§10.4。
 
 ## 6. 传输与部署逐函数
 
@@ -784,22 +784,22 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 
 本轮没有改运行代码或删源文件。`mvp/agent/`是之后改造，不进入本轮白名单/清理判断。
 
-### 10.4 本轮同步状态（arena 01a10032）：已落地、未接线、未兑现
+### 10.4 同步状态（收尾轮 2026-10-03）：已落地、已接线、已兑现
 
 **已读码确认的修复**：Selector 严格类型（`verified_correction is True`、`type(index) is int`）、A 池淘汰过滤 pinned、退役补 `archived_at`、任务 due 前置筛选、WF 过期判死、Trio `/miss` 403、`Rejected`→HTTP 映射、人审 capability 403、contested 省略对手标注、preview 导入修复、四个空壳删除。
 
-**未接线（函数已存在，生产零调用，仅单元测试覆盖）**：
+**已接线（收尾轮完成，生产调用与回归见 §9.3 N35–N45）**：
 
-| 符号 | 应接入点 | 现状 |
+| 符号 | 接入点 | 收尾轮结果 |
 |---|---|---|
-| `plan_capacity` | 效果提交前容量收口 | `apply_selector` 仍用 `overflow_policy`，无背压路径；全 pin 静默超限 |
-| `conflict_ledger` | `/conflicts` 与 `tools.conflicts` | 未接；`aggregates` 误用 reflection、`truncated` 硬编码 False |
-| `store_call_context` | worker 模型调用前封存 | 未接 |
-| `prepare_effect` | worker/效果事务 | 未接；`svc.embedder` 不存在、`embed(str)` 形状错误 |
-| `SemanticsProvider` | `service.semantics` + `/health` | 未接；其单测断言恒真 |
+| `plan_capacity` | `effects.enforce_capacity`（apply_selector/apply_maintenance/decide_human_review 提交前） | 容量收口+全 pin 背压 Degraded→503（N35）；engine.step 维护路径保留 overflow_policy（H11/H12） |
+| `conflict_ledger` | `tools.conflicts` → HTTP `/conflicts` | 统一读模型，aggregates/truncated/有界正文修复（N37） |
+| `store_call_context` | `DispatchWorker.process_once`/`run_semantic_tasks` 模型调用前 | 封存窗口/规则/摘要+revision；校验对照封存口径（N38/N10） |
+| `prepare_effect` | worker 两路径锁外预计算，计划穿进事务 | 三硬伤修复+向量只 embed 一次+目标邮戳复核（N36/N08） |
+| `SemanticsProvider` | `build_default_service` 真实装配 + `health_view` | 写路径委托+缺失语义兼容+worker 解包+降级可观测（N39） |
 
 **未兑现契约（收尾轮已清，见 §9.3）**：N01 未知 `MEMORY_PIPELINE` 拒绝启动（N40）；N06 SEM 模型上限与耗尽 dead（N43）；OpenCode 文件通道形状与缺通道拒绝启动（N44，真实 CLI 行为未验证）；`store/schema.py` 接入三 Store（N45）；HTTP 稳定 `code` 全覆盖（N42）；`assert_consumers` 真 callable 检查与显式外部循环所有权（N42）。五处孤岛符号接线（plan_capacity 背压 N35、conflict_ledger N37、store_call_context N38、prepare_effect N36、SemanticsProvider N39）与 canonical 导入切换（N41）同轮完成。
 
-**声明与事实不符已修正**：N29–N33 由 decision-register 移入本文 §9.2 并改为如实状态；附录计数以重新生成为准（145 模块 / 1360 符号 / 69 常量）。
+**声明与事实不符已修正**：N29–N33 由 decision-register 移入本文 §9.2 并改为如实状态；附录计数以重新生成为准（收尾轮后：154 模块 / 1487 符号）。
 
-**收尾建议顺序**：先接线五处并修 `prepare_effect` → 修 N01/N06/文件通道/schema 接入 → 修 `plan_capacity` 语义与容量背压 → 重跑三门并核实测试数字（arena 声称 437，按基线+新增应为 436+1，未复现）。
+**收尾轮执行记录**：五处接线（N35–N39）→ N01/N06/文件通道/schema/HTTP code/消费者自检（N40–N45）→ canonical 导入（N41）→ 三门重跑。测试数字：基线 pytest 437 passed（Linux 实测，非任务书所写 427+1）；收尾轮后 500 passed（437 基线 + 63 新增回归）；checker 0 failures；acceptance 21 PASS/2 SKIP/0 FAIL（bun 与真实 opencode CLI 沙箱未装，记未验证）。

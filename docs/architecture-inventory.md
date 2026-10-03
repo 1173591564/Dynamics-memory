@@ -5,7 +5,7 @@
 > 未在本页出现的函数/模块在下一轮统一删除前，必须先在此登记或列入删除项。
 > 生成命令：`python analysis/check_architecture.py --build-inventory`；核对：同命令不带参数。
 > 固定契约数据（目标路径、显式契约、计划新增、删除条件、模块备注）在 `analysis/architecture_contract.py`。
-> 当前登记 149 个 Python 模块、5 个 TS/角色定义模块、1487 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、144 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
+> 当前登记 150 个 Python 模块、5 个 TS/角色定义模块、1494 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、147 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
 
 每符号给出：功能、输入、输出、作用、错误、目标（目标路径/处置/变更）。
 公开产品符号在固定契约里逐条定义目标；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。
@@ -7805,6 +7805,79 @@ vendored `mvp/agent/` 完全排除。
 - 源校验：`4d40d6790e0366da2ad866344f9dbe14fe290ea013b8c04981ec23d10edf7493`。
 - 输入/输出：本模块只有常量/数据契约，无独立函数；语义见模块输入/输出与备注。
 - 导出/输入依赖：annotations ← __future__.annotations；Path ← pathlib.Path
+
+## `tests/integration/test_e2e_penetration.py`
+
+- 模块功能：行为、恢复、权限及协议回归；不得按产品死代码删除。
+- 设计归属：验收资产；处置：保留迁移。
+- 目标路径：`tests/integration/test_e2e_penetration.py`（当前路径）。
+- 模块输入：被测对象与 pytest 夹具。
+- 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
+- 源校验：`9d4b64a9117070d576332ca545267d583aea379d5c558a5a9354b4f1529856a9`。
+- 模块级常量：`REPO_ROOT`（未登记）；`FAKE_CLI`（未登记）；`_CHILD`（未登记）。
+
+### `tests/integration/test_e2e_penetration.py::_make_fake_cli`
+
+- 功能：测试场景/夹具/假实现：_make_fake_cli；输入输出见本项，生产不调用
+- 输入：`tmp_path`。
+- 输出：`未注解；p`。
+- 作用：调用 p.chmod, p.write_text。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/integration/test_e2e_penetration.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/integration/test_e2e_penetration.py#L61)。
+
+### `tests/integration/test_e2e_penetration.py::_drain`
+
+- 功能：测试场景/夹具/假实现：_drain；输入输出见本项，生产不调用
+- 输入：`worker, rounds=8`。
+- 输出：`未注解；None`。
+- 作用：调用 range, worker.process_once。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/integration/test_e2e_penetration.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/integration/test_e2e_penetration.py#L68)。
+
+### `tests/integration/test_e2e_penetration.py::test_chain1_full_pipeline_via_real_file_channel`
+
+- 功能：链 1：真 OpenCodeRunner（fake CLI）全工作流到信用结清。
+- 输入：`tmp_path, monkeypatch`。
+- 输出：`未注解；None`。
+- 作用：调用 DispatchWorker, OpenCodeRunner, _drain, _make_fake_cli, _svc, json.loads, len, list, monkeypatch.setenv, obs.read_text, obs.read_text(encoding='utf-8').splitlines, runner.verify_channel, str, svc.engine.mems.values, svc.feedback, svc.log.close, svc.observe, svc.process_semantic_tasks, svc.recall, svc.tasks.close, svc.tasks.list_tasks。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/integration/test_e2e_penetration.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/integration/test_e2e_penetration.py#L74)。
+
+### `tests/integration/test_e2e_penetration.py::_seed_conflict_target`
+
+- 功能：第一轮 CREATE 落一条记忆作为后续 CONFLICT 的 target。
+- 输入：`svc, text='部署在 A 服务器'`。
+- 输出：`未注解；ids[0]`。
+- 作用：调用 Event, eng.propose, svc.semantics.fingerprint。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/integration/test_e2e_penetration.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/integration/test_e2e_penetration.py#L111)。
+
+### `tests/integration/test_e2e_penetration.py::_apply_selector_conflict`
+
+- 功能：经 apply_semantic 走真实 selector_due 应用路径产 CONFLICT 人审。
+- 输入：`svc, target_id, uid=0`。
+- 输出：`未注解；row['id']`。
+- 作用：调用 conn.execute, dict, effects.EFFECTS['selector_due'].apply, json.dumps, svc._rollback_effect, svc.tasks.list_tasks, svc.tasks.transaction。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/integration/test_e2e_penetration.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/integration/test_e2e_penetration.py#L121)。
+
+### `tests/integration/test_e2e_penetration.py::test_chain2_conflict_to_human_review_both_branches`
+
+- 功能：链 2：CONFLICT → 人审 accept_new 与 keep_old 闭环。
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _apply_selector_conflict, _seed_conflict_target, _svc, eng.mems.items, len, out2.get, svc.decide_human_review, svc.log.close, svc.observe, svc.tasks.close, svc.tasks.pending_reviews。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/integration/test_e2e_penetration.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/integration/test_e2e_penetration.py#L143)。
+
+### `tests/integration/test_e2e_penetration.py::test_chain3_kill9_recovery_across_both_dbs`
+
+- 功能：链 3：SIGKILL 真崩溃 → 重启恢复两库（L0 单元 + 过期租约任务）。
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _CHILD.format, _svc, isinstance, line.strip, proc.kill, proc.poll, proc.send_signal, proc.stderr.read, proc.stdout.readline, proc.wait, state.mkdir, str, subprocess.Popen, svc.log.close, svc.log.count, svc.log.get, svc.process_pending_units, svc.tasks.close, svc.tasks.get, svc.tasks.recover_expired, time.time。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/integration/test_e2e_penetration.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/integration/test_e2e_penetration.py#L222)。
 
 ## `tests/integration/test_http_contract.py`
 
