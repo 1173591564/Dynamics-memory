@@ -1,388 +1,524 @@
-# 目标架构（定稿 · 只抽象，不实现）
+# 唯一目标架构：信号、三 Agent、三池
 
-> 状态：冻结 · 目标架构终稿（2026-10-02）；改动需 ADR。
+> 合并版，2026-10-03；代码基线 `db26787`（P6 `1552112` + 本地测试隔离修复）。
+> 本文取代原目标架构及本轮临时 `ARCHITECTURE.md`，只保留这一个规范入口。N01–N28 是本轮委托的明确设计决策；它们修订旧 H 决议的对应条款，不代表运行代码已经实现。
+> [源符号附录](../docs/architecture-inventory.md) 属于本文：逐项登记每个自有模块、类、函数、私有/嵌套 helper 的功能、精确参数、实际返回、调用、错误和处置。附录是源证据，不是另一份目标架构。
+> 旧决策依据：[H1–H42](decision-register.md)；验收：[A1–A10](acceptance-criteria.md)。`mvp/agent/` 全部排除，`hybrid_memory/agent/` 是自有兼容层，不能混淆。
 
-> 依据：主干全量通读（`hybrid_memory/` + `eval/` + 插件 + 测试 + 文档，除 vendored `agent/`）。
-> 决策登记：[`decision-register.md`](decision-register.md)（H1–H42，全部已决）。
-> 验收挂钩：[`acceptance-criteria.md`](acceptance-criteria.md)（A1–A10）。
-> 本文只回答"应该长成什么样"；迁移动作在第 4 节，实施阶段在第 5 节。
-> 取证修正（相对参考草案）：server.py **2091** 行/66 方法；测试 **23** 文件/**333** 函数；
-> trio.py **327** 行；`human_review.py` 是 trio CLI（H37），不归 legacy。
+## 0. 文档与清理边界
 
----
+- **当前**为基线真实行为；**目标/待实现**为下一轮实施契约，不拿目标证明闭环已通。
+- 处置只有保留、接线、迁移、兼容保留、历史归档、删除、迁移后删除。没有“P6 后再说”的无归属函数。
+- 不为了目录树美观创造第二套包装 API。逻辑已在合理位置就修文档；确实缺功能才补实现。
+- 源符号附录包含全部自有 Python 源文件、显式函数和类，包括测试、评测、验收及 nested helper；TS 可调用入口在第 7 节。匿名 lambda、映射回调、字符串嵌入的测试子进程程序归父函数，隐式 dataclass/Enum 方法归类型契约。
+- 后续清理只执行第 9 节的明确处置。漏登是覆盖检查失败，不是自动删除授权；调用方、状态/部署兼容和替代测试迁完才删。数据目录、证据、凭据、Git 历史、第三方源码未获删除授权。
+- 测试和 TIDE 是验收资产，不能按“生产没 import”判断死代码。本文与附录不得各自保存不同的目标策略；附录只自动记录现状形态，行为决策只在本文。
 
-## 0. 核心思想 → 七条架构公理
+## 1. 公理、闭环与目录
 
-项目的一句话：**把连续、嘈杂、前后矛盾的项目交互，蒸馏成有界、可溯源、不会腐烂的 agent 长期记忆。**
-从这句话直接推出七条公理，目标结构是它们的必然结果，不是现有目录的重排：
+### 1.1 七条公理的准确范围
 
-| # | 公理 | 结构后果 |
-|---|---|---|
-| X1 | **证据 ≠ 记忆** | L0 证据库与记忆状态分离；记忆必须携带 `src`；原文只能经有界窗口回展（`core/` 与 `store/evidence` 的边界） |
-| X2 | **记忆是动力系统，不是表** | 动力学（衰减/滞回/淘汰/信用/张力）是纯函数，独立于 I/O 与存储（`core/dynamics.py` 等） |
-| X3 | **提取是协议，不是函数调用** | 三类 agent 产物各有"解析→校验→效果"三段，校验在服务端；agent 永不直接改库（`agents/` + `dispatch/effects`） |
-| X4 | **效果恰好一次** | 派发层统一持有状态机/租约/幂等键；效果与 checkpoint 同事务（`store/tasks.py` + `dispatch/`） |
-| X5 | **一切有界** | 每个池/队列/快照/任务表都有上界 + 淘汰策略 + 可观测计数（`guards/bounds.py` + `core/dynamics.evictable`） |
-| X6 | **不静默失败** | 三类错误（Rejected/Degraded/Fatal）；降级必须外显为标志或计数（`errors.py` + `telemetry.py`） |
-| X7 | **单进程、单项目、单写者** | 无分布式假设；锁与 checkpoint CAS 足矣（`service/service.py` 持锁，`store/tasks.checkpoint` 定序） |
+1. 证据不是记忆：L0 不可覆盖、Memory 携带 src；模型只得到受限证据视图。
+2. 记忆是动力系统：pool、V、confidence、pending_review、retirement 正交；池不是真假标签。
+3. 抽取是协议：载荷封存→语义判断→严格校验→事务效果；Agent 不直接改数据库。
+4. 效果原子且幂等：同任务/操作键至多一次，恢复成功后才算义务兑现；模型调用可能多次，dead 不叫成功。
+5. 活跃资源有界：C/M/A、非退役上下文、在途任务、人审、规则、窗口、检索登记有上限；历史 L0/审计只告警、不自动删，不能宣传总磁盘严格有界。
+6. 不静默失败：拒收、降级、启动失败、未知故障分开；NONE/pending 不冒充传输成功。
+7. 单项目单有效写者：服务锁保护内存，SQLite lease/version/CAS 保护提交；无分布式假设。
 
-依赖方向固定为 **transport → service → dispatch/agents → core → store → embed/llm**；
-`core/` 不得 import 其它任何层（import 守卫测试强制，A5）。
-
----
-
-## 1. 目标目录树（精确到文件）
-
-```
-Dynamics-memory/
-├── README.md                      面向使用者：30 秒上手 + 不变量摘要 + 指向 ARCHITECTURE
-├── ARCHITECTURE.md                新增：一页纸架构（= 本文 §0/§2 的压缩版，随代码同 PR 更新）
-├── pyproject.toml                 新增：包元数据 / pytest / ruff / 入口点
-├── pytest.ini                     保留（testpaths/pythonpath）
-├── Makefile                        新增：make test / make accept / make bench
-├── .env.example  opencode.json    保留
-├── .github/workflows/ci.yml       新增：pytest + 验收检查器 + tide meta
-├── analysis/                      新增：本文 + 决策登记 + 验收标准 + acceptance_check.py（设计期产物）
-├── .opencode/
-│   ├── agent/{hauler,selector,reviewer}.md      协议的一部分，改动需过 protocol 测试
-│   └── plugin/memory-bridge.ts                  插件（唯一 TS 交付面；改判 code 不判子串，H24）
-├── hybrid_memory/                 包（见 §2 逐文件）
-├── eval/
-│   ├── tide/                      外部判分器（H39：一行不改）
-│   ├── harness/                   新增：mock_llm.py / drive.py / preview_sidecar.py / run_sidecar_offline.py
-│   ├── data/l1/  results/  runs/  README.md  BASELINE.md
-├── docs/
-│   ├── index.md                   新增：文档地图 + 每份文档的状态（现行/历史）
-│   ├── architecture.md            新增（= 本设计的落位版）
-│   ├── decisions/ADR-*.md         新增：H1–H42 落位（每条一页或分组合并）
-│   ├── opencode-trio.md           现行协议文档（加两通路说明，H27）
-│   ├── persistence/durable-tasks/… 历史批次记录（加状态抬头，保留溯源）
-│   └── opencode-learning/         外部阅读笔记（原样保留）
-└── tests/                         见 §2.12
+```mermaid
+flowchart TD
+  U[主会话 memory-bridge] -->|observe + request_id| L[(L0 + unit_work)]
+  L -->|逐单元原子交接| T[(tasks.sqlite 任务 产物 回执 checkpoint)]
+  T --> D[DispatchWorker]
+  D --> H[Hauler 抽候选]
+  H -->|候选与来源| S[Selector 五路决定]
+  L -->|不满或纠正| R[Reviewer]
+  R -->|规则| H
+  R -->|规则与修复候选| S
+  S -->|CREATE EXIST UPDATE| E[统一效果事务 + 容量准入]
+  S -->|CONFLICT| HR[(人审台账)]
+  HR -->|独立 capability| E
+  D --> SEM[显式 SemanticsProvider]
+  SEM -->|存量 judge 归因 reflection| E
+  E --> C[(C 候选记忆)]
+  C -->|价值滞回晋升| M[(M 常用记忆)]
+  M -->|低价值降级| C
+  C -->|闲置或容量迁出| A[(A 冷归档)]
+  A -->|有效命中或 EXIST 复活| C
+  C --> Q[检索 + 受限上下文]
+  M --> Q
+  A --> Q
+  Q --> U
+  U -->|feedback| T
+  E -->|效果 回执 checkpoint 同事务| T
 ```
 
-选择"保留 `hybrid_memory` 包名"是 H1 的决定：它是插件拉起命令、`opencode.json`、
-评测适配器、文档共同引用的部署契约。**内部**目录按公理重排，对外只保留两个兼容入口。
+### 1.2 目录责任与依赖图
 
----
+- `hybrid_memory/core/`：领域类型、检索、信用、张力、三池与确定性触发。禁止直接 SQLite/HTTP/subprocess/语义模型；当前注入 embedder 仍可能访问网络，不能把“不调 LLM”写成“完全无 I/O”。目标服务预计算向量后再持锁应用，裸引擎兼容调用保留。
+- `store/`：证据、任务与快照存储；只依赖 core/errors 与标准库，不反向 import service/dispatch。policy 数据显式传入；TaskLeaseLost 底层类型归 errors，旧位置兼容导出。
+- `guards/`：纯格式、范围、来源、正文、脱敏校验；联接证据的 I/O 归 service。
+- `agents/`：载荷、严格协议校验和 CLI 运行器；不执行 SQL、不修改 Memory。目标 validate 输入封存上下文，不把可变 service 当权限对象。
+- `dispatch/`：sidecar 唯一 Task 调度和效果编排；角色只是 runner/applier。unit_work 顺序恢复仍是独立证据交接，不是第二模型任务机。
+- `service/`：单项目门面、RLock、observe/recall/feedback、预算、人审、生命周期；不 import transport。
+- `transport/`：HTTP、DTO、鉴权、人审 CLI。除唯一组合根 bootstrap 外只调 service，不直接改领域对象。
+- `embed/`、`semantics/`、未来 `llm/client.py`：模型适配与缓存，不持有事实写权。
+- `legacy/`：显式旧管线与裸引擎语义消费者；default Trio 不从这里取得公共类型/校验。
+- `.opencode/agent/{hauler,selector,reviewer}.md`：权限/输出协议；`.opencode/plugin/memory-bridge.ts`：主会话捕获、注入、outbox。
+- `analysis/`：本文、历史 H、验收和覆盖工具；`docs/`：协议与历史证据。取消另建根 ARCHITECTURE/docs/architecture 或每 H 一页 ADR 的重复规范。
+- `tests/`：unit/integration/protocol/characterization 与共有 fakes；`eval/tide/` 冻结判分，`eval/*.py` 迁 harness，`eval/checks/` 历史归档。
 
-## 2. 逐文件接口（类 / 函数 / 职责；只抽象）
-*注记（P6 后审计）：下划线开头的私有 helper（`_x`）为实现细节，不逐一列名；公开函数/类与实现一一对应，差异处以「P6 后」收敛。*
+全部现存文件、空 `__init__`、导出 shim 都在附录登记。确切目标迁移：`logstore.py→store/evidence.py`；`llm.py→llm/client.py`，缓存 helper 留 client；新增 `semantics/provider.py`，保留 real/llm 内部 prompt。不新增 TensionBook、stub/prompts/cache 空包装，也不再次拆一套动力学算法。
 
-### 2.1 顶层
+部署契约保留：`python -m hybrid_memory.server`；包导出 `Cfg/Settings/MemoryService/build_default_service`；人审 CLI 为 `python -m hybrid_memory.transport.review_cli`，旧 human_review 导入/命令留 shim。版本号待包元数据真实提供，不伪造已有版本。
 
-**`hybrid_memory/__init__.py`** — 对外极小面（P6 后审计落地：`MemoryService/Cfg/Settings` + 延迟 `build_default_service`，不导出 store/dispatch 细节；`__version__` 随 `pyproject.toml`，P6 后）
+## 2. 信号与派发
 
-**`hybrid_memory/server.py`** — 兼容入口 shim（7 行：docstring + 3 引用 + `__main__` 守卫）
-- `main()`：`from .transport.bootstrap import main`；`python -m hybrid_memory.server` 契约不变（H1/H39）
+### 2.1 业务信号、任务与同步原语（N02）
 
-**`hybrid_memory/config.py`** — 配置唯一真源
-- `Cfg`（dataclass）：引擎动力学与机制开关；**新增** `cap_c`（默认 200）、`cap_a`（默认 2000，H11/H12）
-- `Settings`（dataclass）：进程级——`project/port/model/task_capacity/pipeline/agent_*/state_dir`
-- `resolve_pipeline(env) -> "opencode"|"legacy"`：唯一读 `MEMORY_PIPELINE` 的地方
-- `resolve_settings(argv, env) -> Settings`：`CLI > env > 默认`；import 时不求值（bootstrap 未接线：main 自持 argparse 与之数值一致，接线 P6 后——「唯一」待兑现）
-- `load_env_key(project) -> str`：`.env` 读取（现 `server._load_env_key` 迁入）
+- `Signal(kind,payload,t,key,id)` 是干活理由，不是权限或事实。
+- Task 是 SQLite 接受义务：版本、状态、尝试次数、产物、lease/token、退避、回执与 checkpoint。
+- `RLock/Lock/Event` 是同步：代码没有 threading.Semaphore。Event 仅唤醒、允许合并，DB 决定有没有活；lease 不能替代内存锁。
 
-**`hybrid_memory/errors.py`** — 错误分类（新增，H24）
-- `MemoryError(code, message, detail)` 基类（同一构造，三子类不覆写）；`Rejected`（4xx 调用方错）；`Degraded`（外显降级）；`Fatal`（拒绝启动）；`ProposalRejected(ValueError)`（P6 自 operate 归位，保 HTTP-400/重试语义）
-- `http_status(code) -> int`：错误码 → 状态码唯一映射表
+SignalQueue.emit 先 on_emit；返回非 None 即该回调接管。observe 内 -1 只表示当前事务已收集，不表示 DB 已 commit。异常必须回滚内存标志、游标、计数和候选。裸 engine 的易失 queue(cap=256) 可以丢最旧并计 n_dropped；sidecar 工作信号必须同效果持久交接，仅 thin_recall 可易失。不得把已接受 Task 放回会丢的内存队列。
 
-**`hybrid_memory/telemetry.py`** — 观测面（新增）
-- `Counters`：`n_missed/n_rejected/n_ungrounded/n_candgen_fail/n_dropped/n_shadow_dropped/n_pool_truncated/n_dead_tasks`
-- `health_view(service) -> dict`：现字段集冻结（只许加字段，A7）；`semantics` 健康段（H27）未接——provider.py 不在，P6 后
-- `signals_view(service) -> dict`：现字段集冻结
-- `log_event(kind, **fields)`：JSON 一行到 stderr；`warn_once(key, message)`：限频告警
+### 2.2 每个 kind 的完整接力（N03）
 
-### 2.2 `core/` — 领域层（纯逻辑，无 I/O）
+- `hauler_due`：observe 原子交接；入 `{unit_id}`，key=`hauler:{uid}`；Hauler 输出候选，effect 建 selector_due；空批完成但不建空任务。Trio only。
+- `selector_due`：Hauler/Reviewer effect 生产；入 `{unit_id,candidates,parent_task}`，key=`selector_due:{parent}`；Selector 出五路决定，apply_selector 整批原子执行。领取后候选不可改绑。
+- `reviewer_due`：不满/纠正调度；入 `{unit_id}`，key=`reviewer:{uid}`；Reviewer 出诊断、规则、修复、规则评审；修复仍过 Selector。
+- `conflict_pending`：老化 tension/shadow 需求；入 id-pair 列表，key=`conflict`，有序去重并集；SemanticsProvider.judge 输出关系与 Memory/张力邮戳；人审冻结优先于自动裁决。
+- `feedback_pending`：回答后 feedback；入 `{retrieval_id,selected,texts,question,answer}` 实际展示快照；归因输出 used bool 列表/recog_fail；effect 只结信用、不改正文。
+- `maintenance_due`：scene 巩固触发；入 `{scene,ids}`，key=`maint:{scene}`，未领时取最新；consolidate 出 reflection Event 或明确 NONE；不退役来源。
+- `recall_miss`：Legacy 工具痕迹/纠正/明确 miss；入问题、来源、线索、已召回、first_t；规范问题 key；Legacy 调查员处理。Trio `/miss` 必须拒绝，不造无人消费任务。
+- `extract_due`：Legacy scan/candgen 失败；入 `{unit_id,scene,reasons,entities}`，key=`unit:{uid}`，原因/实体并集；Legacy 调查员。
+- `thin_recall`：不足 k，仅 `{q,n_selected}` 有界统计；不默认触发 LLM 或补抽。
+- `feedback/capture/unit_receipts/operations` 是回执，不是 Task kind；不靠混进 POLICIES 凑注册数。
 
-**`core/types.py`** — 数据类型与契约
-- `Pool(Enum)`：`CANDIDATE/MEMORY/ARCHIVE`（含定值序列化）；`Memory` 全字段（**新增** `archived_at`，H12）
-- `Event`、`Query`、`Tension`、`Retrieval`（字段集冻结，增删需 ADR）
-- `is_visible(m)`：唯一"可服务"判定；另有 `cosine` + `Embedder(Protocol)`（§2.10 愿望在 `embed/base.py`，实际落 core/types，P6 后定归属）
-- `MemorySemantics` / `FeedbackSemantics` / `ConsolidationSemantics`（Protocol）
+启动自检检查 active pipeline 的 producer、policy、runner、callable applier 四者一致及反向野项；receipt 明确豁免。暂停领取不等于消费者不存在；未知 kind/dispatch 空 apply 是 Fatal。当前 assert_consumers 只查 key、Legacy 注册仅有 owner、Trio /miss 仍造孤儿，均待实现。
 
-**`core/interaction.py`** — 抽取输入类型（现文件原样迁入，24 行）
-- `InteractionUnit`、`InteractionWindow`
+### 2.3 单状态机与两库义务（N04）
 
-**`core/triggers.py`** — 零 LLM 触发扫描（现文件迁入，82 行）
-- `is_correction/is_dissatisfaction/scan_unit` + 正则常量 + `LONG_TURN_CHARS`
-- 语义：纯调度提示，永不作为事实证据；改正则需跑安全测试（H18）
-
-**`core/dynamics.py`** — 动力学（P4 落地 H11/H12 三件；以下衰减/入账/滞回四组 P6 后，行为在 engine/maintenance 内联）
-- `decay(m, t, cfg)`：`V ← V·e^(−λΔt)` + 保留地板
-- `credit(m, weight)`：useful/shadow 命中入账
-- `promote/demote/archive(m, cfg)`：滞回与归档判定
-- `retention_scale(m, cfg, t)`：salience 保留系数
-- `pinned_ids(engine) -> frozenset[int]`：被未决张力/人审引用、禁止淘汰的 id（H14）
-- `evictable(pool, mems, cfg, pinned) -> list[int]`：纯函数，给出应淘汰 id，不删
-- `overflow_policy(mems, cfg, pinned) -> list[int]`：C 取 V 最低、A 取最旧、M 溢出拒收（H11/H12）
-
-**`core/ingest.py`** — 事件入库：`run_ingest(eng, events, t)`（指纹去重/tau_dup 合并/supersede/张力登记）
-
-**`core/retrieval.py`** — 检索
-- `lexical_scores(texts, query)`、`_prior(pool, cfg)`
-- `run_retrieve(eng, query, t, budget_tokens, passive)`：质量门 θ → 压制对 → RRF 融合 → π 先验 → 预算截断
-- `suppression_pairs(...)`：过相似未入选对 → 张力候选（P6 后：压制标记在 `run_retrieve` 内联，独立函数+张力发射未抽）
-
-**`core/tension.py`** — 张力台账（P6 后：文件不存在；裁决后果散在 `engine.submit_verdicts` + `maintenance.apply_resolution/follow_chain`）
-- `TensionBook.register/pending/emit_due/apply_verdict/aggregate/follow_chain`
-- 四类裁决后果：synonym→merge、update→新替旧、contradiction→聚合、collision→都留
-
-**`core/maintenance.py`** — 维护回路：`run_maintenance(eng, t)`（老化→滞回→归档→shadow 结算→冲突发射）+ `apply_resolution/follow_chain`（裁决执行/链跟随，tension.py 未建前的实际家）；`settle_shadow` 现为 `engine._settle_shadow` 私有方法（H32，P6 后定归属）
-
-**`core/consolidation.py`** — 巩固回路：`maybe_consolidate(eng, t)`；`admit_reflection(eng, event, chosen, t)`
-
-**`core/confidence.py`** — 置信折损：`discount_to(m, t, cfg)`、`projected(m, cfg)`
-
-**`core/signals.py`** — 有界信号队列：`Signal`、`SignalQueue(cap, on_emit)`；`emit` 语义：`on_emit` 返回非 None = 已持久交接
-
-**`core/engine.py`** — 引擎门面（唯一对外 API）：`observe/retrieve/step/feedback/propose/add_reflection/submit_verdicts/submit_relevance/credit_shown/report_miss/report_unit/miss_key/add_tension/pool_sizes/drain_signals/next_id`（+ `_settle_shadow` 等私有 helper，见 §2 注记）
-
-### 2.3 `store/` — 持久化层
-
-**`store/schema.py`** — 建表与迁移（H10；三函数全是未通电 stub，零调用：TaskStore/LogStore 自持 `CREATE TABLE`；收敛 P6 后）
-- `SCHEMA_VERSION`（=1，唯一实例化常量）；`open_db/ensure_schema/migrate` stub（高版本 → `Fatal` 待兑现）
-
-**`store/evidence.py`** — L0 证据库（搬迁未发生：实际为顶层 `logstore.py`；以下 API 以实际为准）
-- `append_unit`（DB 分配 id 只追加）/`add_unit`（导入指定 id；同 id 异内容 → `ValueError`，非 `Rejected`，P6 后定）；`get/count/exists/recent_ids/unit_context/next_position`
-- `search`（FTS5-trigram + 向量 RRF k=60 + LIKE 兜底）；`timeline/mention_counts/stats`；模块另有 `entities_in`（实体抽取）
-- `window(unit_ids, max_chars, before)`：**唯一**全文回展通道，返回 `truncated`
-- `work/pending_units/work_stats/save_work_result/fail_work/finish_work`：逐单元恢复；`capture_receipt`
-- `retention_report()`：体积/最旧单元（H13 只告警）；`close()`
-
-**`store/tasks.py`** — 任务库（现 `taskstore.py`，613 行，H7 合并）
-- `transaction()`（`BEGIN IMMEDIATE`）；`enqueue`（`(kind,key)` 去重合并；满 → `TaskQueueFull`，`Degraded("queue_full")` 化（H9）P6 后；HTTP 映射 503 等价）
-- `checkpoint()/save_checkpoint(state)`：revision CAS，唯一权威状态（H6）
-- `claim/store_result/retry/finish`：单状态机 + `KindPolicy` 参数；另有 `get/list_tasks/recover_expired/check_owned`（查询/认领）与 `encode`（JSON 编码）
-- `unit_receipt/remember_capture/read_capture/apply_unit/apply_effect/apply_captured_effect/apply_operation`（回执/效果）；`runs_today/skip_recent/memory_next_id`（配额/游标）
-- `rule_snapshot/rule_report/disable_rule/rules_for`；`workflow_trace`（18 条/24KB，超限 → `ValueError`，`Degraded` 化 P6 后）
-- `pending_reviews/queued_counts/stats/semantic_stats/close`
-
-**`store/state.py`** — 快照（从 server 抽出）
-- `STATE_KEYS` / `MEMORY_FIELD_DEFAULTS`；`RestrictedUnpickler`（RCE 防护，保留）
-- `dump_state/load_state`；`is_corrupt/quarantine` 未单列成函数（§2.3 愿望）：实际为 `lifecycle.corrupt_file_exists` + `recover_or_init` 内联隔离（`snapshot=quarantined`，state.py 自注已承认），P6 后定
-
-### 2.4 `dispatch/` — 派发层（唯一后台循环）
-
-**`dispatch/policy.py`** — 策略表（新增，H7/H8/H25）
-- `KindPolicy(kinds, claim_from, daily_cap, max_attempts, on_exhausted, lease_s, backoff)`；`POLICIES`；`policy_for(kind)`；`assert_consumers(appliers)` 启动自检
-
-**`dispatch/worker.py`**（P6 落地）：`DispatchWorker(service, runner, policies, idle_s)` + `start/stop/notify/process_once(limit)/stats`，只驱动工作流 kind（TrioWorker 继任）；语义 kind 仍走函数形态 `run_semantic_tasks/semantic_model/apply_semantic`（独立驱动，合并不在 P6）
-- `process_once`：`recover_expired → list_tasks → claim → run_agent → store_result → claim → EFFECTS-apply → complete`（认领状态/重试上限来自 policies，默认值与旧硬编码一致；`finish` 即 `complete` 同事务提交）
-
-**`dispatch/effects.py`** — 效果落地（P5 落地表结构，P6 收敛工作流类，H21）
-- `Applier(kind/owner/apply)`；`EFFECTS` 表 9 种全覆盖（语义/工作流归 dispatch，调查类归 legacy-agent，回执 kind 归 service）；`effect_transaction(svc, mutate, capture)` 唯一入口（I5）
-- 工作流 applier = agents.validate 预检 + mutate（`apply_hauler/apply_selector/apply_reviewer` + `send_workflow` 交接，conn 随传）；失败抛错进重试/dead，不走 `Degraded` 外显（H21 的 Degraded 化不在 P6）
-
-### 2.5 `agents/` — 抽取协议（P6 落地：`agent/trio.py` 329 行拆分，源文件删除，H4）
-
-**`agents/protocol.py`**（P6 落地）：`AgentRunner(Protocol)`（`run/available`）；`AgentTimeout`（CLI 超时）/`AgentProtocolError(ValueError)`（不可解析/非对象，可重试整轮）；`MAX_ATTEMPTS=5`（H8，与 KindPolicy 同值，H8-test 锁死）；返回已解析 JSON 对象，否则协议错误（H15）
-
-**`agents/opencode.py`**（P6 落地）：`OpenCodeRunner(project, executable, timeout)`；`run` 主调 + `available` 探活 + `__call__` 兼容委托（fake 同形）；`opencode run --pure --agent <name> --format json`；cwd=仓库根；`DYNAMICS_MEMORY_INTERNAL_AGENT=1` 防递归；stdin 关闭；`_event/_parse_text`（解析失败全归 `AgentProtocolError`；CLI 缺失/非零退出/agent 未加载沿用 `RuntimeError`）
-
-**`agents/payload.py`**（P6 落地）：`build_payload(kind, service, row)`（窗口 12k，超限沿用 `ValueError` 整轮重试、不静默截断；H16 的 `Degraded` 化不在 P6）；`memory_snapshot`（500 上限确定性 id 序，H17）；`rules_for`（作用域规则注入）
-
-**`agents/hauler.py`**（P6 落地）：`validate(reply, row, svc)`（结构、长度、`source_unit_ids ⊆ 窗口`；空列表合法；去重未做——现状无去重，P6 不加行为）+ `validate_sources(svc, candidates, uid)`（三角色共用）
-
-**`agents/selector.py`**（P6 落地，安全核心 H18）：`Decision` 类型；`validate(reply, row, svc)` 预检（每候选恰一 action；action 合法集；`target_id` 存在且未退役；只读）；UPDATE 门（未确认降 CONFLICT）不抛错，活在 applier 内；同事务漂移由 applier 逐条复核（全有或全无，对外行为与预检无关）
-
-**`agents/reviewer.py`**（P6 落地，H19）：`validate(reply, row, svc)`（diagnosis/rules/repair_candidates/rule_reviews + rule_reviews 引用范围校验，返回归一化 bundle）；`scope_of`（`project|entity:<literal>`）
-
-### 2.6 `semantics/` + `llm/` — 判裁与模型客户端
-
-**`semantics/provider.py`** — 判裁契约（P6 后：文件不存在；H27 的 `/health` semantics 段待接；`judge/relevant_set/consolidate/health` 愿望形状见 H27）
-
-**`semantics/llm.py`** — 现行实现：`LLMSemantics`（`judge/relevant_set/consolidate` + 解析容错；prompt 常量 `_JUDGE_SYS/_CONSOLIDATE_SYS` 内联，见 prompts.py）
-
-**`semantics/prompts.py`** — prompt 模板（P6 后：文件不存在；`_JUDGE_SYS/_CONSOLIDATE_SYS` 内联 llm.py，无独立 RECOGNIZER 常量）
-
-**`semantics/stub.py`** — 确定性实现（改名未发生：实际为 `semantics/real.py`，`RealChatSemantics` + `normalize`；测试与离线唯一可跑实现）
-
-**`llm/client.py`** — 通用 chat 客户端（拆分未发生：实际为顶层 `llm.py`，`chat`（磁盘缓存）/`chat_messages`（tools 直连）/`ZhipuChatError` + 私有 `_cache_lookup/_cache_store/_post_chat`；`BASE_URL` 仍 import 时求值，调用时求值 P6 后）
-
-**`llm/cache.py`** — 响应缓存（P6 后：文件不存在；实现为 llm.py 私有 `_cache_lookup/_cache_store`）
-
-### 2.7 `service/` — 编排层（现 server.py 66 方法分家，H2）
-
-**`service/service.py`** — 门面：组装依赖、持有 RLock；对外方法转发，不放业务实现（P4：`MemoryService` 类整体迁入；P6 最终形态落地：`lock` 属性 + `current()` + `attach_dispatch/notify`，`trio_worker` 槽位改 `dispatch_worker`，`_kick` 剩 `notify()` 委托；`attach_agent` 留守 legacy 挂载，P6 后随 legacy 删）
-
-**`service/lifecycle.py`** — 生命周期：`build_service/recover_or_init/ensure_healthy/save/snapshot_status/corrupt_file_exists/start_unit_recovery/stop_unit_recovery`（P4 落地除 `build_service/snapshot_status` 外全部；P5/P6 未动——组装仍在门面 `__init__`、快照状态仍内联、`_check_checkpoint_error` 仍在门面：三者 P6 后定形态）
-
-**`service/observe.py`** — 观察回路：`observe/process_pending_units/process_unit`（先落 L0 幂等，再扫描，再三 agent 交接；legacy 才走 candgen）+ `_annotate_observe` 回执整形 helper
-
-**`service/recall.py`** — 检索回路：`recall/recall_main/recall_result/context_lines`（`[未确认]/[待人审冲突…]/[项目状态汇总]` 前缀 + contested 1+3 上界 H29：`CONTESTED_K=3` + `truncated` 标志，P4 已修）；`causal_memory_ids/causal_tensions`；随行迁入 `approx_tokens`/`_safe_mem_text`（仅本模块用）
-
-**`service/feedback.py`** — 延迟记账：`feedback`（幂等 + 锁外判裁）
-
-**`service/operate.py`** — agent 操作面（P5 落地）：`propose/resolve/diagnose/report_miss/validate_proposal` + `_durable_propose/_task_once/_cited_text` 内部件；公开拥有 `VERDICTS`；`ProposalRejected` 已归位 `errors.py`（P6，本模块改从 errors 引用，门面 re-export 不动）；效果事务归 `dispatch/effects.effect_transaction`（门面 `_commit_sidecar_effect` 只剩委托）；trio 下三入口禁用落在 transport/http（`TRIO_DISABLED`，H35）
-
-**`service/tools.py`** — 只读工具面（P5 落地）：`log_search/log_timeline/log_stats/log_window`（`before` 因果上界 + 预算）+ `conflicts`（tension 只读列表）
-
-**`service/review.py`** — 冲突台账：`human_reviews/decide_human_review`（幂等，P4 落地）+ `review_token` 能力位（公开函数；门面 `_review_token` 为委托）；`conflict_ledger` 合并读模型（H14 后半，P6 后）
-
-**`service/budgets.py`** — 预算：`open_budget/close_budget/admit`；`MAIN_WINDOW_CAP`；预算对象不可变
-
-**`service/context.py`** — 调用上下文（P1 已自 `investigation_context.py` 迁入）：`InvestigationContext`；`SignalClosed/CausalViolation`；`_ORIGINS`（P4 自 server.py 迁入）
-
-> P4→P5 留守归宿（P5 结算）：`dispatch/{worker,effects}` ← `_semantic_model/_apply_semantic/process_semantic_tasks` + `_journal_signal/_signal_payload`（已迁）；`operate.py` ← `_SELF_REF_RE/_MAX_PROPOSAL_CHARS/_MISS_SOURCES` + `VERDICTS` 公开拥有（已迁，HTTP 改从 operate 回引，dto 不拥有 verdicts）；`_load_or_create_token` 留守门面（`__init__` 期创建，service 层不能反向依赖 transport；auth.py 只做请求期 `authorized` 校验）；`attach_agent` 留守门面（legacy 挂载 seam，P6 后随 legacy 删）；门面保留 `_rollback_effect` + `_kick`（`notify()` 委托，P6 后随 legacy 删）；`ProposalRejected` 已归位 `errors.py`（P6，`ValueError` 基类不动）。
-
-### 2.8 `guards/` — 横切校验（新增包）
-
-**`guards/provenance.py`**：`validate_sources/sources_known/ensure_within_before`（存在 + 因果上界内）
-**`guards/grounding.py`**：`content_grounded`（2 汉字/≥4 标识命中/≥8 标识全出现，P4 落地）；`cited_text` 为未通电 stub（零调用，真身 `operate._cited_text`，P6 后定去留）；`_cited_text`（私有）归 `operate.py`（P5 落地：它是 propose 的 log 联接 helper，非纯函数，不进 guards）
-**`guards/redact.py`**：`redact_secrets` **唯一**实现（legacy 侧 re-export，H5）
-**`guards/bounds.py`**：`validate_request_id` + `capture_fingerprint`（P4 落地）；`require_batch_size/clamp` 为未通电 stub（零调用）；`MAX_PROPOSE_BATCH/MAX_BODY_BYTES` 存在但零调用（`dto.MAX_BODY` 同值重复；调用点仍硬编码 50/20/100/200，收敛 P6 后）
-
-### 2.9 `transport/` — 传输层
-
-**`transport/http.py`**（P5 落地）：`Handler(do_GET/do_POST/_reply/handle_*×17/_dispatch/_run)`；`dto.parse_body` 为唯一 body 解析；`ROUTES` 声明式表（含 trio 禁用表，H35）；`serve`；统一错误映射（H24）
-**`transport/auth.py`**（P5 落地）：`authorized` 唯一函数（bearer 统一校验）；token 创建留守 service 侧（门面 `__init__` 期创建 + `review.review_token`，service 层不能反向依赖 transport；双 token 0600 由 `test_http_contract` 断言，H36）
-**`transport/dto.py`**（P5 落地）：`HttpError`；路径表（`SIGNAL_PATHS/GET_PATHS/POST_PATHS`）+ `MAX_BODY`（4MiB，与 bounds 同值重复，P6 后收敛）；`parse_body`（Content-Type/4MiB）；`opt_int/req_str`；`capture_request_id` + `observe_payload/feedback_payload`；请求身份复用 `guards/bounds` 的 `validate_request_id`（不重复实现）
-**`transport/bootstrap.py`**（P5 落地）：`build_default_service/main`（argparse 与 SIGTERM 内联 main，不单列 `parse_args/install_signal_handlers`；`resolve_pipeline` 复用 config；`load_env_key` 改调 config canonical 实现，旧 `server._load_env_key` 已删）
-**`transport/review_cli.py`**：human CLI（现 `human_review.py`，H37 纠正归类）
-
-### 2.10 `embed/` — 嵌入（保留）
-- `embed/base.py`（空：`cosine` + `Embedder(Protocol)` 实际在 `core/types.py`，P6 后定归属）；`embed/cache.py`（`SqliteEmbeddingCache`）；`embed/zhipu.py`（分块/缓存键/离线模式，`ZhipuEmbeddingError`）
-
-### 2.11 `legacy/` — 冻结旧管线（H5/H23）
-- `legacy/candgen.py`（`ChatGenerator`；候选类型定义在 prompt.py，此处 re-export）；`legacy/prompt.py`（redact 改 re-export `guards.redact`）；`legacy/worker.py`（SignalWorker，裸引擎用）；`legacy/investigator.py`；`legacy/inline.py`；`legacy/loop.py`（AgentWorker）；`legacy/__init__.py`（`DEPRECATED=True` + 启动 `warn_once`）
-- 兼容 shim（H1）：`hybrid_memory/candgen/`、`hybrid_memory/worker.py`、`hybrid_memory/agent/{inline,loop,investigator}.py`、`hybrid_memory/server.py` 缩为 7 行垫片（P5）；另有 `triggers.py/interaction.py/investigation_context.py/taskstore.py/agent/human_review.py` 五垫片（P1 落地，目标一致）；`agent/trio.py` P6 拆入 agents/ 后直接删除（无垫片，4 处引用全改 canonical）
-
-### 2.12 `tests/` 与 `eval/`
+```mermaid
+stateDiagram-v2
+  [*] --> pending: 持久接受
+  pending --> running: claim version token
+  running --> ready: 模型产物持久保存
+  ready --> applying: 领取已有产物
+  applying --> done: 效果 checkpoint 回执 同事务
+  running --> pending: 瞬时失败或租约过期 未耗尽
+  applying --> ready: 应用失败 未耗尽 保留产物
+  running --> dead: 模型阶段耗尽或固定非法输入
+  applying --> dead: 应用阶段耗尽 保留产物
+  pending --> skipped: Legacy TTL 去重
 ```
-tests/
-├── conftest.py                    共享夹具（P2 先行抽出）
-├── unit/
-│   ├── test_core_dynamics.py      衰减/滞回/淘汰/pinned（原 test_smoke 拆分）
-│   ├── test_core_retrieval.py     质量门/压制/RRF/先验/预算
-│   ├── test_core_tension.py       登记/裁决/聚合/迟到信用链（原 test_follow_chain）
-│   ├── test_core_consolidation.py 巩固触发/reflection 入库
-│   ├── test_core_triggers.py      原 test_triggers（升级安全测试，H18）
-│   ├── test_store_evidence.py     原 test_logstore
-│   ├── test_store_tasks.py        原 test_taskstore + durable 机制部分
-│   ├── test_store_state.py        原 test_snapshot_format
-│   ├── test_semantics.py          判裁解析与容错
-│   └── test_import_boundaries.py  新增（A5）
-├── integration/
-│   ├── test_service_observe.py    原 test_observe_recovery + test_capture_delivery
-│   ├── test_service_recall.py     原 test_late_credit + test_source_authenticity
-│   ├── test_service_review.py     人审闭环（原 test_trio_protocol 相关用例）
-│   ├── test_http_contract.py      P5 新增（ROUTES/方法表一致性 + shim 身份 + H36 双 token 0600；test_server.py 原位保留 37 个 live HTTP 用例，A7/A8 快照仍经它取数）
-│   ├── test_dispatch_recovery.py  原 test_semantic_recovery + test_durable_tasks（A10）
-│   └── test_legacy_pipeline.py    原 test_ouroboros + legacy 用例
-├── protocol/
-│   ├── test_agent_protocol.py     原 test_trio_protocol（fake CLI）
-│   └── memory_bridge.test.ts      原位（bun）
-├── characterization/              P3 冻结套件（A4；P6 未删——删除推迟，P6 后定）
-└── test_acceptance.py             断言 acceptance_check.py 全 PASS（H41）
+
+- accepted=true 证明输入/Task 已持久，不证明已写 Memory，更不证明正确。
+- 同 Task/op_key 效果至多一次，恢复完成才兑现；模型不保证一次。dead 保留未兑现义务和原因，不自称成功。
+- L0+unit_work+请求绑定在 log.sqlite 先接受；效果+下游 Task+unit_receipt+checkpoint 在 tasks.sqlite 原子；最后确认 unit_work。两库中间崩溃凭回执补确认，不伪造跨库事务。
+- `(kind,key)` 只合 pending 且 attempts=0；领取冻结 payload/version/before。done 后同 key 是否跳过只由明确 Legacy TTL 决定。
+- request_id 正文 sha256 绑定：相同重放旧回执、异正文409，不换 id 偷执行；operation 签名与 task key 语义保留。
+- checkpoint revision CAS 识别旧写者；提交结果不确定设 fault，只能恢复最新权威状态，不用回滚内存覆盖已提交数据库。
+
+### 2.4 调度、重试、成本与停止（N05–N07）
+
+1. DispatchWorker 统一 active Task 驱动；run_semantic_tasks/Legacy.process_once 先作无独立线程 adapter，迁完重复循环。unit_work 按 uid 严格顺序；模型任务不要求全局 FIFO。
+2. SQL 先筛 next_run_at<=now 再 LIMIT，默认每轮8项；ready产物优先，语义/工作流/调查类别轮转、类别内id升序，空名额借用。不先取未来8项把第9个已到期项饿住。
+3. 默认 sidecar 后台模型任务并发1；锁外执行模型与 embedding 准备，锁内只复核/应用。先求正确交付，不新增任务并行。
+4. WF/SEM 模型上限5、应用上限5；INV兼容2/3。过期领取也计次数；ready复用不问模型。合法产物因容量/CAS/临时I/O应用失败保留，不能清空重问。
+5. 传输/超时/解析按 `min(300,2^min(8,attempts))` 退避；固定非法来源/超证据窗可直接dead。取消无限SEM requeue，耗尽dead等待人工重发并保旧关联。不能用所有 ValueError 代表同一种失败。
+6. policy 增 max_apply_attempts，limits/lease/backoff唯一解析。WF lease600s、runner timeout300s；SEM lease覆盖一次完整client超时+内部重试预算+60s，不用120s套长请求。
+7. sidecar 新模型逻辑调用共用持久日额度200（可配），按 run/judge/relevant_set/consolidate 预扣；ready不扣。OpenCode内部请求/token账单不可从逻辑额度精确推断，主会话调用不归本侧。
+8. no_agent 暂停Task调度的模型调用/领取，不停L0接受、回执补确认、查询；embedding仍可访问网络。显式Legacy为兼容仍运行被动candgen（包括unit恢复）；所以此开关不叫“完全无模型模式”。health分别报告capture/dispatch/semantics。
+9. Stop停止领取并唤醒，等待或取消在途到有界deadline，产物可存则ready；确认线程停止后save/close。join(5)未停不能声称安全关闭。lost wake由DB扫描恢复。
+
+### 2.5 锁序与唯一效果入口（N08）
+
+锁序：unit/dispatch busy → service RLock → 单个store锁/事务。Store callback不得反取service锁；不能同时持log与tasks写事务。lease决定谁可提交，RLock决定内存串行。
+
+目标 `effect_transaction(svc,mutate,*,capture=None,task=None,unit=None)`：三种回执上下文互斥，mutate形状`(conn)->dict`；统一内存备份、信号收集、容量复核、checkpoint CAS、操作回执/done与回滚。不同Store原语保留，但产品只能经此编排。模型/向量准备在事务外，入事务复核源锚、目标邮戳、lease/revision；漂移明确stale/重判，不沿旧id套新对象。
+
+目标新增 `prepare_effect(svc,row)->plan`：封存产物/来源→已验证Event、预计算vectors、目标版本、预期revision与动作计划。embedding失败没有内存效果；计划入事务后复核。`run_ingest/MemoryEngine.propose`目标可选`vectors=`，`admit_reflection/add_reflection`可选`vector=`；裸调用None维持兼容，sidecar事务必须供给预计算值，不用临时替换全局embedder。
+
+_rollback_effect保护对象身份保留；提交后确认丢失设fault不续写。当前complete/apply_unit/apply_operation、人审手写事务及多份collect是迁移项，不能删合法receipt/token复核来凑“单入口”。
+
+## 3. 三 Agent 协议与可操作行为
+
+### 3.1 权限边界（N09）
+
+三角色当前permission为`'*':deny`，目标保持无bash/read/edit/glob/webfetch/task。只处理封存JSON，`--pure`和内部session env防捕获自身。可操作行为不是任意工具调用：Hauler推荐candidate、Selector推荐action、Reviewer推荐rule/repair/assessment；服务校验并执行。不给bearer/human capability，不绕Legacy直写端点。
+
+主会话有六项：memory_search、memory_conflicts、log_search、log_timeline、log_stats、log_window。“只读”指不写事实正文；普通search仍登记rid/信用/张力，不等于passive。人审CLI不是第四个自主Agent。
+
+### 3.2 封存调用上下文（N10）
+
+调用前持久call_context：task/version、source anchor/before、实际window ids、源正文hash、memory snapshot revision/ids/邮戳、实际rules id/正文、协议版本。校验对应原输入，不能重新生成payload批准旧输出。
+
+- Hauler/Reviewer来源在实际六单元窗且t<anchor.t+1；不得自行扩大历史。
+- Selector快照是决策时当前状态，不冒充历史；target必须在已给快照。入事务被前序决定退役则全批回滚。
+- Reviewer handoffs只承认投诉派发前提交；后来完成标pending_at_complaint。缺prior retrieval为unknown，不能证明成功/失败。
+- Reviewer必须获得已观测Hauler/Selector rule_ids对应的不可变instruction/scope/version、实际uses及启停状态；不能查target='reviewer'得到空规则后要求它评价不曾看到的指导。
+
+### 3.3 Hauler
+
+入`{kind,task_id,unit_id,window:[{unit_id,t,scene,user_text,assistant_text,truncated}],rules:[{id,target,scope,instruction}]}`；出`{candidates:[{text,source_unit_ids,entity_key?,salience?}]}`，0–50项、最终单条≤1200字符。空批合法。
+
+按类型→供给来源/因果→脱敏/自指/浅正文接地校验，text+src规范去重。新协议ID严格int排bool/float，不沿旧缓存parse宽容策略。区分用户采纳与助手建议；重复窗口不算独立证据。Hauler不判CREATE/UPDATE，不声称入池。浅接地只证明片段一致，不能证明语义蕴含或事实为真。
+
+### 3.4 Selector五路（N11–N12）
+
+入候选、完整未退役C/M/A快照（含id/text/src/entity/birth/pool/邮戳）、rules、call_context。出`{decisions:[{candidate_index,action,target_id?,verified_correction?,reason?}]}`；每候选恰一，index严格int并覆盖全范围。
+
+- CREATE：服务仍执行精确规范重复兜底/ingest，默认新C，不直接M，无origin价值加成；等价精确项改EXIST并记录实际target。
+- EXIST：同义同scope未退役目标，A合法；src集合只按新unit增evid，更新last_seen，A→C。confidence开启时仅新证据增conf_pos；不能重复窗口刷置信。
+- UPDATE：必须`verified_correction is True`，引用明确用户纠正，目标不晚于纠正锚且不在人审冻结中。entity/scope明确一致；未知归属或跨实体转CONFLICT。新版本C，旧版指向新代表并A+archived_at；最新不等于正确。当前bool('false')漏洞待修。
+- CONFLICT：保存candidate/target版本/原因/source task到人审，冻结旧target、召回警告；candidate尚无Memory id，不是假C，不pin虚构id。unknown/retired target要stale/重判，不是合法审批对象。
+- REJECT：不入Memory，但L0与Task输出、原因、回执保留。
+
+validate出规范Decision计划（校验Event/实际action/target stamp），applier只动态复核/修改，不重复整套静态校验。batch全有或全无。
+
+快照≤500完整或失败，不截断猜CREATE；设cap_context=500保证准入与完整上下文一致，不静默把A藏起来。总JSON UTF-8载荷≤1MiB，超限显式失败而非删证据。分页索引延期，不设计半可见分类。旧库超限先degraded只读，不启动即清洗。
+
+### 3.5 Reviewer（N13–N14）
+
+入complaint、六单元证据、历史handoffs、实际prior retrieval（可缺）、标“现在”的memories、实际用过的Hauler/Selector规则版本及曝光记录。出`{diagnosis,rules,repair_candidates,rule_reviews}`。
+
+- diagnosis非空；rules≤10、每instruction≤500，target只hauler/selector，scope规范project或entity:<trimmed literal>。不给自己写自授权规则，不改服务权限。
+- repairs≤20，按Hauler同样来源/正文校验，再交Selector；不能直接UPDATE/批准人审。
+- rule_reviews≤10、id严格int不重复且属于封存handoffs实际rule_ids；assessment为helpful/ineffective/uncertain，reason≤500；非法一项整bundle拒收，不部分装规则，修订H19部分拒收措辞。
+- guidance不得替代证据，也不能变可执行代码/正则权限。作用域只按本轮unit/candidate字面匹配。
+- 版本instruction不原位改写；修改建新id。ineffective停用与audit同事务，uncertain不回退。uses是曝光，不是因果改善/失败。
+- 活跃规则每role≤50、指导合计≤16000字符；pending人审≤512。满时整效果背压、保存原Task产物，不截断既有规则或丢candidate。历史审计只告警。
+
+### 3.6 人审和双语义通路（N15）
+
+accept_new/keep_old需bearer+独立capability；skip是不提交。accept_new幂等且同事务新C、退役旧版、其他审批stale/checkpoint；keep_old关闭本记录，有其他pending仍冻结。superseded/aggregated/deleted任一版本变化都stale，不能沿旧id批准新代表。
+
+保留显式SemanticsProvider：存量judge、实际展示归因、reflection；health/signals暴露provider/model/calls/failures/last_error。human freeze优先，自动update/synonym不能retire冻结target；普通非人审tension仍可自动消解。关系与Memory邮戳均须匹配，不只比observations。
+
+Trio主会话与外部公开门面禁propose/resolve/diagnose/miss；内部applier使用可信编排能力。Legacy/raw SignalWorker保留显式兼容，不把权限混入Trio。
+
+### 3.7 OpenCode传输
+
+run(name,payload)->dict唯一调用面，__call__兼容；UTF-8、300s超时。available只表示CLI存在，不证明provider可用。不得log原始prompt/凭据/响应全文。
+
+本机`opencode run --help`确认--pure/--agent/--format/--file；目标短指令+私有UTF-8 JSON临时文件附件，命令形状为`opencode run --pure --agent <role> --format json '<短协议指令>' --file <payload.json>`。输入附件由CLI加载，不开放read工具。需真实CLI+mock端到端验证附件解析、权限和清理；帮助信息不等于模型质量证据。不支持该通道的版本拒绝启动，不回退超长argv。当前整个payload放argv已在Windows40k字符复现206，待修。
+
+## 4. 三池与领域
+
+### 4.1 池、真值与容量（N16）
+
+- C是已入engine的候选Memory，不是临时candidate JSON；可被检索但受质量、置信与冲突门，高V才升M。
+- M是常用价值层，不保证为真；confidence/pending_review/retirement与pool正交。
+- A是冷归档，未退役者可低先验召回或EXIST复活；superseded/aggregated版本永不作为当前事实服务。
+- 物理删除只回收无保护A，L0/Task审计不随删。is_visible表示未归档未退役；archive_retrieval另允许未退役A。
+
+Cfg默认M40/C200/A2000，生产M8/C200/A2000；数学阈值不调。新增非退役版本总cap_context500（含A，不计临时candidate或retired）；不是暗改cap_a=292。历史总磁盘不承诺有界。
+
+```mermaid
+stateDiagram-v2
+  [*] --> C: CREATE 或 reflection
+  C --> M: V超过theta_p 且有容量
+  M --> C: V低于theta_d
+  C --> A: 闲置或容量迁出
+  A --> C: EXIST 或有效命中
+  C --> A: 旧版退役 加指针和时间
+  M --> A: 旧版退役 加指针和时间
+  A --> [*]: 无保护 FIFO回收
 ```
-`eval/harness/` 收纳离线脚本（H40）；`eval/tide/` 一行不改（H39）。
-> （P6 后审计：测试搬迁大部未发生——`unit/test_core_*/test_store_evidence/test_store_state/test_semantics`、`integration/test_dispatch_recovery/test_legacy_pipeline`、`protocol/`、`test_acceptance.py` 均不存在；实际用例散在顶层 `test_*.py`（P6 后定；门禁不依赖目标树）。`eval/harness/` 未建目录（脚本散在 `eval/`，H40 名存实无）。
 
----
+### 4.2 准入、pin和背压（N17–N18）
 
-## 3. 依赖规则与不变式（每条可机械检查）
+每种新增/复活/聚合/reflection/人审/晋升降级都在commit前独立plan_capacity模拟全池与引用闭包，不为收容量额外step（会额外衰减）。
 
-| # | 不变式 | 检查方式 |
-|---|---|---|
-| I1 | `core/` 零越层 import；`agents/` 不碰 `store/` | `test_import_boundaries.py`（A5） |
-| I2 | `MEMORY_PIPELINE` 只在 `config.resolve_pipeline` 被读 | 已有测试保留 |
-| I3 | 每个持久 kind 都有 applier | `assert_consumers` 启动自检（A6） |
-| I4 | 每个池都有上界 + 确定超限动作 | `cap_*` 齐全性测试 + `overflow_policy` 单测（A9） |
-| I5 | 效果与 checkpoint 同事务 | `effect_transaction` 唯一入口（A10） |
-| I6 | `/health`、`/signals` 字段只增 | 契约快照测试（A7） |
-| I7 | 文档产品断言有据 | 验收"断言→证据"表（A2） |
+- C按(V,last_hit或birth,id)迁未保护者到A并打戳。
+- M满拒晋升，留C计数；先统一算降级腾位，再按V降序/id确定晋升，不让dict插入顺序裁决。
+- A或cap_context满仅回收无保护A，按(archived_at或-1,id)FIFO；删retired不会减少context，规划须区分。
+- pin不足以收口则整新效果拒收/回滚；合法产物留ready退避，应用5次后dead等待释放/重发。L0 accepted仍真，不把未入Memory说成已记住。
+- 升级/降cap造成旧库超限先degraded/read-only人工治理，不启动自动删历史；生产禁capacity_on=False/two_pool=False，裸实验明确标记并保留。
 
----
+pin roots：未决tension、人审target、存活聚合及members、未结清feedback/shadow、未完成效果目标。candidate是JSON无Memory id。service汇外部roots，core沿代表链/聚合求闭包；有保留对象指向不能删，除非同事务等价链压缩。断链/环可见计数，不复活尸体。保护删除与容量迁出，不冻结V/信用，也不把待审变可信。全pin选背压，不破容量或解除保护。当前A删除不滤pin、idle保护未统一是错误，不是例外。
 
-## 4. 迁移映射（现状 → 目标：改 / 增 / 删 / 移）
+### 4.3 时间、价值、证据与信用（N19）
 
-| 现状 | 目标 | 动作 |
-|---|---|---|
-| `server.py`(2091) 66 方法 | `service/*`(10) + `transport/*`(5) + `store/state.py` + `guards/*`(4) + `telemetry.py` + `errors.py` | **拆**（P4/P5 纯搬运） |
-| `server.py` 文件本身 | 3 行 shim | **改** |
-| `logstore.py`(642) | `store/evidence.py` + `store/schema.py` | **移 + 抽** |
-| `taskstore.py`(613) 两套状态机 | `store/tasks.py`(单状态机) + `dispatch/policy.py` | **并**（P3） |
-| `agent/trio.py`(327) | `agents/*`(6) + 效果入 `dispatch/effects.py` | **拆**（P6） |
-| `worker.py`/`candgen/*`/`agent/{inline,loop,investigator}.py` | `legacy/*` + 一行 shim | **移**（P1） |
-| `agent/human_review.py`(50) | `transport/review_cli.py` | **移**（H37） |
-| `semantics/{llm,real}.py` | `semantics/{provider,llm,prompts,stub}.py` | **拆 + 增**（P6） |
-| `llm.py`(118) | `llm/{client,cache}.py` | **拆**（P6） |
-| `interaction.py`(24)/`investigation_context.py`(19)/`triggers.py`(82) | `core/interaction.py`/`service/context.py`/`core/triggers.py` | **移**（P1） |
-| `config.py` | +`Settings`/`resolve_settings`/`cap_c/cap_a` | **改**（P2） |
-| — | `errors/telemetry/dispatch/*(3)/store/schema/guards/*(5)/ARCHITECTURE/pyproject/Makefile/CI/docs/{index,architecture}/decisions/*` | **增** |
-| `eval/*.py` 离线脚本×4 | `eval/harness/` | **移**（P6 低优先） |
-| 测试 23 文件/333 函数 | `tests/{unit,integration,protocol,characterization}` | **重组随迁**（H38） |
+每成功新逻辑unit最多一次维护，重放/retry不衰减；当前式`V←V*exp(-lam/retention_scale)+eta*d_hit+eta_shadow*d_shadow`，不改成墙钟Δt。salience/novelty/confidence/consolidation默认OFF保留，开机制独立TIDE验证。
 
-**包内新增文件**：顶层 2（errors/telemetry）；`core/` +2（dynamics/tension）；
-`store/` +2（schema/state）；`dispatch/` +3（全新包）；`agents/` +6；
-`semantics/` +2（provider/prompts，llm/stub 为改名）；`llm/` +2；
-`service/` +10（占大头，全是 server.py 的分家）；`guards/` +4；`transport/` +5；
-`legacy/` +7 —— 共约 45 个文件，其中净新增逻辑不到 10 个，其余全是搬运。
+V是效用，evid/src是证据暴露统计，Beta置信启发式不是真实正确率。src集合，同源不增evid；distinct sources也不一定独立真值；origin仅审计。
 
-**明令不动**：`core/` 算法语义（H26）、幂等键语义（H22）、因果上界 `before`、RRF 融合、
-插件 outbox（H33）、pickle 白名单、`eval/tide/`（H39）、`.opencode/agent/*.md` 语义、
-`/health` 字段语义（H34）、UPDATE 门（H18）、直写 403（H35）。
+Useful按实际展示selected/texts对应回答，迟到沿代表且回执去重；ret内存退役后按Task快照credit_shown。Shadow先存pair/mid/t/rel，首verdict才结，synonym不给，其他含pending按现冻结数学给；结信用不等于关闭tension。修改数学另评测。每次进入A写archived_at，离开不参与FIFO，再入重打。
 
-**删除清单**：本次**零删除**（H23）。`tests/characterization/` 在 P6 末删除（临时套件，
-唯一的删）。
+### 4.4 检索、张力与不确定输出（N20）
 
----
+Memory排序是cosine+可选IDF lexical+pool prior+freshness，RRF60只在L0词法/向量融合。passive/调查副本不hits/revive/rid；普通search是主动读取。
 
-## 5. 实施阶段（P0–P6：每阶段准入/准出/禁止）
+contested每selected≤1对手、总≤3行；对手被行数/token预算省掉必须标主条目“有未决冲突，不可断言当前事实”或一起省主条目。只HTTP truncated、模型正文无警告不合格。
 
-> 原则：任何时刻 main 可用（三门全绿）；PR 粒度 = "一模块 + 它的测试"（H38）。
+registry硬512：优先淘汰已结清/未反馈对象；已持久feedback已有selected/texts，允许退役内存对象经credit_shown，不靠pin无限长。
 
-### P0 冻结与基线（0.5–1 天）
-- **做**：实现 `analysis/acceptance_check.py`（A2–A10 机械部分）；给历史 docs 加状态抬头；
-  写 `docs/index.md`；冻结 `/health`、`/signals`、错误码、trio 禁用表的**现状快照**（A7 基线）。
-- **准出**：三门在现状上全绿（基线）；PENDING 表发布。
-- **禁止**：改任何产品代码。
+存量关系：synonym合来源/价值代表，update定新旧并A，contradiction异scope条件化或同scope待审聚合，collision留两条解除pair，pending保留并区分失败/不能判定。候选UPDATE按proof目标，不让generic birth排序推翻审批。conflict_ledger统一tension/聚合pending/人审pending与stale，输出pin roots；不是每聚合都已经有可点击审批记录。
 
-### P1 纯搬运（1–2 天）
-- **做**：`interaction/triggers/context` 移位；`worker/candgen/agent{inline,loop,investigator}` → `legacy/` + shim；
-  `human_review.py` → `transport/review_cli.py`（H37）；`guards/redact` 抽出 + legacy re-export。
-- **准出**：`pytest` 全绿；`git diff --stat` 只有改名 + shim（搬运证明）。
-- **禁止**：改任何函数体（`redact` re-export 除外）；动测试一字。
+## 5. 从目录到函数：功能与输入输出
 
-### P2 新骨架（1–2 天）
-- **做**：`errors/telemetry/guards/{provenance,grounding,bounds}/store/schema/dispatch/policy`
-  空壳（函数签名 + `NotImplementedError` 或透传）；`config` +`Settings/cap_c/cap_a`（只加字段，
-  不启用新行为）；`conftest.py` 共享夹具抽出；`test_import_boundaries.py`（先对现状标红，
-  P4/P5 消红——红是预期的，CI 设为 allow-fail 并显式列出）。
-- **准出**：pytest 全绿（新测试 allow-fail 除外）；新模块 import 无环。
-- **禁止**：把旧调用切到新壳上（P2 只搭架子不通电）。
+本节的人读契约与附录的逐符号实际签名共同完整覆盖源码。每个private/nested函数、构造、导出对象也有附录条目；不再沿用旧“私有helper不列”的豁免。下列路径相对hybrid_memory，纯返回与副作用明确区分；当前/目标签名不一致以目标标注实施。
 
-### P3 合并状态机（2–3 天，风险最高）
-- **做**：`tests/characterization/` 冻结现状（任务状态序列/revision 序列/效果计数）；
-  `store/tasks.py` 单状态机 + `dispatch/policy.py` 策略表；调用点逐个切换
-  （server → trio → loop），每切一个跑 characterization diff。
-- **准出**：characterization 逐字节一致（A4）；旧 `claim_semantic/*` 方法删除；
-  测试搬入 `tests/unit/test_store_tasks.py`。
-- **禁止**：改耗尽语义（H8 照现状抄：调查类 dead、语义类重排，由策略表表达）；
-  动 `core/` 一字。
+### 5.1 配置、门面与编排
 
-### P4 拆 server 上半：service 回路（2–3 天）
-- **做**：`service/{service,lifecycle,observe,recall,feedback,review,budgets}.py`；
-  `store/state.py`（快照搬运）；`telemetry.health_view/signals_view` 接管；
-  `overflow_policy` + `cap_c/cap_a` 接线（A9）；contested 上界 H29 修掉。
-- **准出**：pytest 全绿；import 边界测试消红一半；`test_service_observe/recall/review` 就位。
-- **禁止**：改 HTTP 行为（transport 还没拆，路由原样）；调参（H26）。
+**config.py**：Cfg输入检索/动力学/阈值/cap/机制开关出engine配置，全部默认字段在附录；目标增cap_context。Settings输入project/port/model/pipeline/task_capacity/no_agent/agent及目标规则/人审/载荷/额度/timeout参数出frozen设置，state_dir出项目状态Path。resolve_pipeline(env)->opencode|legacy，目标非法Fatal；resolve_settings(argv,env)->Settings，CLI>env>默认，内部pick选值；load_env_key(project)->str|None，env→项目.env→包根.env，不输出值，两兜底测试隔离。
 
-### P5 拆 server 下半：transport + operate（2 天）
-- **做**：`transport/{http,auth,dto,bootstrap}.py`；`service/{operate,tools}.py`；
-  `dispatch/{worker,effects}.py` 接管后台循环；`server.py` 缩为 3 行 shim；
-  `test_http_contract.py`（A7/A8 快照）；token 0600 测试（H36）。
-- **准出**：`server.py` ≤ 10 行；import 边界全绿；`python -m hybrid_memory.server` 与旧行为一致
-  （smoke：起进程 → observe → recall → save → 重启恢复）。
-- **禁止**：改任何行为（纯搬运，路由表与旧分支逐一等价）；拆 `agent/trio.py`（P6 才动）；调参（H26）。
+**service/service.py**：MemoryService.__init__(cfg,emb,semantics,generator,state_dir,logstore,capacity)建立engine/stores/token/锁/游标/登记/计数、启动自检与恢复，不起模型线程。generator仅Legacy，factory恢复前固定pipeline。
 
-### P6 拆 agent：agents/ + 后台循环归位（2–3 天）
-- **做**：`agent/trio.py` 拆成 `agents/{protocol,opencode,payload,hauler,selector,reviewer}.py`；
-  `DispatchWorker` 类落地（`start/stop/notify/process_once`）接管后台循环，门面收敛到最终形态
-  （`lock/current/attach_dispatch/notify`）；agents 解析 fuzz（A8）；`ProposalRejected` 归位 `errors.py`。
-- **准出**：import 边界全绿（含 `test_agents_boundaries` 消红）；A8 fuzz 全拒收；
-  characterization 逐字节一致（A4）；acceptance_check 0 FAIL。
-- **禁止**：改任何行为；调参（H26）；新开 §2 之外的新文件（偏离先改本文）。
+- lock/current：出RLock/(t,scene)，无I/O；attach_dispatch/attach_agent入adapter出None，唯一驱动；notify/_kick只set Event，后者迁完内部引用后删别名。
+- _load_or_create_token/_review_token出本地双能力；_ensure_healthy拒fault写；_check_checkpoint_error(old_revision)设置fault。
+- _rollback_effect出contextmanager，恢复对象身份/队列/计数/游标且检测DB已推进，目标归effects、门面委托。
+- _journal_signal/_signal_payload/_commit_sidecar_effect：Signal/产物/mutate入，id/JSON/回执出，委托dispatch。
+- _state/_dump_state/_load/save：出dict/bytes/None/保存回执，委托state/lifecycle。
+- observe/process_pending_units入文本/request或limit，出接受回执/uid→回执；recall入query/k/sid/budget/passive出RecallResult；feedback入rid/q/a/request出归因接受回执。
+- report_miss/conflicts入q/hint/source或sid，出排队/ledger，Trio miss拒绝；resolve/propose/diagnose外部Legacy only，入操作/context出裁决计数/逐条结果/诊断统计。
+- log_search/timeline/stats/window入查找/before/限额出视图；open_budget/close_budget/_admit出context/usage/预留；_validate_proposal/_causal_memory_ids/_causal_tensions出Event+supersedes/id集/子台账。
+- _semantic_model/process_semantic_tasks出模型结构/阶段统计，是当前测试seam，runner注入迁完再删重复委托；start/stop_unit_recovery出None；human_reviews/decide_human_review/signals/health_view出列表/决定/观测。
 
-> （P5 补记：P5 禁止尾与 P6 节在终稿落字时截断（原文以 `...[truncated 1030 chars]` 结尾），上文按 H1–H42/检查器/P6 消红测试收敛重建；与原意冲突处以 H 条与测试为准。）
+**service/context.py、budgets.py**：InvestigationContext输入signal/before/origin/task/lease出不可变能力上下文，HTTP不能伪造_context；SignalClosed/CausalViolation为权限/因果错误，底层类型目标errors。open_budget入非负tool/window/before与task出context，重复活跃handle拒绝；close_budget出calls/window_used/reserved/elapsed；admit(sid,before,window,max_chars)->(ctx,bud,cap)，同临界区存活/计尝试/查lease/收因果/预留。I/O后使用原budget对象避免close/reopen串账。无信号主回展1500字符，403权限与429预算分开。
+
+**service/observe.py**：observe(user,assistant,request_id)->accepted/unit_id/pending/pool/t/replayed；先L0+work，队满仍准确说明证据接受。_annotate_observe只整形回执去next_memory_id。process_pending_units(limit)->uid:response，unit busy/uid序/退避不越过；process_unit(uid,work)->交付回执+统计，准备源/结果→事务效果+接力+unit receipt→finish_work；collect闭包临时收handoffs返回-1，mutate闭包推进scene/t、active signals/legacy入库、一次step及next_memory_id。
+
+当前_last_turn/prior retrieval是单项目全局；目标按session/turn关联，插件DTO新增session_id/turn_id并纳入fingerprint与work_context，旧客户端缺时只标unknown，不能错归另一会话。不是本輪暗中宣称已有会话隔离。
+
+**service/feedback.py**：feedback(rid,q,a,request_id)->n_useful/pending/accepted/worker或stable unknown/duplicate。capture重放优先，mutate封展示快照、feedback_sent与关联并发持久任务；接受后的模型失败不翻accepted。空展示记零并可回放。
+
+**service/recall.py**：_safe_mem_text中和同名标签，不宣传完整prompt防注入；approx_tokens(str)->int近似尺。context_lines(Retrieval)->(line,Memory列表,truncated)渲染置信/人审/反思与有界对手；causal_memory_ids(before)->保守id集（birth/seen/src/链），causal_tensions(ids,before)->子字典，不重建历史版本。recall(q,k,sid,budget,passive)->RecallResult，准入后embed，副本无副作用；recall_main及mutate注册rid/计统计、finally恢复临时k、硬收registry；recall_result(ret,rid,budget)->context/n/tokens/truncated/selected，整行裁剪并固定真实presented_texts。
+
+**service/tools.py**：log_search入q/before/scene/k出hits,n（≤20）；log_timeline入entity/before/limit出rows（≤100）；log_stats入group/before/limit出rows,n,units_total（≤200且同界）；log_window入IDs/max_chars出units/chars/truncated/missing/omitted/budget_left，预留后I/O，失败全退、成功按实际结算。conflicts入sid出兼容conflicts/t和统一ledger字段，不泄超界正文。
+
+**service/operate.py**：_cited_text(svc,ids)->被引u+a，有I/O归service。validate_proposal(p,before)->Event+supersedes，非空/1200/自指/脱敏/来源/因果/浅接地，实际kind=fact；公共parse迁guards。propose(batch,origin,sid,ctx)->accepted/new_ids/merged/rejected/pool/t，Legacy直写也立即checkpoint；durable_propose/_task_once规范签名并task操作幂等，重放不因旧链已变错判未来。resolve及mutate入pair/verdict/entity/ensure/ctx出resolved/t，因果+proof/human freeze；report_miss Legacy持久、Trio拒绝；diagnose出miss_counts，审计失败外显不空吞。
+
+**service/review.py**：review_token出独立能力、空持久token Fatal；human_reviews出pending+正文/src/pool，退役/缺目标stale；decide_human_review(id,decision,capability)->decision/new_ids/replayed，双权、版本、原子checkpoint、其他审批stale；目标新增conflict_ledger(svc,before=None)->{conflicts,tensions,pending_reviews,aggregates,pin_roots,truncated}统一只读，不偷偷裁决。
+
+**service/lifecycle.py**：recover_or_init出None，checkpoint→pkl→空、坏checkpoint拒绝、坏pkl隔离并对齐log/memory游标、挂信号出口；ensure_healthy/corrupt_file_exists出拒绝或bool；save出saved/mems、先checkpoint再tmp/fsync/replace pkl、不洗quarantined；start_unit_recovery/loop只补L0和ack，当前顺带semantic的第二循环迁dispatch；stop明确未停超时。不新增build_service/snapshot_status/is_corrupt/quarantine包装，既有位置承担。
+
+### 5.2 核心类型与全部领域函数
+
+**core/types.py**：Pool(C/M/A)按值序列化，__reduce_ex__出(Pool,(value,))；Memory的全部字段（id/指纹/正文/emb、pool/V、hits/evid/times、归档/压制/退役/聚合、src/d_hit/d_shadow、置信、salience/novelty/kind/derived/scene/origin/entity）输入出可变状态，不能删pickle字段。Event输入事实元数据出未分Memory id的事件；Query(target,text)、Tension(pair,times,obs)、Retrieval(selected/presented/suppressed/contested/provisional/信用标志)为领域载体，全部构造字段附录。
+
+is_visible(m)->未归档未退役bool，不代表A禁止读取；cosine(a,b)->float，零范数0，维度/有限值embed验证；Embedder.embed(texts,keys)->ndarray。MemorySemantics.judge是worker外部关系协议，relevant/valid/embedding_key/scope是本地谓词/键，valid保裸兼容而非真实真值；FeedbackSemantics.relevant_set->bool列表|失败None；ConsolidationSemantics.consolidate->Event|None，合法NONE与错误靠provider区别。core/interaction的InteractionUnit输入一轮id/时界/u/a/turns，Window输入编号/时界/units，不是池项。
+
+**core/engine.py**：MemoryEngine.__init__入cfg/embed/local semantics出空状态/计数/queue，无DB；next_id单调分配；add_tension(pair,t)登记/刷新不即发；observe/retrieve/step委托ingest/retrieval/maintenance，出None/Retrieval/None。
+
+- feedback(ret,q,a,t)->0并发feedback_pending/置sent，空无活、重复拒绝。
+- _current_representative(m)->Memory|None；_credit_hit->bool更新代表hits/d_hit/last_hit并复活；credit_shown(ids,used,t)->实际数；submit_relevance(ret,used,t)->n_useful+credited，长度严格一致不能zip漏尾。
+- _record_shadow_pending入m/rival/t/rel追加有界pair项、超限计数；_issue_shadow_credit出bool；_settle_shadow(pair,verdict)出数并首verdict清该对待账，数学N19保留。
+- submit_verdicts(batch,t)->消解数，pending留，死/塌缩对剪、折置信、apply_resolution；外部服务先版本/人审门。
+- add_reflection(event,source,t)->Memory；drain_signals出清空信号列表裸兼容，sidecar不用破坏性drain交付。
+- miss_key规范问题key；report_miss入q/来源/线索/召回/实体出None，内部merge并线索/实体并保已有召回；report_unit入uid/scene/reasons/entities出None，内部merge并原因/实体，无理由不发。
+- propose(events,t,vectors?)->实际新增id列表，origin不passive，同ingest不直M；pool_sizes出C/M/A物理数含retired。
+
+**core/ingest.py**：run_ingest(eng,events,t,vectors?)->None，批向量→可见近邻、精确指纹+值合证据，否则新C/highsim张力；目标供预计算值、同src不刷evid，不把每次生成当真值确认。
+
+**core/dynamics.py**：pinned_ids(engine,external_roots?)出N18闭包，当前无外roots；evictable(pool,mems,cfg,pin)->有序id，M空、A也滤pin；overflow_policy出archive/delete分组计划，不是扁list；目标新增plan_capacity(mems,cfg,pinned)->{archive,delete,remaining,accepted,reason}，模拟迁A再算A/context、不能I/O/衰减。
+
+**core/maintenance.py**：_retention_scale出clamped salience尺度off=1；run_maintenance一新逻辑unit一次折损/衰减/消费信用、滞回/idle/容量/信号，不重step；_warn_promote_reject_once当前stderr，目标telemetry迁完删；_emit_pending_conflicts剪死/塌缩对、龄≥20发pair不judge；follow_chain出代表，断/环计数停、id0有效；apply_resolution执行四关系/src/V/指针/归档戳；_make_aggregate新聚合C及members，容量保护、文本超限留待审不静默剪版本。不造TensionBook/重复decay/credit/promote公共API。
+
+**core/retrieval.py**：_lex_tokens->ASCII+CJK集合；lexical_scores(query,texts)->IDF覆盖dict，内部idf计算；_prior->M/C/A先验；run_retrieve(q_emb,q,t)->Retrieval，质量/置信/provisional/压制/信用/张力/对手/thin；内部_try_select->bool，相似被压、派生血缘不判/不发shadow。预算渲染归service，不把RRF写进这套排序。
+
+**core/confidence.py**：discount_to(m,t,cfg)仅折Beta证据、off no-op/t不回退；projected->Beta均值不修改。
+
+**core/consolidation.py**：maybe_consolidate按scene筛fact/pending、预算/数量/签名变化发一maintenance，内部_budget求clamped salience和；admit_reflection(event,chosen,t,vector?)->Memory，新C/src并集/derived、清pending/deferred计数，不retire来源、不绕容量。
+
+**core/signals.py**：Signal数据；SignalQueue.__init__入cap/callback出deque/key/计数；emit元信息/merge→Signal、先callback接管，否则key去重/有界易失；drain出全并清、take(kinds)出选择且留余顺序、peek_kinds出计数、__len__出数。队列自身不线程安全，调用方锁。
+
+**core/triggers.py**：is_correction看首80严格提示是proof辅助；is_dissatisfaction看首500宽调度；scan_unit入u/a/new_entities出correction/decision/quant/new_entity/long_turn理由，纯规则，不授权事实。
+
+### 5.3 派发及三 Agent逐函数
+
+**dispatch/policy.py**：KindPolicy输入kind/state/daily/model&apply limits/lease/backoff出不可变策略；policy_for(kind)->数据或Fatal，Store目标不反调；assert_consumers目标入appliers/active kinds/policies/runners，正反callable/pipeline/receipt自检，当前只有单参键检查。
+
+**dispatch/worker.py**：semantic_model(svc,row)锁内源快照、锁外judge/relevant/consolidate，出verdicts+stamps/used+recog_fail/event+sources；apply_semantic当前complete+ret回滚，目标统一effect委托，内部mutate调EFFECTS、collect同conn收Task；run_semantic_tasks出阶段stats，目标无独立线程adapter、统一due/quota/policy。DispatchWorker构造service/runner/settings/policy，start/stop/notify幂等线程/有界关闭/唤醒，stats出processed/errors/paused/inflight/dead/last_error，_loop周期或唤醒不死，_apply用callable applier，process_once(limit)->本轮完成Task数（不是Memory数），完整claim/run/store/ready/apply/complete。
+
+**dispatch/effects.py**：Applier注册kind/owner/callable；journal_signal active同事务id/薄遥测None；signal_payload把mutableRetrieval转rid/selected/真实text，pair转JSON list，不存Memory实例。effect_transaction加task/unit/capture上下文，内部run/collect归唯一编排；prepare_effect为前述目标新增。
+
+apply_conflict出resolved，邮戳/人审/过期重排；apply_feedback出credited/recog_fail/retired_source，代表信用不改事实；apply_maintenance出reflected，来源漂移重排/合法NONE=0；send_workflow空不建、同conn接力；apply_hauler校验去重派Selector；apply_selector规范计划+动态复核+容量+五路原子outcomes；apply_reviewer新/停规则、反馈audit、repairs接力同事务，诊断保Task产物。EFFECTS把receipt另声明，Legacy owner补真实adapter。
+
+**agents/protocol.py**：AgentRunner.run(name,payload)->dict、available()->CLI存在bool；AgentProtocolError/AgentTimeout不同重试原因、旧ValueError兼容到调用迁完；MAX_ATTEMPTS重复常数删除，policy唯一。
+
+**agents/opencode.py**：OpenCodeRunner.__init__入project/binary/timeout出仓库cwd adapter；run出严格对象，UTF-8/超时/非零/角色加载显式错，不假模型回退；available、__call__如前；_parse_text拒空/非对象/多对象/垃圾；_event JSONL单行→tuple，坏事件噪音可忽略，最终正文不可猜修。
+
+**agents/payload.py**：rules_for出role指导，Reviewer目标提供真实Hauler/Selector已观测规则而非空reviewer规则；memory_snapshot出完整按id未退役含A快照/邮戳，≤500/1MiB，不截断；build_payload入kind+封存context出角色JSON，窗≤12k，校验不重构变化输入。
+
+**agents/hauler.py**：validate_sources当前svc/candidates/uid→None，目标封存window/before严格归属；validate(reply,row,context)->规范Candidate列表，≤50、类型/来源/正文/长度/去重。
+
+**agents/selector.py**：Decision严格index/action/target/proof/reason；validate->完整规范Decision plan，readonly，不SQL/不修改Memory。
+
+**agents/reviewer.py**：scope_of->规范scope或拒绝；validate->diagnosis/rules/repairs/reviews整bundle，限额/给出的规则引用/来源，非法整拒，不重造payload。
+
+### 5.4 Store：证据、任务与快照
+
+**store/schema.py**三个当前stub均实施：open_db(path,kind=log/tasks/cache)->配置WAL/FULL/FK/busy_timeout的Connection；ensure_schema(conn,kind)->幂等对应库表索引；migrate->增量版本事务，高版本先Fatal不先DDL，无版本legacy_v0迁入，不清数据/降级。三库身份版本分别管，不能共用错误DDL。
+
+**当前logstore.py→store/evidence.py**：LogStore.__init__建立不可覆盖L0、FTS/mentions/unit_work/capture/锁，经schema；entities_in文本→最多64硬ASCII实体，URL保case/PR#，不语义判实体；_tokens>=3词、_fts_expr安全OR、_snippet有界命中片段。
+
+- next_position->next uid/t；append_unit由DB分配、L0+work+request原子，add_unit导入指定id、同内容no-op/异正文拒绝，禁止覆盖。
+- _embed提交后有限文本索引增强，失败计数不丢L0；capture_receipt查绑定；recent_ids anchor时间前序≤6保序并封存。
+- work出状态/result/context/attempts/error/backoff；pending_units严格uid；work_stats计pending/result_saved/failed/done；unit_context按源t算新实体/上一用户，不能当前时钟污染。
+- save_work_result首次结果、重复拒绝；fail_work错误/退避不删unit；finish_work跨库receipt ack重复done可接受。
+- get/count/exists→unit/数/{id:t}，before只看t<界；_row7字段整形。
+- search→hits：FTS/LIKE+可选vector RRF60，不全文；_vector_rank缓存向量排序、失败降级/禁未来；timeline精确mentions→search fallback/t升序；mention_counts实体线索数量；stats scene/entity/week。
+- window(ids,max_chars,before)->units/chars/truncated/missing/omitted，唯一受限全文；retention_report->units/page bytes/oldest/dangling，不含全部WAL/cache磁盘，接健康告警；close关闭。
+
+**store/tasks.py**：TaskLeaseLost/CheckpointConflict/TaskQueueFull/CaptureConflict迁errors稳定code，保判定；encode排序紧JSON拒NaN。TaskStore.__init__入path/clock/capacity，出连接/锁/表，4096为未结束任务上限非历史行数。
+
+- transaction BEGIN IMMEDIATE正常commit异常rollback；_decode JSON字段；get->row|None；list_tasks(states,kinds,due_before?,limit?)->SQL过滤后的rows。
+- enqueue/_enqueue同key未领merge与version/容量/游标，后者不能另BEGIN；memory_next_id读持久单调值。
+- checkpoint->revision/bytes，存在接受操作却无状态拒；_write_checkpoint CAS，save_checkpoint显式事务。
+- runs_today逻辑额度；recover_expired按阶段policy/cap，不重置attempts、不复活dead；skip_recent仅LegacyTTL。
+- claim(id,...expected_version)->row|None，due/状态/version/额度/上限、token/lease/计次同事务；ready不扣模型。
+- _owned/check_owned检查state/token/lease，慢操作后再验；目标新增store_call_context(id,token,context)->None，running有效时封call版本/窗口/rule/input摘要，同attempt不改绑。
+- store_result->revision|None，合法产物ready、保存规则暴露，None只指未同时写checkpoint；retry->新state，模型/应用阶段分开，容量错误不清合法结果。
+- finish仅Legacy分操作receipt兼容，default用complete；unit_receipt查回执，apply_unit原子单元/接力/checkpoint/response→(out,revision,replayed)。
+- read_capture/_capture_hit查指纹、异正文CaptureConflict；remember_capture无engine效果空反馈→(response,replayed)。
+- apply_effect/apply_captured_effect普通/请求幂等存储原语；complete(id,token,mutate,dump,revision)->(out,revision)，lease/产物/效果/新Task/CAS/op receipt/done同事务；apply_operationLegacy task内签名幂等，过期不能重放。
+- rule_snapshot有效scope版本；rule_report版本/启用/uses；disable_rule审计停用非删除；rules_for无scope旧读法测试迁完删除。
+- workflow_trace(unit_ids,before_task)->历史/pending_at_complaint、rule/output/effect，≤18/24000**字符**（非UTF-8字节）；pending_reviews/queued_counts/semantic_stats/stats有界读与统计，不把历史行当active容量；close。
+
+**store/state.py**：STATE_KEYS/default/白名单是恢复契约；_legacy_pool_member只允许Pool合法成员getattr；RestrictedUnpickler.find_class白名单否则拒；_valid_shadow_pending验证形状/ID/t/bool，_shadow_entry规整；_state出完整mem/tension/游标/deferred/counter/shadow/ret/scene；dump_state健康门+pickle4；load_state验证全部再一次发布不半恢复、default补旧档；内部nonnegative_int排bool。坏checkpoint绝不退旧pkl、不能删legacy白名单。
+
+### 5.5 Guards、错误与观测
+
+bounds.validate_request_id->8–80ASCII id|None；capture_fingerprint->排序JSON SHA；require_batch_size超限整批无效，接所有批量；clamp无业务壳删除。provenance.sources_known纯集合bool、validate_sources/ensure_within_before纯注入lookup→None或拒，service预取证据；旧parse宽容不用于新协议。grounding.content_grounded现两汉字/标识/长标识必须出现浅接地，不改NLI；cited_text空壳删除、IO联接留operate。redact_secrets唯一pattern输出视图，目标所有模型/工具视图脱敏、L0审计原文不改；regex不是所有秘密的完整识别器，需回归/抽检。
+
+errors.MemoryError输入code/message/detail；Rejected/Degraded/Fatal不同错误域，ProposalRejected保持旧异常兼容到迁完；http_status唯一stable code映射，未知响亮失败。目标HTTP `{code,error,accepted?,pending?,unit_id?,request_id?}`，401auth/403能力与因果/400格式/404未知/409请求或版本/413体积/415媒体/429额度/503容量临时。当前Rejected落500、人审能力429、code未接都是待修。
+
+telemetry.Counters唯一计数，不能不接dataclass再散多份；health_view出恢复/fault/dispatch/provider/retention/容量，signals_view出queued/tasks/retry/dead/error/credit/cap；log_event脱敏结构stderr、warn_once限频，core镜像打印删。health.ok仍checkpoint可写，不表示全恢复/provider/L3；新增paused/degraded原因，validation保持unverified。
+
+### 5.6 模型适配
+
+embed.cache.SqliteEmbeddingCache构造表、get校字节/维度返回copy|None、put存float32不存正文/密钥。embed.zhipu._unit_vectors有限/非零缩放归一；ZhipuEmbedder构造验证dim∈256/512/1024/2048、batch≤64、正timeout等；embed(texts,keys)->批向量（keys当前不进cache key），分chunk/重复复用/cache/按字符加权；_cache_key目标加endpoint命名空间，_default_post出bytes，_request429/5xx/transport有界重试，_parse严格index/shape/finite并记tokens。ENDPOINT构造从Settings读不import时。embed/base保core.types对象re-export，不为空。
+
+llm/client保_post_chat返回message并有界错误、chat_messages多轮tool调用Legacy only、chat单轮content、_cache_lookup坏缓存miss、_cache_store临时replace清理；ZhipuChatError域。cache key包含endpoint/model/protocol/prompt/temp，cache hit不代表模型新推理。保helper不另cache模块；BASE_URL显式设置。
+
+semantics.real.normalize去指定空白标点lower；RealChatSemantics构造本地labels，fingerprint CRC32非无碰撞实体ID，judge精确同值/标注/pending，relevant/valid恒True是无真值兼容，embedding_key=(value,),scope=''未知。不能误命名为可删stub。
+
+semantics.llm._one_word/_index_set关系/编号容错，合法NONE不是失败全记；LLMSemantics注入chat/model/key/cache、_chat调用client、judge本地后LLM失败pending、relevant_set失败None、consolidate出脱敏reflection Event|None/src并集。当前三个prompt常量内部保留。
+
+目标semantics/provider.SemanticsProvider明确judge/relevant_set/consolidate/health；health输出provider/model/calls/failures/last_error，合法NONE与transport/parse失败区分。归因失败selected-hit兼容降级必须recog_fail计数/日志，不能当真实useful准确率。
+
+### 5.7 Legacy、shim与私有函数的处置
+
+保留显式Legacy和裸engine，不因默认Trio删除。全部private/nested真实签名在附录；下列职责不因旧名删除：
+
+- legacy/candgen.ChatGenerator构造chat、generate(window,prev_scene)->CandidateGeneration，无写权。
+- legacy/prompt的MemoryCandidate/CandidateGeneration/CandidateGenerator类型，serialize_window->带unit文本，parse_salience/priority_to_salience->有限0–1，parse_ids->SQLite非负整ID（旧数字串/整浮点兼容、排bool/NaN），parse_candidate->候选|None，parse_generation->object/旧数组结构。公共parse迁guards，原位re-export。
+- legacy/investigator.Budget/Investigation协议；build_payload信号小附件，_first_json_object与parse_investigation->对象/Investigation|None，旧逐项宽容不用于三Agent。
+- legacy/inline._fn生成工具schema，_hits片段整形，_positive_int严格正值；InlineInvestigator构造service/chat/budget，_default_chat→message，_tool受signal服务闸，__call__有界function loop→Investigation|None，不observe。
+- legacy/loop.AgentWorker构造budget/caps/TTL/lease；start/stop/notify/_loop目标sidecar委托dispatch；process_once出调查阶段stats，_claim冻结before/origin/额度/CAS，_investigate开handle→调用→关→存产物，_apply逐操作幂等，stats暂停/日额度；INV2/3保兼容。
+- legacy/worker._requeue_merge旧新list合并；SignalWorker构造裸eng/sem/lock，process按认识kind取信号→stats、错回队，_judge/_recognize/_consolidate锁外模型/锁内提交；无SQLite保证，不升级为多线程共享Memory承诺。
+- legacy.__init__.warn_once为启动提示；DEPRECATED不是删库授权。
+- 旧agent/{inline,loop,investigator,human_review}、candgen/*、worker/interaction/triggers/investigation_context/taskstore、embed/base、server：同canonical对象re-export/部署兼容；agent.loop._dt为测试日期patch兼容位。空包__init__也登记。
+
+取消旧目标愿望函数build_service/snapshot_status/is_corrupt/quarantine/parse_args/install_signal_handlers；不新增TensionBook、suppression_pairs或重复decay/credit/promote/demote/archive/retention_scale包装。既有engine/maintenance/retrieval/lifecycle真实函数保职责，避免实现两套逻辑。
+
+## 6. 传输与部署逐函数
+
+auth.authorized(header,token)->字节常量时间bool，bearer不代capability；dto.HttpError当前status/msg兼容，目标字符串业务code区分status；opt_int严格64位排bool，req_str非空，parse_body只JSON/object/0–4MiB，capture_request_id双位一致，observe_payload/feedback_payload出规范DTO。
+
+http.Handler.log_message故意静默非stub；_reply UTF-8/定长JSON；各handler入q/body/sid出HTTP response：
+- health公开恢复健康；recall/search GET/POST同RecallResult；conflicts/signals统一ledger/观测。
+- observe/feedback接受与归因回执，稳定重复code；human-reviews读台账，human-review双token决定，unknown404/changed409/能力403。
+- resolve/propose/diagnose/miss为Legacy only，Trio四入口拒绝；log-search/timeline/stats/window调用有界tools，IDs≤20；save保存回执。
+- _dispatch检查sid/pipeline/path，_run统一异常映射，do_GET/do_POST auth→方法表→DTO→dispatch；serve(service,port,host=loopback)->ThreadingHTTPServer，支持port0。
+ROUTES、方法白名单、SIGNAL_PATHS/TRIO_DISABLED正反一致，不能只加handler漏权限。
+
+bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService，目标Settings唯一组装、memory目录gitignore、Legacy才generator；内部chat_fn固定provider/key/cache；main解析→组装恢复→HTTP/worker→信号→serve→真stop/save/close，_term SIGTERM→SystemExit。review_cli.main入argv，规则审计本地Store、审批HTTP；内部post只有privileged加capability，skip无写。
+
+固定17872仅默认，不证明项目隔离；自动port0发现是延期部署能力。目标health新增project/pipeline identity，插件在发正文前校项目并验证token；不能复用另项目健康进程。整状态目录含log/tasks/WAL/pkl/cache/outbox/token配对备份，schema检测配套，不能用旧pkl找回备份后数据。
+
+## 7. TS插件每个可调用入口
+
+模块`.opencode/plugin/memory-bridge.ts`输入context.directory/env/事件、输出Plugin（hooks/tools/dispose）。不是三Agent runner；类型Hit/Conflict/Proposal/CaptureTurn/Res的字段由服务契约约束。精确具名入口及TS测试回调在源附录登记；匿名映射归所属入口。
+
+- default建立main bridge；internal env=1立即空对象；依据server pipeline identity决定工具。
+- log(msg)->void脱敏stderr；auth读本地token→Promise字符串，headers→bearer对象，check(response)->bool并401停止后续正文；call(method,path,body,opts)->Promise Res(ok/status/data)，坏JSON/网络显式失败；errText只展示，决策用stable code。
+- drain(stream,tag)消费pipe防塞；fmtHits(hits)->uid/t/scene/snippet文本；reportMiss仅Legacy且成功才去重。
+- memory_search.execute(query)主动search文本；memory_conflicts.execute()冲突文本；log_search/timeline/stats/window.execute入查询/实体/group/ids+限额、出有界工具文本，不审批。
+- memory_resolve/propose/diagnose.execute入对应操作出回执文本，Legacy only；Trio对象不含且HTTP再禁。
+- captureTimeout/captureAttempts/captureBackoff env→有限值，30s/3/200ms；newRequestId(prefix)->UUID合法8–80；isTurn(value)->严格outbox形状（rid有限int/version）；retain->未确认或需人工terminal保留。
+- loadOutbox->turn列表、坏格式隔离不重放；persistOutbox私有tmp/rename/gitignore，失败只报本进程持有，不能宣传崩溃可靠。
+- schedule(job)inflight链；observeAck/feedbackAck->acked/retry/stop，accepted与fingerprint冲突区分，不already子串；attempt同id有限重试+timeout，deliver先observe ack后feedback并逐段持久，flushOutbox串行/合唤醒/第一未确认阻后续。
+- chat.message按session记user；system.transform查询→rid→警告上下文，不忽视truncated；event确认role、part替换、idle仅真正assistant正文、先outbox再发送、晚part不污染。
+- dispose关新发送→等inflight→flush→save→只杀自己spawn；timeout能力必测。maps按session结束清理，不永久存内存。
+
+## 8. 测试、评测与工程资产
+
+所有tests/eval/analysis显式类/函数及nested/fake都有附录IO登记，不按生产调用判断删除。
+
+- tests/fakes提供本地Event/Query/向量/真值，conftest的repo_root及共有service/http/fake helper收口；旧裸模块互引和子进程import随迁，不直接删私有fixture。
+- unit保数学/Store/配置/错误/边界，integration保捕获/信用/来源/人审/HTTP，protocol保roles/CLI/bridge；顶层smoke/signals/trio/semantic_recovery/legacy逐模块随迁；恢复PYTHONPATH用os.pathsep且继承env。characterization13场景先保留，同等长期断言齐才退役；修bug不要求字节维持旧bug。
+- eval/tide：ledger类型/JSON、gen_l1六维生成、text模板/token、protocol黑箱接口、reference基线/缺陷、runner reset/ingest/passive重放、score NTU/CI、meta锚/特异/剂量、CLI gen/meta/bench/report。全部判分算法冻结。
+- DynamicsMemory适配HTTP独立进程，当前--no-agent+默认Trio未消费Hauler。harness必须明示Legacy或真实fake CLI Trio并等Task完成/故障后探针，不靠报告文件存在PASS、不改金值。
+- mock_llm是本地规则/向量/HTTP统计，不证明语义质量；fastembed可能下载，零联网烟囱显式hash模式。
+- drive入port/project/phase出search→observe→feedback和工具诊断；main才读token/参数不import自动发请求。run_sidecar_offline旧_Request monkeypatch迁Settings endpoint后删除。
+- preview_sidecar当前S旧别名NameError；内嵌页面j/state/observe/recall分别处理响应整形、状态DOM、喂入及查询，输入来自页面/HTTP、输出Promise与DOM，归PreviewHandler所属模块维护；修复后仅loopback/临时mock或明确debug auth，不顺手把无鉴权写入口0.0.0.0生产化。
+- checks三历史脚本依赖删除的experiments/synthetic/sim，归档证据不作入口、不修另一判分器；删除须先迁引用。
+- manual_opencode_smoke真实CLI+mock、memory_bridge.test.ts真实hooks+fake IO，不证明真实provider/L3。
+- acceptance_check全部report/run/phase/A1–A10/private/nested登记；旧门漏真实消费者/schema/strict字段/pin边界，下一轮补，_has_int_gt死helper删。
+- check_architecture：source_paths扫描追踪和新自有源排agent；module_policy归属；direct_nodes/definitions/visit符号；function_io/exports/symbol_purpose现状IO；inventory源hash；parameter_end处理TS引号/括号参数边界，ts_definitions有限识别具名arrow/hook/tool/测试回调，auxiliary_inventory登记插件与三份角色；render附录；check覆盖/字段/漂移/链接；main构建或只读核对。TS扫描不冒充完整编译器；不调模型、不改产品。
+
+## 9. 迁移与删除决策 N01–N28
+
+本轮只改设计与登记/检查工具，不执行源文件或数据删除。
+
+1. N01 Settings唯一解析，非法pipeline拒绝；修订旧“非legacy皆opencode”。
+2. N02 Signal/Task/Event/lock/lease分开，不新增Semaphore/消息中间件。
+3. N03 active kind四方注册，Trio禁miss，receipt分离；不是有owner就有消费者。
+4. N04 L0接受与Memory兑现分开，双库回执恢复，保三套幂等键。
+5. N05 单sidecar Task调度、SQL due、类别公平；裸SignalWorker兼容例外。
+6. N06 WF/SEM5/5、INV2/3，过期计次、合法ready复用；取消SEM无限requeue，修订H8。
+7. N07 200逻辑额度、真实lease预算、stop收束、no_agent准确范围。
+8. N08 单effect编排+prepare_effect，保不同Store原语和内存回滚。
+9. N09 三Agent无工具特权，JSON可操作行为，不带入mvp/agent改造。
+10. N10 store_call_context封原输入，Reviewer看真实使用规则，不重算payload。
+11. N11 五路正交三池，CREATE不直M/EXIST不刷evid/UPDATE严格proof；人审不被judge绕过。
+12. N12 完整500或失败、cap_context、1MiB，不截断猜测，修订H17。
+13. N13 Reviewer非法整bundle拒绝，规则非权限/代码，修订H19。
+14. N14 role规则50/正文16000、人审512，历史告警非自动删。
+15. N15 双语义通路显式保留H27，健康/冻结/版本门不省。
+16. N16 C/M/A非真值，保数学默认，global context不取消A。
+17. N17 commit前独立容量计划、全pin背压/旧库只读治理，全部A打戳。
+18. N18 外部roots+领域引用闭包，candidate不假pin，A也保护。
+19. N19 一新unit一次衰减、迟信用代表、同源去重、origin审计。
+20. N20 省对手标主条目，registry512依持久展示而非无限保护。
+21. N21 core/store/agents责任依赖，组合根例外；默认路径脱Legacy原语。
+22. N22 stable code与真实telemetry，403/429区别，合法NONE和错误分开。
+23. N23 三库身份/版本/迁移、high Fatal、受限pickle/配对备份保留。
+24. N24 logstore迁evidence、llm迁client保内部cache；不新增TensionBook/stub/prompts/cache包或无必要愿望helper。
+25. N25 直接删除clamp/cited_text空壳、acceptance._has_int_gt、NUMPY_OK_IN；调用迁后删rules_for/MAX_ATTEMPTS/core打印helper/_Request/重复collect，bounds常量接唯一真源非重复留。
+26. N26 裸SignalWorker/显式Legacy/全部登记shim/序列化位置/有效测试保留；H23能力退役条件不凭旧名取消。
+27. N27 TIDE冻结、harness显模式且等任务、真实provider/L3仍unverified。
+28. N28 本文唯一规范、附录覆盖+源漂移+回归删除闸、CI/包元数据实施轮落地，不另建架构副本。
+
+### 9.1 旧目标条目的最终去向
+
+- X1–X7：保核心含义，纠正“不调LLM=无嵌入I/O”“所有磁盘有界”“effects完成=模型只一次”。
+- §1目录：取消根ARCHITECTURE/docs/architecture重复；包元数据/CI与harness保实施项，拒仅为目录建空壳。
+- §2逐函数：附录扩为含private/nested的全量；retention/scheme/limits/provider/ledger不再以“P6后”代替目标。
+- H1/H5/H23/H26/H32/H33/H34/H35/H36/H39：兼容、数学、信用、outbox、健康/权限、判分约束保留；严格输入/容量/持久性修bug不维持已证实错误。
+- H8：有界重试取代无限requeue；H17：全量或失败取代截断判CREATE；H19：全bundle原子取代部分安装；H21：单编排保多Store原语；H27：保双路且可见；H38：同等替代断言齐再退characterization。
+- 撤销未落地愿望：TensionBook/register/pending/emit_due/apply_verdict/aggregate包装、suppression_pairs、重复decay/credit/promote/demote/archive/retention_scale、build_service/snapshot_status/is_corrupt/quarantine/parse_args/install_signal_handlers、semantics.stub/prompts、llm.cache。其实际逻辑保既有函数，不误删。
+- P0–P6是历史搬迁记录不是仍待重复执行的准入表；本轮采用第10节收尾顺序。旧阶段冻结字节不能压过新漏洞回归。
+
+漂移：A是L3、依赖失效、参数/开机制、verdict全并Selector、自动端口等延期能力；B是上述过度切分/无必要壳，文档收缩；C是preview别名、旧README层图、schema/错误/观测未接与实际漏洞，修实现和调用。不能给bug标A就算收尾。
+
+## 10. 验收与下一轮
+
+上一轮本机证据：Python427通过/1跳过；旧A2–A10机械项/TIDE meta通过；Bun过滤超时用例25过/1过滤。完整Bun和真实provider/L3没有通过验证。本文只是设计；符号齐全不证明目标已实现，人决定验收。
+
+- `python analysis/check_architecture.py`：自有模块/类/private/nested/TS入口覆盖、IO字段、源hash、链接；失败先复核，不自动刷新蒙混。`--build-inventory`显式维护源附录，不自动批准新函数。新模块必须有职责/处置。
+- Signal门：kind双向真实消费、payload/version封存、lost wake重启、队满L0接受、due筛选、过期5次耗尽、ready不调模型、lease/CAS/quota/真停机。
+- Agent门：bool ID/'false'proof/非对象/超窗/不在供给source/target/规则引用/批内漂移、人审freeze、输出effect一致；不能fuzz只测json.loads。
+- Pool门：C/M/A/context组合、全pin背压、A保护/戳/引用、CREATE/EXIST/复活/聚合/reflection/审批同commit收口、截对手仍警告、一次衰减/迟信用/registry硬界。
+- IO门：Legacy直写成功立即checkpoint、双库crash、人审403、high schema拒、UTF-8/大附件/CLI权限与清理、完整Bun timeout。
+- Python/Bun/旧checker/TIDE meta继续；A6/A8/A9转真实行为，A7查旧字段子集+类型语义并准合法新增，不静默重冻。
+- CI脚本组合门，不新增会递归跑整套pytest的test_acceptance。旧测试/fixtures/子进程import随迁，.env不是测试修复的删除对象。
+
+收尾顺序：先失败回归和关键漏洞→接Settings/schema/policy/provider/ledger/telemetry及统一effects/dispatch/context→plan_capacity与公共parse去Legacy→迁evidence/client/harness/测试夹具修CLI与preview→更新登记、README、doc地图、CI，只执行N25明确代码清理。数据删除另行确认。
+
+本轮没有改运行代码或删源文件。`mvp/agent/`是之后改造，不进入本轮白名单/清理判断。

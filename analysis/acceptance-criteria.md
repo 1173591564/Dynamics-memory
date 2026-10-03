@@ -1,6 +1,6 @@
 # 验收标准（Acceptance Criteria · A1–A10）
 
-> 状态：冻结 · 重构验收终稿（2026-10-02）；改动需 ADR 并同步 analysis/acceptance_check.py。
+> 状态：机械验收基线（2026-10-02）。现有 A1–A10 保留；本轮目标的新闸门见唯一 [target-architecture.md](target-architecture.md) §10，尚待接入代码与 CI。旧门通过不等于新目标已经实现；验收变更需同步检查器及对应回归。
 
 > 配套：[`target-architecture.md`](target-architecture.md)（目标结构）、
 > [`decision-register.md`](decision-register.md)（H1–H42）。
@@ -16,7 +16,7 @@
   （删测试必须说明被哪个新测试替代）。
 
 ## A2 文档断言有据
-- **断言**：`README.md`、`ARCHITECTURE.md`、`docs/opencode-trio.md` 中的每个产品断言
+- **断言**：`README.md`、`analysis/target-architecture.md`、`docs/opencode-trio.md` 中的每个产品断言
   （"有界""幂等""恰好一次""X 上限 N"）要么指向一个测试，要么标 `PENDING-xx`。
 - **检查**：`acceptance_check.py` 维护"断言→证据"表（手写表 + 链接检查，非 NLP）；
   新增文档断言无证据即红。

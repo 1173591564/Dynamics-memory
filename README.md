@@ -2,7 +2,7 @@
 
 # Dynamics-memory
 
-> 状态：现行 · 项目入口与行为摘要；关键断言由 analysis/acceptance_check.py（A2）逐条验到测试。
+> 状态：现行 · 项目入口与行为摘要；已有机械证据见 analysis/acceptance_check.py（A2）。唯一收口目标见 analysis/target-architecture.md；目标设计不代表运行代码已经实现。
 
 **LLM agent 的有界长期记忆层**
 
@@ -12,7 +12,7 @@
 ![engine](https://img.shields.io/badge/engine-LLM--free-blue?style=flat-square)
 ![status](https://img.shields.io/badge/status-research%20preview-orange?style=flat-square)
 
-[架构](#架构默认-opencode-三-agent-工作协议) · [动力学](#记忆动力学) · [验证状态](#验证状态) · [运行](#运行) · [设计文档](docs/ouroboros.md)
+[架构](#架构默认-opencode-三-agent-工作协议) · [动力学](#记忆动力学) · [验证状态](#验证状态) · [运行](#运行) · [唯一目标设计](analysis/target-architecture.md)
 
 </div>
 

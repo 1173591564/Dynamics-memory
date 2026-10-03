@@ -7,16 +7,17 @@
 1. [README](../README.md) — 项目入口：30 秒上手、架构、验证状态。
 2. [opencode-trio.md](opencode-trio.md) — 现行三 Agent 记忆协议（Hauler / Selector / Reviewer）。
 3. [benchmark-design.md](benchmark-design.md) — TIDE 评测框架设计（与 `eval/` 对读）。
-4. [analysis/target-architecture.md](../analysis/target-architecture.md) — 重构目标架构终稿。
-5. [analysis/decision-register.md](../analysis/decision-register.md) — 隐藏决策 H1–H42。
-6. [analysis/acceptance-criteria.md](../analysis/acceptance-criteria.md) — 验收 A1–A10 + PENDING 白名单；
+4. [analysis/target-architecture.md](../analysis/target-architecture.md) — 唯一目标架构：信号、三 Agent、三池、函数契约与清理决策；[源符号附录](architecture-inventory.md) 随同登记现状，不是第二份架构。
+5. [analysis/decision-register.md](../analysis/decision-register.md) — H1–H42 历史依据；当前修订只在目标架构 N01–N28。
+6. [analysis/acceptance-criteria.md](../analysis/acceptance-criteria.md) — 现有机械基线 A1–A10 + PENDING；目标新增闸门见唯一架构 §10；
    机械门：`python analysis/acceptance_check.py`（`--full` 含 bench 烟囱，`--freeze` 重冻快照）。
 
 ## 状态总表
 
 状态含义：**现行**=行为契约，改行为必须同步改它；**已实现·归档**=该批次已落地，
 文档保留为决策记录；**草稿**=方向非承诺；**冻结**=重构终稿，改动需 ADR；
-**归档/参考**=只读，不约束行为。
+**归档/参考**=只读，不约束行为；**目标·待实施**=已明确方案但未落地；
+**历史基线/机械基线**=溯源或已有验证，当前修订以唯一目标为准；**基线登记**=源码符号附录，不自动批准保留。
 
 | 文档 | 状态 | 一句话 |
 |---|---|---|
@@ -35,7 +36,8 @@
 | [ouroboros](ouroboros.md) | 草稿 | 下一阶段方向，非承诺 |
 | [cleanup-review](cleanup-review.md) | 归档 | 历史清理审查记录 |
 | [opencode-learning](opencode-learning/README.md) | 参考 | 源码阅读笔记 |
-| [analysis/target-architecture](../analysis/target-architecture.md) | 冻结 | 目标架构终稿 |
-| [analysis/decision-register](../analysis/decision-register.md) | 冻结 | 隐藏决策 H1–H42 |
-| [analysis/acceptance-criteria](../analysis/acceptance-criteria.md) | 冻结 | 验收 A1–A10 + PENDING |
+| [analysis/target-architecture](../analysis/target-architecture.md) | 目标·待实施 | 唯一架构规范；N01–N28 收口决策及 H 条款修订 |
+| [源符号附录](architecture-inventory.md) | 基线登记 | 逐模块/函数输入输出、源码位置、处置与覆盖检查 |
+| [analysis/decision-register](../analysis/decision-register.md) | 历史基线 | H1–H42 依据；当前修订在唯一目标 §9 |
+| [analysis/acceptance-criteria](../analysis/acceptance-criteria.md) | 机械基线 | 已有 A1–A10 + PENDING；新增闸门在唯一目标 §10 |
 | [contract_snapshots](../analysis/contract_snapshots/) | 冻结 | /health、/signals、状态表快照（`--freeze` 更新需注明理由） |

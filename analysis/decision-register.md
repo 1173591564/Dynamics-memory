@@ -1,6 +1,6 @@
 # 决策登记表（Decision Register · H1–H42，全部已决）
 
-> 状态：冻结 · 隐藏决策终稿 H1–H42（2026-10-02）；改动需 ADR。
+> 状态：历史基线 · 保留 P0–P6 的 H1–H42（2026-10-02）。当前唯一目标及本轮修订在 [target-architecture.md](target-architecture.md) 的 N01–N28 / §9.1；冲突条款按该修订执行。本表不构成第二份架构。
 
 > 配套：[`target-architecture.md`](target-architecture.md)（目标结构）、
 > [`acceptance-criteria.md`](acceptance-criteria.md)（验收 A1–A10）。
