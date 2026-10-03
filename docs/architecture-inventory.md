@@ -5,7 +5,7 @@
 > 未在本页出现的函数/模块在下一轮统一删除前，必须先在此登记或列入删除项。
 > 生成命令：`python analysis/check_architecture.py --build-inventory`；核对：同命令不带参数。
 > 固定契约数据（目标路径、显式契约、计划新增、删除条件、模块备注）在 `analysis/architecture_contract.py`。
-> 当前登记 140 个 Python 模块、5 个 TS/角色定义模块、1360 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、134 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
+> 当前登记 141 个 Python 模块、5 个 TS/角色定义模块、1378 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、134 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
 
 每符号给出：功能、输入、输出、作用、错误、目标（目标路径/处置/变更）。
 公开产品符号在固定契约里逐条定义目标；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。
@@ -229,7 +229,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`analysis/architecture_contract.py`（当前路径）。
 - 模块输入：源码语法树与人工冻结的契约数据。
 - 模块输出：无运行逻辑；供检查器渲染逐符号目标与执行覆盖校验。
-- 源校验：`23a1a333bec483ea594a498928115472b7d0fc9d4a508f303edc1b4db184c6ca`。
+- 源校验：`456f9869604bbdeaa7d96907315788ab767edcb575d867f07fdc9426a8f5b6fc`。
 - 模块级常量：`TARGET_PATHS`（未登记）；`MODULE_IO`（未登记）；`SYMBOL_OVERRIDES`（未登记）；`PLANNED_MODULES`（未登记）；`PLANNED_SYMBOLS`（未登记）；`DELETIONS`（未登记）；`CONSTANTS`（未登记）；`MODULE_NOTES`（未登记）。
 - 输入/输出：本模块只有常量/数据契约，无独立函数；语义见模块输入/输出与备注。
 - 导出/输入依赖：annotations ← __future__.annotations
@@ -2335,12 +2335,12 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/config.py`（当前路径）。
 - 模块输入：argv、环境变量、项目与包根 .env、默认值。
 - 模块输出：不可变 Settings 与 Cfg 字段表、凭据字符串或 None；非法值拒绝且不静默回退。
-- 源校验：`2596b9d3db263012f9880aec1f6495aa11ff3d45ee32816e06942c0cc407c030`。
+- 源校验：`f5b8cf041f2596ca7ac50a2b2ab1a6e343b2fd807f36b8e7d0cb3292a1db89a2`。
 
 ### `hybrid_memory/config.py::Cfg`
 
-- 功能：引擎动力学与机制开关字段表；默认值冻结，目标增 cap_context
-- 输入：`k: int = 5；theta: float = 0.35；tau_dup: float = 0.9；tau_sim: float = 0.8；pi_m: float = 0.05；pi_a: float = -0.3；fresh_alpha: float = 0.1；shortlist_n: int = 30；lex_weight: float = 0.0；lam: float = 0.02；eta: float = 0.3；eta_shadow: float = 0.1；v_init: float = 0.5；theta_p: float = 1.5；theta_d: float = 0.8；idle_p: int = 50；cap_m: int = 40；cap_c: int = 200；cap_a: int = 2000；eta_c: float = 0.6；tension_delay: int = 20；two_pool: bool = True；shadow_credit: bool = True；ingest_dedup: bool = True；useful_hit: bool = True；defer_credit: bool = False；confidence_on: bool = False；conf_prior_alpha: float = 1.0；conf_prior_beta: float = 1.0；conf_write_evidence: float = 1.0；conf_confirm_evidence: float = 1.0；conf_negative_evidence: float = 1.0；conf_half_life: float = 50.0；theta_conf: float = 0.62；provisional_margin: float = 0.08；provisional_k: int = 1；salience_on: bool = False；salience_default: float = 0.5；salience_retention_floor: float = 0.5；salience_retention_weight: float = 3.0；novelty_on: bool = False；novelty_bonus: float = 0.25；consolidation_on: bool = False；consolidation_salience_budget: float = 6.0；consolidation_min_items: int = 5；consolidation_max_items: int = 12；signal_queue_cap: int = 256；shadow_pending_cap: int = 256；capacity_on: bool = True；suppression_on: bool = True；tension_on: bool = True；archive_retrieval: bool = True；miss_on_recognizer_none: bool = False`。
+- 功能：引擎动力学与机制开关字段表；默认值冻结；含 cap_context=500（N12 非退役版本总数上限）
+- 输入：`k: int = 5；theta: float = 0.35；tau_dup: float = 0.9；tau_sim: float = 0.8；pi_m: float = 0.05；pi_a: float = -0.3；fresh_alpha: float = 0.1；shortlist_n: int = 30；lex_weight: float = 0.0；lam: float = 0.02；eta: float = 0.3；eta_shadow: float = 0.1；v_init: float = 0.5；theta_p: float = 1.5；theta_d: float = 0.8；idle_p: int = 50；cap_m: int = 40；cap_c: int = 200；cap_a: int = 2000；cap_context: int = 500；eta_c: float = 0.6；tension_delay: int = 20；two_pool: bool = True；shadow_credit: bool = True；ingest_dedup: bool = True；useful_hit: bool = True；defer_credit: bool = False；confidence_on: bool = False；conf_prior_alpha: float = 1.0；conf_prior_beta: float = 1.0；conf_write_evidence: float = 1.0；conf_confirm_evidence: float = 1.0；conf_negative_evidence: float = 1.0；conf_half_life: float = 50.0；theta_conf: float = 0.62；provisional_margin: float = 0.08；provisional_k: int = 1；salience_on: bool = False；salience_default: float = 0.5；salience_retention_floor: float = 0.5；salience_retention_weight: float = 3.0；novelty_on: bool = False；novelty_bonus: float = 0.25；consolidation_on: bool = False；consolidation_salience_budget: float = 6.0；consolidation_min_items: int = 5；consolidation_max_items: int = 12；signal_queue_cap: int = 256；shadow_pending_cap: int = 256；capacity_on: bool = True；suppression_on: bool = True；tension_on: bool = True；archive_retrieval: bool = True；miss_on_recognizer_none: bool = False`。
 - 输出：`类型/实例；基类 object`。
 - 作用：字段与方法契约；dataclass 自动生成的方法不另建手写符号。
 - 错误：见构造函数及方法。
@@ -2353,7 +2353,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`类型/实例；基类 object`。
 - 作用：字段与方法契约；dataclass 自动生成的方法不另建手写符号。
 - 错误：见构造函数及方法。
-- 目标：`hybrid_memory/config.py`；处置：接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/config.py#L86)。
+- 目标：`hybrid_memory/config.py`；处置：接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/config.py#L88)。
 
 ### `hybrid_memory/config.py::Settings.state_dir`
 
@@ -2362,7 +2362,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`Path；Path(self.project) / '.opencode' / 'memory'`。
 - 作用：调用 Path。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/config.py`；处置：接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/config.py#L102)。
+- 目标：`hybrid_memory/config.py`；处置：接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/config.py#L104)。
 
 ### `hybrid_memory/config.py::resolve_pipeline`
 
@@ -2371,7 +2371,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`'opencode' 或 'legacy'`。
 - 作用：无副作用；不连接网络。
 - 错误：目标：未知值 Fatal 拒绝启动；当前非 legacy 默认 opencode 是待修差异。
-- 目标：`hybrid_memory/config.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/config.py#L107)。
+- 目标：`hybrid_memory/config.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/config.py#L109)。
 
 ### `hybrid_memory/config.py::resolve_settings`
 
@@ -2380,7 +2380,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`不可变 Settings；数值含正负/有限/上下界校验`。
 - 作用：无 I/O；不写全局状态。
 - 错误：非法值拒绝；目标与 bootstrap argparse 合并为同一解析。
-- 目标：`hybrid_memory/config.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/config.py#L116)。
+- 目标：`hybrid_memory/config.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/config.py#L118)。
 
 ### `hybrid_memory/config.py::resolve_settings.pick`
 
@@ -2389,7 +2389,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；cast(source[env_key])；cli；default`。
 - 作用：调用 cast, source.get。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/config.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/config.py#L138)。
+- 目标：`hybrid_memory/config.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/config.py#L140)。
 
 ### `hybrid_memory/config.py::load_env_key`
 
@@ -2398,7 +2398,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`ZAI_API_KEY 字符串或 None`。
 - 作用：读文件；不打印值。
 - 错误：文件不可读不抛业务错误；测试必须隔离两级 .env。
-- 目标：`hybrid_memory/config.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/config.py#L173)。
+- 目标：`hybrid_memory/config.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/config.py#L175)。
 
 ## `hybrid_memory/core/__init__.py`
 
@@ -2481,7 +2481,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/core/dynamics.py`（当前路径）。
 - 模块输入：Memory 映射、Cfg 容量与保护根集合。
 - 模块输出：应迁出/删除 id 计划与容量收口结论；纯函数，无 I/O、不衰减。
-- 源校验：`5ad7f2b190d20c85ab8daa3b7cea2a5fb465af18681b3f9818a7edf60b6583c2`。
+- 源校验：`1ecba2fd810506358d69ef8bc98622bb155df42160a7852f2822b78d2376c68b`。
 - 模块备注：decay/credit/promote/demote/archive/retention_scale 的独立包装取消，逻辑保留在 maintenance/engine。
 
 ### `hybrid_memory/core/dynamics.py::pinned_ids`
@@ -2491,7 +2491,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`frozenset id`。
 - 作用：求张力/人审/聚合/信用/任务引用闭包。
 - 错误：当前仅内存态；外部 roots 待接线。
-- 目标：`hybrid_memory/core/dynamics.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/core/dynamics.py#L15)。
+- 目标：`hybrid_memory/core/dynamics.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/core/dynamics.py#L17)。
 
 ### `hybrid_memory/core/dynamics.py::evictable`
 
@@ -2500,7 +2500,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`有序 id 列表`。
 - 作用：C 按 V 最低、A 按 archived_at 最旧、M 恒空。
 - 错误：A 也必须滤 pinned；当前缺失是待修。
-- 目标：`hybrid_memory/core/dynamics.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/core/dynamics.py#L33)。
+- 目标：`hybrid_memory/core/dynamics.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/core/dynamics.py#L35)。
 
 ### `hybrid_memory/core/dynamics.py::overflow_policy`
 
@@ -2509,16 +2509,25 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`{'archive':[...], 'delete':[...]}`。
 - 作用：纯函数不删。
 - 错误：目标并入 plan_capacity。
-- 目标：`hybrid_memory/core/dynamics.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/core/dynamics.py#L56)。
+- 目标：`hybrid_memory/core/dynamics.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/core/dynamics.py#L58)。
 
 ### `hybrid_memory/core/dynamics.py::plan_capacity`
 
 - 功能：提交前容量收口模拟
-- 输入：`mems、cfg、pinned`。
+- 输入：`mems、cfg、pinned、可选 t（模拟迁 A 的打戳时点，缺省按最新）`。
 - 输出：`{archive,delete,remaining,accepted,reason}`。
-- 作用：模拟 C→A 后重算 A 与 cap_context；无 I/O、不衰减 V。
+- 作用：模拟迁 A 以当前 t 打戳后重算 A 与 cap_context；上下文超限按 FIFO 补删无保护非退役 A；无 I/O、不衰减 V。
 - 错误：全 pin 时 accepted=false 背压，禁止破上限或解除保护。
-- 目标：`hybrid_memory/core/dynamics.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/core/dynamics.py#L63)。
+- 目标：`hybrid_memory/core/dynamics.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/core/dynamics.py#L65)。
+
+### `hybrid_memory/core/dynamics.py::plan_capacity._non_retired`
+
+- 功能：三池、信用、张力、触发及领域协议 的具名操作；流程见作用行，输入输出见本项签名与返回
+- 输入：`m: Memory`。
+- 输出：`bool；m.superseded_by is None and m.aggregated_into is None`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`hybrid_memory/core/dynamics.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/core/dynamics.py#L86)。
 
 ## `hybrid_memory/core/engine.py`
 
@@ -3270,7 +3279,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/dispatch/effects.py`（当前路径）。
 - 模块输入：任务行、模型产物、连接与回执上下文。
 - 模块输出：唯一效果编排与九类 applier 的结构化结果；整批原子、容量复核。
-- 源校验：`ab8a6aeb166e61f937f439daf6d6b58dd2a0220d391b0c373693a612ad133b0a`。
+- 源校验：`ae7f01ef27eddbfdb08b3caba503f4531506914fb3c346bbb6e094eb19611a35`。
 - 模块级常量：`EFFECTS`（保留）。
 
 ### `hybrid_memory/dispatch/effects.py::Applier`
@@ -3280,7 +3289,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`类型/实例；基类 object`。
 - 作用：字段与方法契约；dataclass 自动生成的方法不另建手写符号。
 - 错误：见构造函数及方法。
-- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/effects.py#L24)。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/effects.py#L25)。
 
 ### `hybrid_memory/dispatch/effects.py::Applier.runner`
 
@@ -3289,7 +3298,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`str；self.owner`。
 - 作用：调用 无外部调用。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/effects.py#L32)。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/effects.py#L33)。
 
 ### `hybrid_memory/dispatch/effects.py::journal_signal`
 
@@ -3298,7 +3307,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None；svc.tasks.enqueue(kind, payload, t, key=key, merge=merge, memory_next_id=svc.engine._next_id)`。
 - 作用：调用 svc._ensure_healthy, svc.tasks.enqueue。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/effects.py#L37)。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/effects.py#L38)。
 
 ### `hybrid_memory/dispatch/effects.py::signal_payload`
 
@@ -3307,7 +3316,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；[list(pair) for pair in payload]；payload；{'retrieval_id': rid, 'selected': [m.id for m in ret.selected], 'texts': list(texts), 'question': payload['question'], 'answer': payload['answer']}`。
 - 作用：调用 ValueError, getattr, len, list, next, svc._retrievals.items, tuple。
 - 错误：异常 ValueError('feedback retrieval 不在服务注册表')。
-- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/effects.py#L46)。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/effects.py#L47)。
 
 ### `hybrid_memory/dispatch/effects.py::effect_transaction`
 
@@ -3316,7 +3325,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`回执 dict`。
 - 作用：内存备份、信号收集、CAS、回执、done 与回滚。
 - 错误：上下文互斥；提交后确认丢失设 fault。
-- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L65)。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L66)。
 
 ### `hybrid_memory/dispatch/effects.py::effect_transaction.run`
 
@@ -3325,7 +3334,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；mutate()`。
 - 作用：调用 mutate。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L76)。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L77)。
 
 ### `hybrid_memory/dispatch/effects.py::effect_transaction.run.collect`
 
@@ -3334,7 +3343,16 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；old_emit(kind, payload, t, key, merge)；svc.tasks._enqueue(conn, kind, signal_payload(svc, kind, payload), t, key=key, merge=merge, memory_next_id=svc.engine._next_id)`。
 - 作用：调用 old_emit, signal_payload, svc.tasks._enqueue。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L80)。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L81)。
+
+### `hybrid_memory/dispatch/effects.py::enforce_capacity`
+
+- 功能：commit 前容量收口执行
+- 输入：`service（效果事务内、持服务锁调用）`。
+- 输出：`None（就地迁 A/删除）或抛 Degraded(capacity_backpressure)`。
+- 作用：apply_selector/apply_maintenance/decide_human_review 提交前统一收口；全 pin 整批拒收回滚。
+- 错误：容量不足且全 pin 抛 Degraded(capacity_backpressure)→503；不解除保护、不静默超限。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L115)。
 
 ### `hybrid_memory/dispatch/effects.py::apply_conflict`
 
@@ -3343,7 +3361,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`{'resolved':n}`。
 - 作用：邮戳一致才裁决；过期重排；人审冻结优先。
 - 错误：pending 保持 backlog。
-- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L114)。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L140)。
 
 ### `hybrid_memory/dispatch/effects.py::apply_feedback`
 
@@ -3352,7 +3370,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`{'credited':n,'recog_fail':bool,'retired_source'?}`。
 - 作用：按展示集合或持久快照结算；不改正文。
 - 错误：长度不符拒绝。
-- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L133)。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L159)。
 
 ### `hybrid_memory/dispatch/effects.py::apply_maintenance`
 
@@ -3361,7 +3379,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`{'reflected':0|1}`。
 - 作用：来源版本一致才入库；漂移重派。
 - 错误：合法 NONE 计 0 并保留原因。
-- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L162)。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L188)。
 
 ### `hybrid_memory/dispatch/effects.py::send_workflow`
 
@@ -3370,7 +3388,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 svc.tasks._enqueue。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/effects.py#L182)。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/effects.py#L209)。
 
 ### `hybrid_memory/dispatch/effects.py::apply_hauler`
 
@@ -3379,7 +3397,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`{'candidates':n}`。
 - 作用：去重后建 selector_due；空批不建任务。
 - 错误：非法候选整批拒绝。
-- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L191)。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L218)。
 
 ### `hybrid_memory/dispatch/effects.py::apply_selector`
 
@@ -3388,7 +3406,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`{'outcomes':[{index,action,target_id?,new_ids?,new_evidence?}]}`。
 - 作用：规范计划+动态复核+容量准入；全批原子。
 - 错误：非法/漂移整批回滚；容量不足背压。
-- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L199)。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L226)。
 
 ### `hybrid_memory/dispatch/effects.py::prepare_effect`
 
@@ -3397,7 +3415,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`{events,vectors,targets,expected_revision,actions} 计划`。
 - 作用：embedding 与静态校验在锁外完成；失败无内存效果。
 - 错误：来源/因果/窗口非法即失败，不部分构建。
-- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L281)。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L299)。
 
 ### `hybrid_memory/dispatch/effects.py::apply_reviewer`
 
@@ -3406,7 +3424,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`{'rules':n,'repair_candidates':n}`。
 - 作用：规则/停用/审计与接力同事务。
 - 错误：非法 bundle 整拒；上限满背压。
-- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L306)。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L324)。
 
 ## `hybrid_memory/dispatch/policy.py`
 
@@ -3747,7 +3765,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/errors.py`（当前路径）。
 - 模块输入：错误码、文案与 detail；不含业务数据。
 - 模块输出：Rejected/Degraded/Fatal/ProposalRejected 异常与唯一状态码映射；未知码 KeyError。
-- 源校验：`1da1312841f10fe0fec87d0c82204d020908690aebbf07bd823f7e04656a958a`。
+- 源校验：`301ba574d373a4453600dc7027ac28030d0d1aac9abaf3197dd19eac6ad2393a`。
 - 模块级常量：`_STATUS`（保留）。
 
 ### `hybrid_memory/errors.py::MemoryError`
@@ -3811,7 +3829,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`int 状态码`。
 - 作用：无副作用。
 - 错误：未知码 KeyError（调用方 bug 必须响亮）。
-- 目标：`hybrid_memory/errors.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/errors.py#L55)。
+- 目标：`hybrid_memory/errors.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/errors.py#L56)。
 
 ## `hybrid_memory/guards/__init__.py`
 
@@ -5269,7 +5287,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/service/review.py`（当前路径）。
 - 模块输入：人审台账、capability 与决策。
 - 模块输出：待审列表、幂等决定与统一冲突台账；退役/变化即 stale。
-- 源校验：`7e4a26e75d0dd8563f853cbcbc2ffa16583a605348b4cc8ef36328959abeea6a`。
+- 源校验：`2e685b3ebf15489f9493547290c42b1e4bec8613b2abe4b66a37ad34946baf79`。
 
 ### `hybrid_memory/service/review.py::review_token`
 
@@ -5305,7 +5323,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`{conflicts,tensions,pending_reviews,aggregates,pin_roots,truncated}`。
 - 作用：只读汇总；不触发裁决或人审。
 - 错误：越界正文不返回；缺失对象标 stale 而非隐藏。
-- 目标：`hybrid_memory/service/review.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/service/review.py#L76)。
+- 目标：`hybrid_memory/service/review.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/service/review.py#L80)。
 
 ## `hybrid_memory/service/service.py`
 
@@ -6885,7 +6903,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/transport/http.py`（当前路径）。
 - 模块输入：HTTP 请求与 service。
 - 模块输出：JSON 响应与统一错误码；trio 禁直写、方法白名单、loopback 绑定。
-- 源校验：`3993b81d10af583a681fc02dfbda7ce75bbb16452c4523c08bb2e0c7d741d4f2`。
+- 源校验：`655a62b306ca0adff5fd95c7f46969c6742c252b051ffc5c548605ddb6747799`。
 - 模块级常量：`TRIO_DISABLED`（保留）；`ROUTES`（保留）。
 
 ### `hybrid_memory/transport/http.py::Handler`
@@ -7102,7 +7120,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 auth.authorized, parse_qs, parse_qs(u.query).items, self._reply, self._run, urlparse。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L263)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L265)。
 
 ### `hybrid_memory/transport/http.py::Handler.do_POST`
 
@@ -7111,7 +7129,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 auth.authorized, dto.parse_body, self._reply, self._run, str, urlparse。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L277)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L279)。
 
 ### `hybrid_memory/transport/http.py::serve`
 
@@ -7120,7 +7138,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`ThreadingHTTPServer`。
 - 作用：绑定 loopback；支持 port 0。
 - 错误：端口占用显式失败。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L293)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L295)。
 
 ## `hybrid_memory/transport/review_cli.py`
 
@@ -12719,6 +12737,159 @@ vendored `mvp/agent/` 完全排除。
 - 作用：调用 OSError。
 - 错误：异常 OSError('replace failed')。
 - 目标：`tests/test_zhipu_embedder.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/test_zhipu_embedder.py#L226)。
+
+## `tests/unit/test_capacity_backpressure.py`
+
+- 模块功能：行为、恢复、权限及协议回归；不得按产品死代码删除。
+- 设计归属：验收资产；处置：保留迁移。
+- 目标路径：`tests/unit/test_capacity_backpressure.py`（当前路径）。
+- 模块输入：被测对象与 pytest 夹具。
+- 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
+- 源校验：`cf8f2efe829ddfa1ac7806aef1309ddb96d142571cab6d0e8f345e1fdb35af00`。
+
+### `tests/unit/test_capacity_backpressure.py::_mem`
+
+- 功能：测试场景/夹具/假实现：_mem；输入输出见本项，生产不调用
+- 输入：`i, pool=Pool.CANDIDATE, v=0.5, archived_at=None, **kw`。
+- 输出：`未注解；Memory(id=i, belief_id=i + 1, value=f'v{i}', text=f't{i}', emb=np.zeros(64), pool=pool, v=v, archived_at=archived_at, **kw)`。
+- 作用：调用 Memory, kw.setdefault, np.zeros。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_capacity_backpressure.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_capacity_backpressure.py#L28)。
+
+### `tests/unit/test_capacity_backpressure.py::test_plan_capacity_fifo_uses_current_t_for_new_archives`
+
+- 功能：cap_c=1/cap_a=1：C 溢出 1 条迁 A 后 A 共 2 条，须删"存量最旧"， 新迁入者（打当前 t）必须存活——旧实现 None→-1 把新迁入当最旧先删（FIFO 反了）。
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 Cfg, _mem, dynamics.plan_capacity, frozenset, set。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_capacity_backpressure.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_capacity_backpressure.py#L38)。
+
+### `tests/unit/test_capacity_backpressure.py::test_plan_capacity_without_t_treats_new_archive_as_newest`
+
+- 功能：t 缺省时新迁入按"最新"处理（不允许被优先删除）；存量缺戳仍视为最旧。
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 Cfg, _mem, dynamics.plan_capacity, frozenset。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_capacity_backpressure.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_capacity_backpressure.py#L51)。
+
+### `tests/unit/test_capacity_backpressure.py::test_plan_capacity_cap_context_simulation`
+
+- 功能：cap_context 超限：即使 A 池未满，也要按 FIFO 补删无保护非退役 A； retired 条目的删除不减少上下文。
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 Cfg, _mem, dynamics.plan_capacity, frozenset, set。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_capacity_backpressure.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_capacity_backpressure.py#L60)。
+
+### `tests/unit/test_capacity_backpressure.py::test_plan_capacity_cap_context_all_pinned_backpressure`
+
+- 功能：行为断言：plan_capacity_cap_context_all_pinned_backpressure；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 Cfg, _mem, dynamics.plan_capacity, frozenset。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_capacity_backpressure.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_capacity_backpressure.py#L77)。
+
+### `tests/unit/test_capacity_backpressure.py::_fake_agents`
+
+- 功能：测试场景/夹具/假实现：_fake_agents；输入输出见本项，生产不调用
+- 输入：`calls`。
+- 输出：`未注解；fake`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_capacity_backpressure.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_capacity_backpressure.py#L88)。
+
+### `tests/unit/test_capacity_backpressure.py::_fake_agents.fake`
+
+- 功能：测试场景/夹具/假实现：_fake_agents.fake；输入输出见本项，生产不调用
+- 输入：`name, payload`。
+- 输出：`未注解；{'candidates': [{'text': '项目统一使用 bun 工具', 'source_unit_ids': [payload['unit_id']]}]}；{'decisions': [{'candidate_index': 0, 'action': 'CREATE'}]}`。
+- 作用：调用 calls.append。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_capacity_backpressure.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_capacity_backpressure.py#L89)。
+
+### `tests/unit/test_capacity_backpressure.py::_pinned_pair_service`
+
+- 功能：测试场景/夹具/假实现：_pinned_pair_service；输入输出见本项，生产不调用
+- 输入：`tmp_path, **cfg`。
+- 输出：`未注解；svc`。
+- 作用：调用 _mem, _svc, eng.add_tension, max。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_capacity_backpressure.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_capacity_backpressure.py#L98)。
+
+### `tests/unit/test_capacity_backpressure.py::test_apply_selector_backpressure_rejects_and_preserves_result`
+
+- 功能：行为断言：apply_selector_backpressure_rejects_and_preserves_result；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 DispatchWorker, _fake_agents, _pinned_pair_service, range, set, svc.log.close, svc.observe, svc.tasks.close, svc.tasks.get, svc.tasks.list_tasks, worker.process_once。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_capacity_backpressure.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_capacity_backpressure.py#L109)。
+
+### `tests/unit/test_capacity_backpressure.py::test_apply_selector_capacity_closes_under_unpinned`
+
+- 功能：可收口时：新条目正常落库，C 溢出按 V 最低迁 A 并打戳（非背压路径）。
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 DispatchWorker, _fake_agents, _svc, len, range, svc.log.close, svc.observe, svc.tasks.close, worker.process_once。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_capacity_backpressure.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_capacity_backpressure.py#L138)。
+
+### `tests/unit/test_capacity_backpressure.py::test_apply_maintenance_backpressure`
+
+- 功能：行为断言：apply_maintenance_backpressure；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _pinned_pair_service, set, svc.log.close, svc.process_semantic_tasks, svc.tasks.close, svc.tasks.enqueue, svc.tasks.get, svc.tasks.list_tasks。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_capacity_backpressure.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_capacity_backpressure.py#L158)。
+
+### `tests/unit/test_capacity_backpressure.py::test_decide_human_review_backpressure`
+
+- 功能：accept_new 的新增同样 commit 前收口：target 因未决 tension 保持 pin、 cap_a=0 收不了口 → 拒绝并回滚（同 target 的其余待审会被 stale，不能 用来钉住 target；这里用 tension 钉）。
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _mem, _svc, all, conn.execute, eng.add_tension, eng.mems.values, json.dumps, len, max, pytest.raises, svc.decide_human_review, svc.log.close, svc.observe, svc.tasks.close, svc.tasks.pending_reviews, svc.tasks.transaction。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_capacity_backpressure.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_capacity_backpressure.py#L185)。
+
+### `tests/unit/test_capacity_backpressure.py::_ScopeSem`
+
+- 功能：测试场景/夹具/假实现：_ScopeSem；输入输出见本项，生产不调用
+- 输入：`见显式或继承的 __init__；无新增字段`。
+- 输出：`类型/实例；基类 object`。
+- 作用：字段与方法契约；dataclass 自动生成的方法不另建手写符号。
+- 错误：见构造函数及方法。
+- 目标：`tests/unit/test_capacity_backpressure.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_capacity_backpressure.py#L220)。
+
+### `tests/unit/test_capacity_backpressure.py::_ScopeSem.__init__`
+
+- 功能：测试场景/夹具/假实现：_ScopeSem.__init__；输入输出见本项，生产不调用
+- 输入：`self, scopes`。
+- 输出：`未注解；None`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_capacity_backpressure.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_capacity_backpressure.py#L221)。
+
+### `tests/unit/test_capacity_backpressure.py::_ScopeSem.scope`
+
+- 功能：测试场景/夹具/假实现：_ScopeSem.scope；输入输出见本项，生产不调用
+- 输入：`self, bid`。
+- 输出：`未注解；self._scopes.get(bid, '')`。
+- 作用：调用 self._scopes.get。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_capacity_backpressure.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_capacity_backpressure.py#L224)。
+
+### `tests/unit/test_capacity_backpressure.py::test_apply_resolution_stamps_only_real_archive_moves`
+
+- 功能：行为断言：apply_resolution_stamps_only_real_archive_moves；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 Cfg, MemoryEngine, _ScopeSem, _mem, eng.mems.update, maintenance.apply_resolution。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_capacity_backpressure.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_capacity_backpressure.py#L228)。
 
 ## `tests/unit/test_config.py`
 

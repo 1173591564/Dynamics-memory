@@ -9,6 +9,8 @@
 """
 from __future__ import annotations
 
+import math
+
 from .types import Memory, Pool
 
 
@@ -61,33 +63,61 @@ def overflow_policy(mems: dict[int, Memory], cfg,
 
 
 def plan_capacity(mems: dict[int, Memory], cfg,
-                  pinned: frozenset[int]) -> dict[str, object]:
-    """提交前容量收口模拟：给出 archive/delete 计划与背压判定。"""
+                  pinned: frozenset[int], t: int | None = None) -> dict[str, object]:
+    """提交前容量收口模拟（N17/N12）：给出 archive/delete 计划与背压判定。
+
+    - 模拟迁 A 的条目按"当前 t"打戳（t 缺省视为最新）：新迁入者绝不是
+      FIFO 最旧——旧实现 None→-1 把刚迁入的当成最旧优先删除，方向反了；
+      存量 A 快照缺 archived_at 仍按 H11 视为最旧。
+    - cap_context：非退役版本总数（C+M+A，含归档；不计临时 candidate 与
+      retired）。A 池溢出之外，还要为上下文上限按 FIFO 补删无保护的非
+      退役 A；删除 retired 条目不减少上下文。纯函数，无 I/O、不衰减 V。
+    """
+    import math
+
+    pinned = frozenset(pinned)
     c_mems = [m for m in mems.values() if m.pool is Pool.CANDIDATE]
     c_unpinned = [m for m in c_mems if m.id not in pinned]
     c_unpinned.sort(key=lambda m: (m.v, m.last_hit if m.last_hit is not None
-                                 else m.birth, m.id))
+                                   else m.birth, m.id))
     archive_count = max(0, len(c_mems) - cfg.cap_c)
     to_archive = [m.id for m in c_unpinned[:archive_count]]
 
-    a_mems = [m for m in mems.values() if m.pool is Pool.ARCHIVE] + [mems[mid] for mid in to_archive if mid in mems]
-    a_unpinned = [m for m in a_mems if m.id not in pinned]
-    a_unpinned.sort(key=lambda m: (m.archived_at if m.archived_at is not None
-                                 else -1, m.id))
-    delete_count = max(0, len(a_mems) - cfg.cap_a)
-    to_delete = [m.id for m in a_unpinned[:delete_count]]
+    def _non_retired(m: Memory) -> bool:
+        return m.superseded_by is None and m.aggregated_into is None
+
+    # A 池 = 存量 A + 模拟迁入。新迁入的排序戳 = t（缺省按最新）。
+    a_keys: dict[int, tuple[float, int]] = {
+        m.id: (m.archived_at if m.archived_at is not None else -1, m.id)
+        for m in mems.values() if m.pool is Pool.ARCHIVE}
+    new_stamp = float(t) if t is not None else math.inf
+    for mid in to_archive:
+        a_keys[mid] = (new_stamp, mid)
+    a_unpinned = sorted((mid for mid in a_keys if mid not in pinned),
+                        key=lambda mid: a_keys[mid])
+    delete_count = max(0, len(a_keys) - cfg.cap_a)
+    to_delete = a_unpinned[:delete_count]
+
+    accepted, reason = True, None
+    if cfg.capacity_on:
+        context = sum(1 for m in mems.values() if _non_retired(m))
+        context -= sum(1 for mid in to_delete
+                       if (m := mems.get(mid)) is not None and _non_retired(m))
+        if context > cfg.cap_context:
+            # 上下文超限：补删最旧的无保护非退役 A（FIFO）。
+            extra = [mid for mid in a_unpinned[delete_count:]
+                     if (m := mems.get(mid)) is not None and _non_retired(m)]
+            need = context - cfg.cap_context
+            to_delete = to_delete + extra[:need]
+            context -= min(need, len(extra))
+        rem_c = len(c_mems) - len(to_archive)
+        rem_a = len(a_keys) - len(to_delete)
+        if rem_c > cfg.cap_c or rem_a > cfg.cap_a or context > cfg.cap_context:
+            accepted = False
+            reason = "capacity backpressure: all items pinned or pool over limit"
 
     delete_set = set(to_delete)
     remaining = [mid for mid in mems if mid not in delete_set]
-
-    accepted = True
-    reason = None
-    if cfg.capacity_on:
-        rem_c = len(c_mems) - len(to_archive)
-        rem_a = len(a_mems) - len(to_delete)
-        if rem_c > cfg.cap_c or rem_a > cfg.cap_a:
-            accepted = False
-            reason = "capacity backpressure: all items pinned or pool over limit"
 
     return {
         "archive": to_archive,

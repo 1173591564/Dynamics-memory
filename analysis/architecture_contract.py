@@ -377,7 +377,7 @@ SYMBOL_OVERRIDES = {
     "hybrid_memory/agents/protocol.py::AgentRunner.run": ("运行器协议：角色名+封存 payload → 已解析 dict",),
     "hybrid_memory/agents/protocol.py::AgentRunner.available": ("运行器协议：探活 bool",),
     "hybrid_memory/agents/selector.py::Decision": ("Selector 决定结构：candidate_index/action/target_id/verified_correction/reason",),
-    "hybrid_memory/config.py::Cfg": ("引擎动力学与机制开关字段表；默认值冻结，目标增 cap_context",),
+    "hybrid_memory/config.py::Cfg": ("引擎动力学与机制开关字段表；默认值冻结；含 cap_context=500（N12 非退役版本总数上限）",),
     "hybrid_memory/config.py::resolve_settings.pick": ("CLI>env>默认的单值选择 helper",),
     "hybrid_memory/core/confidence.py::discount_to": ("按逻辑时间折损 Beta 证据计数；confidence_on=False 时 no-op",),
     "hybrid_memory/core/confidence.py::projected": ("当前 Beta 置信投影值，不修改 Memory",),
@@ -574,10 +574,16 @@ SYMBOL_OVERRIDES = {
         "来源/因果/窗口非法即失败，不部分构建"),
     "hybrid_memory/core/dynamics.py::plan_capacity": (
         "提交前容量收口模拟",
-        "mems、cfg、pinned",
+        "mems、cfg、pinned、可选 t（模拟迁 A 的打戳时点，缺省按最新）",
         "{archive,delete,remaining,accepted,reason}",
-        "模拟 C→A 后重算 A 与 cap_context；无 I/O、不衰减 V",
+        "模拟迁 A 以当前 t 打戳后重算 A 与 cap_context；上下文超限按 FIFO 补删无保护非退役 A；无 I/O、不衰减 V",
         "全 pin 时 accepted=false 背压，禁止破上限或解除保护"),
+    "hybrid_memory/dispatch/effects.py::enforce_capacity": (
+        "commit 前容量收口执行",
+        "service（效果事务内、持服务锁调用）",
+        "None（就地迁 A/删除）或抛 Degraded(capacity_backpressure)",
+        "apply_selector/apply_maintenance/decide_human_review 提交前统一收口；全 pin 整批拒收回滚",
+        "容量不足且全 pin 抛 Degraded(capacity_backpressure)→503；不解除保护、不静默超限"),
     "hybrid_memory/service/review.py::conflict_ledger": (
         "冲突统一读模型",
         "svc 与可选 before",

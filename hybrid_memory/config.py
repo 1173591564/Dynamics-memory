@@ -38,6 +38,8 @@ class Cfg:
     cap_m: int = 40              # M 池容量
     cap_c: int = 200             # C 池容量（P2 新增，未启用；H11/H12）
     cap_a: int = 2000            # A 池容量（P2 新增，未启用；H11/H12）
+    cap_context: int = 500       # 非退役版本总数上限（N12：含 A，不计临时
+                                 # candidate 与 retired；效果提交前收口）
     eta_c: float = 0.60          # merge 继承折损
     tension_delay: int = 20
 

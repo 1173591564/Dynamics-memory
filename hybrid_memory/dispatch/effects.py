@@ -16,6 +16,7 @@ from typing import Callable
 from ..agents import hauler, reviewer, selector
 from ..core import dynamics, triggers
 from ..core.types import Event, Pool, is_visible
+from ..errors import Degraded
 from ..logstore import entities_in
 from ..store.tasks import SEMANTIC_KINDS, WORKFLOW_KINDS
 
@@ -111,6 +112,31 @@ def effect_transaction(svc, mutate, *, capture=None):
             raise
 
 
+def enforce_capacity(svc) -> None:
+    """commit 前容量收口（N17/N12）：plan_capacity 模拟全池与上下文。
+
+    全 pin 无法收口 → Degraded("capacity_backpressure")：整批效果拒收/回滚，
+    合法产物留 ready 退避，应用上限耗尽后 dead（不静默超限、不解除保护）。
+    """
+    if not svc.cfg.capacity_on:
+        return
+    plan = dynamics.plan_capacity(svc.engine.mems, svc.cfg,
+                                  dynamics.pinned_ids(svc.engine),
+                                  t=svc._t)
+    if not plan["accepted"]:
+        raise Degraded("capacity_backpressure",
+                       "capacity cannot be closed under pins; effect rejected",
+                       str(plan.get("reason") or ""))
+    for vid in plan["archive"]:
+        m = svc.engine.mems[vid]
+        m.pool = Pool.ARCHIVE
+        m.archived_at = svc._t
+        svc.engine.n_pool_truncated += 1
+    for vid in plan["delete"]:
+        del svc.engine.mems[vid]
+        svc.engine.n_pool_truncated += 1
+
+
 def apply_conflict(svc, row, result) -> dict:
     """conflict_pending applier：邮戳一致的裁决落地；过期对重排待判。"""
     t = row["t"]
@@ -176,6 +202,7 @@ def apply_maintenance(svc, row, result) -> dict:
                                     merge=lambda old, new: new)
         return {"reflected": 0}
     svc.engine.add_reflection(Event(**result["event"]), payload["ids"], t)
+    enforce_capacity(svc)
     return {"reflected": 1}
 
 
@@ -264,17 +291,8 @@ def apply_selector(svc, row, output, conn) -> dict:
             svc.engine.add_tension(ids[0], old.id, svc._t)
             svc.engine.submit_verdicts([(ids[0], old.id, "update")], svc._t)
         outcomes.append({"index": idx, "action": action if ids else "EXIST", "new_ids": ids})
-    if svc.cfg.capacity_on:
-        victims = dynamics.overflow_policy(
-            svc.engine.mems, svc.cfg, dynamics.pinned_ids(svc.engine))
-        for vid in victims["archive"]:
-            m = svc.engine.mems[vid]
-            m.pool = Pool.ARCHIVE
-            m.archived_at = svc._t
-            svc.engine.n_pool_truncated += 1
-        for vid in victims["delete"]:
-            del svc.engine.mems[vid]
-            svc.engine.n_pool_truncated += 1
+    # 批内 CREATE/EXIST 复活超过容量：提交前统一收口，全 pin 则整批背压。
+    enforce_capacity(svc)
     return {"outcomes": outcomes}
 
 

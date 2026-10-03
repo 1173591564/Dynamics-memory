@@ -533,6 +533,27 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 
 未兑现契约与未接线清单见 §10.4；N29–N33 的"已完成"式表述作废，以本节如实状态为准。
 
+### 9.3 收尾轮决策（N35 起）
+
+- **N35 容量收口与背压落地（P0-1.1，兑现 §10.4 未接线项 plan_capacity）**：
+  决定：`apply_selector`/`apply_maintenance`/`decide_human_review` 的提交路径统一经
+  `effects.enforce_capacity` → `plan_capacity(mems, cfg, pinned, t=当前 t)`；模拟迁 A 以当前 t
+  打戳（t 缺省按最新处理），存量快照缺 archived_at 仍按 H11 视为最旧；cap_context 计非退役
+  版本总数（C+M+A 含归档、不计 retired），上下文超限按 FIFO 补删无保护非退役 A，删除 retired
+  条目不减少上下文；全 pin 无法收口抛 `Degraded("capacity_backpressure")` → HTTP 503，整批
+  回滚、合法产物留 ready 退避、应用上限耗尽 dead（保留产物）。`engine.step` 维护路径维持
+  `overflow_policy` 语义（H11/H12，无背压——单元交付不接受因容量失败，旧库超限走 degraded 治理）。
+  理由：§4.2 要求收口点在效果事务提交前且不为收容量额外 step；背压异常不能是 ValueError 子类，
+  否则 worker 按 retry_model 清产物重跑模型，违反"合法产物留 ready"。
+  被否决备选：背压用 Rejected（错域：这是暂时性 503，不是调用方错）；run_maintenance 内加背压
+  （单元交付语义不允许容量失败；且 step 会额外衰减）；人审路径不收口（§4.2 明确人审属收口点）。
+  影响符号：`core/dynamics.py::plan_capacity`(+t 参数)、`dispatch/effects.py::enforce_capacity`(新增)、
+  `apply_selector`、`apply_maintenance`、`service/review.py::decide_human_review`、
+  `config.py::Cfg`(+cap_context=500)、`errors._STATUS`(+capacity_backpressure:503)、
+  `transport/http.py::_run`(+Degraded 映射)。
+  验证：`tests/unit/test_capacity_backpressure.py` 9 条回归（FIFO 方向、cap_context 补删与
+  retired 口径、全 pin 背压回滚、产物保留、应用耗尽 dead、contradiction/人审路径不打错戳）。
+
 ### 9.1 旧目标条目的最终去向
 
 - X1–X7：保核心含义，纠正“不调LLM=无嵌入I/O”“所有磁盘有界”“effects完成=模型只一次”。

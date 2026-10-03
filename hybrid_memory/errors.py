@@ -48,6 +48,7 @@ _STATUS: dict[str, int] = {
     "unsupported_media_type": 415,
     "rate_limited": 429,
     "queue_full": 503,              # 任务队满（H9）
+    "capacity_backpressure": 503,   # 容量全 pin 无法收口（N17 整批拒收）
     "internal": 500,
 }
 

@@ -10,7 +10,7 @@ import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from ..errors import Rejected, http_status
+from ..errors import Degraded, Rejected, http_status
 from ..service.context import CausalViolation, SignalClosed
 from ..service.operate import VERDICTS
 from ..service.service import MemoryService
@@ -239,6 +239,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self._dispatch(path, q, body)
         except Rejected as exc:
+            self._reply(http_status(exc.code), {"error": str(exc), "code": exc.code})
+        except Degraded as exc:
             self._reply(http_status(exc.code), {"error": str(exc), "code": exc.code})
         except HttpError as exc:
             self._reply(exc.code, {"error": str(exc)})

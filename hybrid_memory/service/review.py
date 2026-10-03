@@ -68,6 +68,10 @@ def decide_human_review(svc, review_id: int, decision: str, capability: str) -> 
             old.pending_review = bool(remaining)
             conn.execute("UPDATE human_reviews SET status='done',decision=? WHERE id=?",
                          (decision, review_id))
+            # 人审新增（accept_new）与其他新增一样在 commit 前收口（N17）；
+            # 全 pin 时拒绝并回滚，不静默超限。
+            from ..dispatch.effects import enforce_capacity
+            enforce_capacity(svc)
             revision = svc.tasks._write_checkpoint(conn, svc._dump_state(), svc._checkpoint_revision)
         svc._checkpoint_revision = revision
         return {"review_id": review_id, "decision": decision, "new_ids": ids}
