@@ -83,16 +83,29 @@ def policy_for(kind: str) -> KindPolicy:
 
 
 def assert_consumers(appliers) -> None:  # noqa: ANN001 — applier 类型 P5 定
-    """启动自检（H25/A6/Defect10）：POLICIES 的每个 kind 必须在 appliers 有真实消费者，反向无野项。"""
+    """启动自检（H25/A6/N42）：POLICIES 的每个 kind 必须在 appliers 有真实
+    消费者，反向无野项（收据 kind 不是任务 kind，无硬编码豁免）。
+
+    外部循环所有权由 runner 显式声明：dispatch 必须带 callable apply；
+    legacy-agent/service 由外部循环消费，apply 可缺省（存在则必须 callable）；
+    未知 runner 拒绝启动。"""
     missing = [kind for kind in POLICIES if kind not in appliers]
     if missing:
         raise Fatal(f"task kinds without consumers: {sorted(missing)}")
-    wild = [kind for kind in appliers if kind not in POLICIES and kind != "feedback"]
+    wild = [kind for kind in appliers if kind not in POLICIES]
     if wild:
         raise Fatal(f"unknown applier kinds not in POLICIES: {sorted(wild)}")
     for kind, app in appliers.items():
-        if hasattr(app, "runner") and getattr(app, "runner") == "dispatch":
-            if not callable(getattr(app, "apply", None)):
+        runner = getattr(app, "runner", None)
+        apply_fn = getattr(app, "apply", None)
+        if runner == "dispatch":
+            if not callable(apply_fn):
                 raise Fatal(f"dispatch applier for {kind} must be callable")
-        elif not callable(app) and not hasattr(app, "runner"):
-            raise Fatal(f"applier for {kind} is not callable")
+        elif runner in ("legacy-agent", "service"):
+            # 外部循环所有权：apply 可缺省；存在则必须可调用
+            if apply_fn is not None and not callable(apply_fn):
+                raise Fatal(f"applier for {kind} has non-callable apply")
+        elif callable(app):
+            continue  # 裸函数 applier（非 Applier 包装）
+        else:
+            raise Fatal(f"applier for {kind} declares unknown runner: {runner!r}")

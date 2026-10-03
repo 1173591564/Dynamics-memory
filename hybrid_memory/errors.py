@@ -42,12 +42,17 @@ _STATUS: dict[str, int] = {
     "unauthorized": 401,
     "forbidden": 403,
     "direct_write_disabled": 403,   # trio 下直写三入口（H35）
+    "signal_closed": 403,           # 信号号无效/已关闭（N42）
+    "causal_violation": 403,        # 因果界违规（N42）
+    "method_not_allowed": 405,      # GET/POST 白名单外（N42）
     "not_found": 404,
     "conflict": 409,
+    "already_credited": 409,        # feedback 重复（与 memory-bridge.ts 检查一致，N42）
     "payload_too_large": 413,
     "unsupported_media_type": 415,
     "rate_limited": 429,
     "queue_full": 503,              # 任务队满（H9）
+    "checkpoint_conflict": 503,     # checkpoint CAS 失败（N42）
     "capacity_backpressure": 503,   # 容量全 pin 无法收口（N17 整批拒收）
     "internal": 500,
 }

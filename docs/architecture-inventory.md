@@ -5,7 +5,7 @@
 > 未在本页出现的函数/模块在下一轮统一删除前，必须先在此登记或列入删除项。
 > 生成命令：`python analysis/check_architecture.py --build-inventory`；核对：同命令不带参数。
 > 固定契约数据（目标路径、显式契约、计划新增、删除条件、模块备注）在 `analysis/architecture_contract.py`。
-> 当前登记 145 个 Python 模块、5 个 TS/角色定义模块、1454 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、138 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
+> 当前登记 146 个 Python 模块、5 个 TS/角色定义模块、1461 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、139 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
 
 每符号给出：功能、输入、输出、作用、错误、目标（目标路径/处置/变更）。
 公开产品符号在固定契约里逐条定义目标；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。
@@ -229,7 +229,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`analysis/architecture_contract.py`（当前路径）。
 - 模块输入：源码语法树与人工冻结的契约数据。
 - 模块输出：无运行逻辑；供检查器渲染逐符号目标与执行覆盖校验。
-- 源校验：`f009d8b6d730fdec873803857a0ca68732084f86b7fedb2849024a70611d96a0`。
+- 源校验：`acd3ef7c132e6b93e2225f4969d3eab388ead02f035df39d5209fe70031a7985`。
 - 模块级常量：`TARGET_PATHS`（未登记）；`MODULE_IO`（未登记）；`SYMBOL_OVERRIDES`（未登记）；`PLANNED_MODULES`（未登记）；`PLANNED_SYMBOLS`（未登记）；`DELETIONS`（未登记）；`CONSTANTS`（未登记）；`MODULE_NOTES`（未登记）。
 - 输入/输出：本模块只有常量/数据契约，无独立函数；语义见模块输入/输出与备注。
 - 导出/输入依赖：annotations ← __future__.annotations
@@ -3307,7 +3307,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/dispatch/effects.py`（当前路径）。
 - 模块输入：任务行、模型产物、连接与回执上下文。
 - 模块输出：唯一效果编排与九类 applier 的结构化结果；整批原子、容量复核。
-- 源校验：`11e0a347ab71c1816484018eb853f80093d981a3b37c26e48c2ed62b079fd861`。
+- 源校验：`41f826a9ff103a0147d8b0dc3a3d97dc89ed96bc81d768597c11a9121c26a555`。
 - 模块级常量：`EFFECTS`（保留）。
 
 ### `hybrid_memory/dispatch/effects.py::Applier`
@@ -3461,7 +3461,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/dispatch/policy.py`（当前路径）。
 - 模块输入：kind 与限额/租约/退避数据。
 - 模块输出：不可变 KindPolicy、唯一 policy_for 与启动消费者自检；未知 kind Fatal。
-- 源校验：`f465922bb4af5766c66510edbb240dd12699800ae69480e65f13a0fc5695eeac`。
+- 源校验：`1fb8beca1b17f1f26547f45fbd380a2ea04305d98476af5470e418636bc3322b`。
 - 模块备注：目标：KindPolicy 增 max_apply_attempts（WF/SEM=5、INV=3）；与模型上限分别计入。
 - 模块级常量：`_INVESTIGATION`（保留）；`_SEMANTIC`（保留）；`_WORKFLOW`（保留）；`POLICIES`（保留）。
 
@@ -3488,8 +3488,8 @@ vendored `mvp/agent/` 完全排除。
 - 功能：kind 消费者自检
 - 输入：`appliers/active kinds/policies/runners`。
 - 输出：`None`。
-- 作用：正反一致、callable、pipeline gate、回执豁免。
-- 错误：缺失/野项 Fatal；当前仅查键待升级。
+- 作用：正反一致（POLICIES↔appliers，收据 kind 无豁免）；dispatch apply 必须 callable；legacy-agent/service 为显式外部循环所有权（apply 可缺省）；未知 runner Fatal。
+- 错误：缺失/野项/不可调用/未知 runner 均 Fatal。
 - 目标：`hybrid_memory/dispatch/policy.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/policy.py#L85)。
 
 ## `hybrid_memory/dispatch/worker.py`
@@ -3793,7 +3793,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/errors.py`（当前路径）。
 - 模块输入：错误码、文案与 detail；不含业务数据。
 - 模块输出：Rejected/Degraded/Fatal/ProposalRejected 异常与唯一状态码映射；未知码 KeyError。
-- 源校验：`301ba574d373a4453600dc7027ac28030d0d1aac9abaf3197dd19eac6ad2393a`。
+- 源校验：`6a9fdd4a2a59a89957c246a389db2ebb8c91463dc19b9950f448c11c810bb5d5`。
 - 模块级常量：`_STATUS`（保留）。
 
 ### `hybrid_memory/errors.py::MemoryError`
@@ -3857,7 +3857,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`int 状态码`。
 - 作用：无副作用。
 - 错误：未知码 KeyError（调用方 bug 必须响亮）。
-- 目标：`hybrid_memory/errors.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/errors.py#L56)。
+- 目标：`hybrid_memory/errors.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/errors.py#L61)。
 
 ## `hybrid_memory/guards/__init__.py`
 
@@ -4998,7 +4998,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/service/feedback.py`（当前路径）。
 - 模块输入：retrieval_id、问答与 request_id。
 - 模块输出：归因接受回执或稳定 unknown/duplicate；效果已提交不因模型失败翻转。
-- 源校验：`7ea592442a3169f778bb40380d4be2aba769e811a16184c0755c1632c67ab51a`。
+- 源校验：`c469a1d5e78fb52a0e35bbb1f5b140dd42fc81d395ffaf0c6fce7c21e067b263`。
 
 ### `hybrid_memory/service/feedback.py::feedback`
 
@@ -5016,7 +5016,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；{'n_useful': 0, 'pending': True, 'accepted': True, 'retrieval_id': retrieval_id, **({'request_id': request_id} if request_id else {})}`。
 - 作用：调用 svc.engine.feedback。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/service/feedback.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/service/feedback.py#L50)。
+- 目标：`hybrid_memory/service/feedback.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/service/feedback.py#L51)。
 
 ## `hybrid_memory/service/lifecycle.py`
 
@@ -6894,7 +6894,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/transport/dto.py`（当前路径）。
 - 模块输入：HTTP headers 与 JSON body。
 - 模块输出：规范 DTO 或 HttpError；严格 64 位 int、媒体与 4MiB 限制。
-- 源校验：`0e05a2957654ab29032b893e21623b2127e86c5e4b3e06de83ab99661ee1e6e4`。
+- 源校验：`d18c50e3ef8a574ca8c6868c190435655f54170f376bae01e9842e508ca1784d`。
 - 模块备注：目标：observe/feedback DTO 增可选 session_id/turn_id 并纳入指纹；缺失标 unknown，不得跨会话归因。
 - 模块级常量：`SIGNAL_PATHS`（保留）；`MAX_BODY`（保留）；`GET_PATHS`（保留）；`POST_PATHS`（保留）。
 
@@ -6910,11 +6910,11 @@ vendored `mvp/agent/` 完全排除。
 ### `hybrid_memory/transport/dto.py::HttpError.__init__`
 
 - 功能：用给定参数与依赖初始化 HttpError，建立其对象状态；业务归属为HTTP、鉴权、DTO、组装与人审 CLI
-- 输入：`self, code: int, msg: str`。
+- 输入：`self, code: int, msg: str, mcode: str='bad_request'`。
 - 输出：`未注解；None`。
 - 作用：调用 super, super().__init__。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/transport/dto.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/transport/dto.py#L13)。
+- 目标：`hybrid_memory/transport/dto.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/transport/dto.py#L15)。
 
 ### `hybrid_memory/transport/dto.py::opt_int`
 
@@ -6923,7 +6923,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None；v`。
 - 作用：调用 HttpError, body.get, type。
 - 错误：异常 HttpError(400, f'{key} must be a 64-bit int'), HttpError(400, f'{key} must be positive')。
-- 目标：`hybrid_memory/transport/dto.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/dto.py#L28)。
+- 目标：`hybrid_memory/transport/dto.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/dto.py#L31)。
 
 ### `hybrid_memory/transport/dto.py::req_str`
 
@@ -6932,7 +6932,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`str；v`。
 - 作用：调用 HttpError, body.get, isinstance, v.strip。
 - 错误：异常 HttpError(400, f'{key} required')。
-- 目标：`hybrid_memory/transport/dto.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/dto.py#L39)。
+- 目标：`hybrid_memory/transport/dto.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/dto.py#L42)。
 
 ### `hybrid_memory/transport/dto.py::parse_body`
 
@@ -6941,7 +6941,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`JSON 对象 dict`。
 - 作用：媒体/长度 4MiB/对象校验。
 - 错误：HttpError 400/413/415。
-- 目标：`hybrid_memory/transport/dto.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/dto.py#L46)。
+- 目标：`hybrid_memory/transport/dto.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/dto.py#L49)。
 
 ### `hybrid_memory/transport/dto.py::capture_request_id`
 
@@ -6950,7 +6950,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`str | None；None；_validate_request_id(chosen)`。
 - 作用：调用 HttpError, _validate_request_id, body.get, header.strip, headers.get, isinstance, str。
 - 错误：异常 HttpError(400, 'X-Request-Id and request_id disagree'), HttpError(400, 'X-Request-Id must not be empty'), HttpError(400, 'request_id must be a string'), HttpError(400, 'request_id must not be empty'), HttpError(400, str(exc))。
-- 目标：`hybrid_memory/transport/dto.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/dto.py#L69)。
+- 目标：`hybrid_memory/transport/dto.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/dto.py#L72)。
 
 ### `hybrid_memory/transport/dto.py::observe_payload`
 
@@ -6959,7 +6959,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`user_text/assistant_text/request_id（目标含 session_id/turn_id）`。
 - 作用：纳入幂等指纹；缺省不推断。
 - 错误：空轮/类型非法 400；会话身份缺失标 unknown。
-- 目标：`hybrid_memory/transport/dto.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/dto.py#L91)。
+- 目标：`hybrid_memory/transport/dto.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/dto.py#L94)。
 
 ### `hybrid_memory/transport/dto.py::feedback_payload`
 
@@ -6968,7 +6968,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`retrieval_id/question/answer/request_id（目标含 session_id/turn_id）`。
 - 作用：纳入幂等指纹。
 - 错误：rid/类型非法 400。
-- 目标：`hybrid_memory/transport/dto.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/dto.py#L102)。
+- 目标：`hybrid_memory/transport/dto.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/dto.py#L105)。
 
 ## `hybrid_memory/transport/http.py`
 
@@ -6977,7 +6977,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/transport/http.py`（当前路径）。
 - 模块输入：HTTP 请求与 service。
 - 模块输出：JSON 响应与统一错误码；trio 禁直写、方法白名单、loopback 绑定。
-- 源校验：`655a62b306ca0adff5fd95c7f46969c6742c252b051ffc5c548605ddb6747799`。
+- 源校验：`09f902dc043388d8b201679f1ccfef2f5cee41ddde7385bc4310072f9c7c6f8a`。
 - 模块级常量：`TRIO_DISABLED`（保留）；`ROUTES`（保留）。
 
 ### `hybrid_memory/transport/http.py::Handler`
@@ -7057,8 +7057,8 @@ vendored `mvp/agent/` 完全排除。
 - 功能：回答归因回执与稳定重复码
 - 输入：`self, q, body, sid`。
 - 输出：`None；None`。
-- 作用：调用 HttpError, dto.feedback_payload, self._reply, self.service.feedback。
-- 错误：异常 HttpError(404, out['error'])。
+- 作用：调用 HttpError, dto.feedback_payload, out.get, self._reply, self.service.feedback。
+- 错误：异常 HttpError(404, out['error'], 'not_found')。
 - 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L101)。
 
 ### `hybrid_memory/transport/http.py::Handler.handle_human_reviews`
@@ -7068,7 +7068,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 self._reply, self.service.human_reviews。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L112)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L114)。
 
 ### `hybrid_memory/transport/http.py::Handler.handle_human_review`
 
@@ -7076,8 +7076,8 @@ vendored `mvp/agent/` 完全排除。
 - 输入：`self, q, body, sid`。
 - 输出：`None；None`。
 - 作用：调用 HttpError, body.get, dto.opt_int, secrets.compare_digest, self._reply, self.headers.get, self.service.decide_human_review, str。
-- 错误：异常 HttpError(400, 'review_id required'), HttpError(400, str(exc)), HttpError(403, 'human review capability required'), HttpError(404, str(exc)), HttpError(409, str(exc))。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L115)。
+- 错误：异常 HttpError(400, 'review_id required'), HttpError(400, str(exc), 'bad_request'), HttpError(403, 'human review capability required', 'forbidden'), HttpError(404, str(exc), 'not_found'), HttpError(409, str(exc), 'conflict')。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L117)。
 
 ### `hybrid_memory/transport/http.py::Handler.handle_resolve`
 
@@ -7086,7 +7086,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 HttpError, body.get, dto.opt_int, isinstance, self._reply, sorted, str, svc.resolve。
 - 错误：异常 HttpError(400, 'ensure_tension must be bool'), HttpError(400, 'left/right required'), HttpError(400, f'verdict must be one of {sorted(VERDICTS)}')。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L132)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L134)。
 
 ### `hybrid_memory/transport/http.py::Handler.handle_search`
 
@@ -7095,7 +7095,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 HttpError, body.get, dto.opt_int, isinstance, self._reply, self.service.recall。
 - 错误：异常 HttpError(400, 'query required')。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L150)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L152)。
 
 ### `hybrid_memory/transport/http.py::Handler.handle_miss`
 
@@ -7104,7 +7104,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 body.get, dto.req_str, isinstance, self._reply, self.service.report_miss。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L159)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L161)。
 
 ### `hybrid_memory/transport/http.py::Handler.handle_log_search`
 
@@ -7113,7 +7113,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 body.get, dto.opt_int, dto.req_str, isinstance, self._reply, self.service.log_search。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L167)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L169)。
 
 ### `hybrid_memory/transport/http.py::Handler.handle_log_timeline`
 
@@ -7122,7 +7122,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 dto.opt_int, dto.req_str, self._reply, self.service.log_timeline。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L175)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L177)。
 
 ### `hybrid_memory/transport/http.py::Handler.handle_log_stats`
 
@@ -7131,7 +7131,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 HttpError, body.get, dto.opt_int, self._reply, self.service.log_stats。
 - 错误：异常 HttpError(400, 'group_by must be scene | entity | week')。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L182)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L184)。
 
 ### `hybrid_memory/transport/http.py::Handler.handle_log_window`
 
@@ -7140,7 +7140,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 HttpError, all, body.get, dto.opt_int, isinstance, len, self._reply, self.service.log_window, type。
 - 错误：异常 HttpError(400, 'unit_ids must be a non-empty int list (≤20)')。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L191)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L193)。
 
 ### `hybrid_memory/transport/http.py::Handler.handle_propose`
 
@@ -7149,7 +7149,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 HttpError, body.get, dto.opt_int, isinstance, self._reply, self.service.propose。
 - 错误：异常 HttpError(400, 'proposals must be a list')。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L200)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L202)。
 
 ### `hybrid_memory/transport/http.py::Handler.handle_diagnose`
 
@@ -7158,7 +7158,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 HttpError, body.get, dto.req_str, isinstance, self._reply, str, svc.diagnose。
 - 错误：异常 HttpError(400, str(exc))。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L209)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L211)。
 
 ### `hybrid_memory/transport/http.py::Handler.handle_save`
 
@@ -7167,7 +7167,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 self._reply, self.service.save。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L220)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L222)。
 
 ### `hybrid_memory/transport/http.py::Handler._dispatch`
 
@@ -7175,8 +7175,8 @@ vendored `mvp/agent/` 完全排除。
 - 输入：`self, path: str, q: dict, body: dict`。
 - 输出：`None；None`。
 - 作用：调用 HttpError, ROUTES.get, SignalClosed, getattr, getattr(self, handler), raw_sid.strip, self._reply, self.headers.get。
-- 错误：异常 HttpError(403, TRIO_DISABLED[path]), SignalClosed(f'调查员不允许访问 {path}')。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/transport/http.py#L223)。
+- 错误：异常 HttpError(403, TRIO_DISABLED[path], 'direct_write_disabled'), SignalClosed(f'调查员不允许访问 {path}')。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/transport/http.py#L225)。
 
 ### `hybrid_memory/transport/http.py::Handler._run`
 
@@ -7185,7 +7185,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`HTTP JSON 响应`。
 - 作用：错误码→状态；未知故障 500 但可预见错误必须 4xx/5xx 明确。
 - 错误：目标响应含稳定 code；能力 403 与预算 429 分开。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L238)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L241)。
 
 ### `hybrid_memory/transport/http.py::Handler.do_GET`
 
@@ -7194,7 +7194,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 auth.authorized, parse_qs, parse_qs(u.query).items, self._reply, self._run, urlparse。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L265)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L273)。
 
 ### `hybrid_memory/transport/http.py::Handler.do_POST`
 
@@ -7203,7 +7203,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 auth.authorized, dto.parse_body, self._reply, self._run, str, urlparse。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L279)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L288)。
 
 ### `hybrid_memory/transport/http.py::serve`
 
@@ -7212,7 +7212,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`ThreadingHTTPServer`。
 - 作用：绑定 loopback；支持 port 0。
 - 错误：端口占用显式失败。
-- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L295)。
+- 目标：`hybrid_memory/transport/http.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/http.py#L305)。
 
 ## `hybrid_memory/transport/review_cli.py`
 
@@ -13459,6 +13459,79 @@ vendored `mvp/agent/` 完全排除。
 - 作用：调用 http_status, pytest.raises。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
 - 目标：`tests/unit/test_errors.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_errors.py#L34)。
+
+## `tests/unit/test_http_codes.py`
+
+- 模块功能：行为、恢复、权限及协议回归；不得按产品死代码删除。
+- 设计归属：验收资产；处置：保留迁移。
+- 目标路径：`tests/unit/test_http_codes.py`（当前路径）。
+- 模块输入：被测对象与 pytest 夹具。
+- 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
+- 源校验：`f595283e61570edfa4f5222f139338df748048da18659aa2bce4cad01500c7eb`。
+- 模块级常量：`_CODE_PATTERNS`（未登记）。
+
+### `tests/unit/test_http_codes.py::scan_codes`
+
+- 功能：扫描源码文本中的错误码字面量（供负向探针复用）。
+- 输入：`source: str`。
+- 输出：`list[str]；sorted(out)`。
+- 作用：调用 out.update, pat.findall, set, sorted。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_http_codes.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_http_codes.py#L33)。
+
+### `tests/unit/test_http_codes.py::test_all_http_codes_in_status`
+
+- 功能：行为断言：all_http_codes_in_status；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 (root / rel).read_text, Path, scan_codes。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_http_codes.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_http_codes.py#L41)。
+
+### `tests/unit/test_http_codes.py::test_code_scanner_rejects_fake_violation`
+
+- 功能：负向探针：伪造未注册 code 的源码样本，扫描器必须抓到。
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 scan_codes。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_http_codes.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_http_codes.py#L55)。
+
+### `tests/unit/test_http_codes.py::test_feedback_duplicate_gives_already_credited_code`
+
+- 功能：行为断言：feedback_duplicate_gives_already_credited_code；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _http, _service, post, svc.log.close, svc.observe, svc.recall, svc.tasks.close。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_http_codes.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_http_codes.py#L63)。
+
+### `tests/unit/test_http_codes.py::test_receipt_kind_separated_from_task_kinds`
+
+- 功能：收据 kind（feedback）不再是任务 kind：EFFECTS 无该键。
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 set。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_http_codes.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_http_codes.py#L86)。
+
+### `tests/unit/test_http_codes.py::test_assert_consumers_no_hardcoded_exemption`
+
+- 功能：多余 kind 必须拒绝——即便它叫 feedback（豁免已删）。
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 dict, effects.Applier, policy.assert_consumers, pytest.raises。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_http_codes.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_http_codes.py#L93)。
+
+### `tests/unit/test_http_codes.py::test_assert_consumers_callable_and_ownership`
+
+- 功能：行为断言：assert_consumers_callable_and_ownership；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 dict, effects.Applier, object, policy.assert_consumers, pytest.raises。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_http_codes.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_http_codes.py#L101)。
 
 ## `tests/unit/test_import_boundaries.py`
 

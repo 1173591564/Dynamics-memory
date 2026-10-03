@@ -283,7 +283,9 @@ SYMBOL_OVERRIDES = {
     "hybrid_memory/store/tasks.py::TaskStore.workflow_trace": (
         "投诉前交接证据", "unit_ids 与 before_task_id", "有界 trace 列表", "只承认派发前完成；≤18 项/24000 字符", "超限 ValueError 需人工调查"),
     "hybrid_memory/dispatch/policy.py::assert_consumers": (
-        "kind 消费者自检", "appliers/active kinds/policies/runners", "None", "正反一致、callable、pipeline gate、回执豁免", "缺失/野项 Fatal；当前仅查键待升级"),
+        "kind 消费者自检", "appliers/active kinds/policies/runners", "None",
+        "正反一致（POLICIES↔appliers，收据 kind 无豁免）；dispatch apply 必须 callable；"
+        "legacy-agent/service 为显式外部循环所有权（apply 可缺省）；未知 runner Fatal", "缺失/野项/不可调用/未知 runner 均 Fatal"),
     "hybrid_memory/dispatch/effects.py::effect_transaction": (
         "唯一效果编排", "svc、mutate、capture/task/unit 上下文", "回执 dict", "内存备份、信号收集、CAS、回执、done 与回滚", "上下文互斥；提交后确认丢失设 fault"),
     "hybrid_memory/dispatch/effects.py::apply_selector": (
@@ -656,7 +658,7 @@ CONSTANTS = {
     "hybrid_memory/dispatch/policy.py::_WORKFLOW": ("保留", "工作流类策略实例"),
     "hybrid_memory/dispatch/policy.py::POLICIES": ("保留", "kind→策略唯一表"),
     "hybrid_memory/embed/cache.py::_SCHEMA": ("保留", "向量缓存建表 DDL"),
-    "hybrid_memory/errors.py::_STATUS": ("保留", "错误码→状态码唯一映射；未知码 KeyError"),
+    "hybrid_memory/errors.py::_STATUS": ("保留", "错误码→状态码唯一映射（N42 扩充：already_credited/checkpoint_conflict/signal_closed/causal_violation/method_not_allowed）；未知码 KeyError"),
     "hybrid_memory/guards/bounds.py::MAX_PROPOSE_BATCH": ("接线", "批量上限唯一真源；调用点仍硬编码，见 §10.4"),
     "hybrid_memory/guards/bounds.py::MAX_BODY_BYTES": ("接线", "请求体上限；与 dto.MAX_BODY 去重后接唯一真源"),
     "hybrid_memory/guards/bounds.py::_REQUEST_ID_RE": ("保留", "请求 ID 语法正则"),

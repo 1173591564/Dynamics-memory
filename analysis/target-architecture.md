@@ -662,6 +662,33 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
   影响符号：上述 7 个文件的 import 行（无行为变化）+ 新增
   `test_production_uses_canonical_imports`。
   验证：全量 474 passed。
+- **N42 HTTP 稳定错误码 + 收据/任务 kind 分离 + assert_consumers 真检查（P0-2，
+  修 §10.4 HTTP 项）**：
+  决定：(a) 所有可预见 HTTP 错误回包带机器 code——HttpError 增 mcode 贯穿
+  dto 全部 raise 点；_run 各分支（TaskQueueFull→queue_full、CheckpointConflict→
+  checkpoint_conflict、PermissionError→rate_limited、SignalClosed→signal_closed、
+  CausalViolation→causal_violation、ValueError→bad_request、兜底→internal）；
+  401/404/405 白名单回包同步带码；_STATUS 新增 already_credited(409)/
+  checkpoint_conflict(503)/signal_closed(403)/causal_violation(403)/
+  method_not_allowed(405)。(b) feedback 重复回包带 code="already_credited"
+  （服务层注入，HTTP 机器码优先、文本 "already" 仅兜底），与 memory-bridge.ts
+  `r.data?.code === "already_credited"` 检查一致。(c) 收据 kind 与任务 kind
+  分离：EFFECTS 表删除零消费者的 "feedback" 项（收据 kind 只是 capture_receipts
+  的字符串列），assert_consumers 删除 `kind != "feedback"` 硬编码豁免。
+  (d) assert_consumers 重写：dispatch applier 的 apply 必须 callable（真检查）；
+  legacy-agent/service 为显式外部循环所有权（apply 可缺省，存在则必须 callable）；
+  未知 runner 拒绝启动——删除 hasattr(app,"runner") 恒真死分支。
+  理由：插件靠机器码分支，文本匹配脆；_STATUS 未注册的码会 KeyError→500，
+  "所有源码码已注册"用扫描测试锁定（含负向探针：伪造未注册码必被抓）。
+  被否决备选：保留文本 "already" 判定为唯一依据（插件已用 code 字段，文本
+  是英文实现细节）；EFFECTS 保留 feedback 项+豁免（零消费者条目只能靠豁免
+  活着，正是要删的东西）。
+  影响符号：`errors._STATUS`、`transport/dto.py::HttpError`、`transport/http.py`
+  （handle_feedback/handle_human_review/_run/do_GET/do_POST/_dispatch）、
+  `service/feedback.py::feedback`、`dispatch/effects.py::EFFECTS`、
+  `dispatch/policy.py::assert_consumers`。
+  验证：`tests/unit/test_http_codes.py` 6 条（先红后绿，含扫描器负向探针）；
+  全量 480 passed。
 
 ### 9.1 旧目标条目的最终去向
 

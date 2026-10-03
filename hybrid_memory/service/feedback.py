@@ -43,7 +43,8 @@ def feedback(svc, retrieval_id: int, question: str, answer: str,
             # 不让引擎的 RuntimeError 变成 500。accepted 表示效果已存在，
             # 不是邀请客户端换一个 request-id 再投。
             return {"error": f"retrieval_id {retrieval_id} already "
-                             f"credited", "n_useful": ret.n_useful,
+                             f"credited", "code": "already_credited",
+                    "n_useful": ret.n_useful,
                     "pending": ret.feedback_sent and not ret.credited,
                     "accepted": True}
 

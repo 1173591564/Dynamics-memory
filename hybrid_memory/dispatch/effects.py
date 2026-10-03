@@ -423,5 +423,4 @@ EFFECTS: dict[str, Applier] = {
     "selector_due": Applier("selector_due", "dispatch", apply_selector),
     "reviewer_due": Applier("reviewer_due", "dispatch", apply_reviewer),
     # 'feedback' 是回执 kind（不进任务表）：消费者是 service/feedback API。
-    "feedback": Applier("feedback", "service"),
 }
