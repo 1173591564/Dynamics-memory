@@ -70,7 +70,11 @@ def semantic_model(svc, row):
 
 
 def apply_semantic(svc, row):
-    """事务性应用已落库的模型结果；分支走 EFFECTS 表。"""
+    """事务性应用已落库的模型结果；分支走 EFFECTS 表。
+
+    prepare_effect 在锁外预计算向量（N08：模型/向量准备一律锁外），
+    计划经 plan 参数穿进 applier。"""
+    plan = effects.prepare_effect(svc, row)
     with svc._lock, svc._rollback_effect():
         old_ret = None
         if row["kind"] == "feedback_pending":
@@ -93,7 +97,7 @@ def apply_semantic(svc, row):
                     applier = effects.EFFECTS[row["kind"]].apply
                     if applier is None:
                         raise ValueError(f"无 dispatch applier: {row['kind']}")
-                    return applier(svc, row, result)
+                    return applier(svc, row, result, plan=plan)
                 finally:
                     q.on_emit = old_emit
 
@@ -214,11 +218,11 @@ class DispatchWorker:
                 print(f"[memory-dispatch] {type(exc).__name__}: {exc}",
                       file=sys.stderr, flush=True)
 
-    def _apply(self, conn, row, output):
+    def _apply(self, conn, row, output, plan=None):
         applier = effects.EFFECTS[row["kind"]].apply
         if applier is None:
             raise ValueError(f"无 dispatch applier: {row['kind']}")
-        return applier(self.svc, row, output, conn)
+        return applier(self.svc, row, output, conn, plan=plan)
 
     def process_once(self, limit=8):
         if not self._busy.acquire(False):
@@ -248,10 +252,13 @@ class DispatchWorker:
                                           lease_s=self.lease_s)
                         if row is None:
                             continue
+                    # N08：向量/静态校验在服务锁外完成（prepare_effect），
+                    # 计划穿进事务；事务内逐目标复核邮戳漂移。
+                    plan = effects.prepare_effect(self.svc, row)
                     with self.svc.lock, self.svc._rollback_effect():
                         _, revision = store.complete(
                             row["id"], row["token"],
-                            lambda conn, output: self._apply(conn, row, output),
+                            lambda conn, output: self._apply(conn, row, output, plan),
                             self.svc._dump_state, self.svc._checkpoint_revision)
                         self.svc._checkpoint_revision = revision
                     done += 1

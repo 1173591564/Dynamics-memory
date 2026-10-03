@@ -225,7 +225,7 @@ SYMBOL_OVERRIDES = {
     "hybrid_memory/core/engine.py::MemoryEngine.submit_relevance": (
         "recognizer 结果入账", "Retrieval、used bool 列表与 t", "n_useful 并置 credited", "代表命中/复活", "长度必须一致；重复结清 RuntimeError"),
     "hybrid_memory/core/engine.py::MemoryEngine.add_reflection": (
-        "reflection 入库门面", "Event、derived_from 与 t", "新 Memory", "委托 consolidation；不退役来源", "由 consolidation 承担"),
+        "reflection 入库门面", "Event、derived_from、t 与可选预计算 vector", "新 Memory", "委托 consolidation；不退役来源", "由 consolidation 承担"),
     "hybrid_memory/core/engine.py::MemoryEngine.propose": (
         "agent 提议入库", "Event 列表、t 与可选 vectors", "实际新建 id 列表", "与 observe 同一 ingest；不直进 M", "origin=passive 拒绝；重复不返回 id"),
     "hybrid_memory/core/engine.py::MemoryEngine.report_miss": (
@@ -568,10 +568,10 @@ SYMBOL_OVERRIDES = {
         "租约/版本不符 TaskLeaseLost；重复封存不同内容拒绝"),
     "hybrid_memory/dispatch/effects.py::prepare_effect": (
         "事务前效果计划",
-        "svc 与任务行",
+        "svc 与任务行（含 ready 产物）",
         "{events,vectors,targets,expected_revision,actions} 计划",
-        "embedding 与静态校验在锁外完成；失败无内存效果",
-        "来源/因果/窗口非法即失败，不部分构建"),
+        "embedding 与静态校验在锁外完成；失败无内存效果；经 worker 两路径（process_once/apply_semantic）接进生产",
+        "来源/因果/窗口非法即失败，不部分构建；目标邮戳漂移整批拒绝重判"),
     "hybrid_memory/core/dynamics.py::plan_capacity": (
         "提交前容量收口模拟",
         "mems、cfg、pinned、可选 t（模拟迁 A 的打戳时点，缺省按最新）",

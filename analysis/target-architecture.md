@@ -553,6 +553,26 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
   `transport/http.py::_run`(+Degraded 映射)。
   验证：`tests/unit/test_capacity_backpressure.py` 9 条回归（FIFO 方向、cap_context 补删与
   retired 口径、全 pin 背压回滚、产物保留、应用耗尽 dead、contradiction/人审路径不打错戳）。
+- **N36 prepare_effect 接线与向量预计算落地（P0-1.4，兑现 §10.4 未接线项）**：
+  决定：修复三处硬伤（`svc.embedder`→`svc.emb`；`embed(str)`→`embed(list, keys)` 批量且带
+  embedding_key；返回值 vectors 真正消费）；`run_ingest`/`MemoryEngine.propose` 增可选
+  `vectors=`、`admit_reflection`/`add_reflection` 增可选 `vector=`（裸调用 None 兼容，
+  §2.5）；worker 两路径接线：`DispatchWorker.process_once`（ready 领取后、进服务锁前
+  prepare）与 `apply_semantic`（锁外 prepare），计划经 `plan=` 穿进 applier；
+  `apply_selector` 复用已验证 Event 与向量（候选正文全链路只 embed 一次），并在事务内
+  复核目标邮戳（superseded_by/aggregated_into/last_seen），漂移整批拒绝重判；
+  `apply_maintenance` 的 reflection 向量仅在正文一致时复用（防串档）。
+  理由：守则"模型/向量计算一律锁外"；原实现 embedding 在服务锁内（apply 事务里 propose
+  内嵌 embed），且 svc.embedder 属性不存在使向量分支恒空。
+  被否决备选：worker 在锁内 prepare（违背锁外计算守则）；apply_selector 完全信任计划跳过
+  动态复核（计划只省去重算，不替代事务内权威复核）；vector 复用不校验正文（可能把旧产物
+  向量套到新正文上）。
+  影响符号：`dispatch/effects.py::prepare_effect/apply_selector/apply_maintenance`（及全部
+  applier 统一 `plan=None` 形参）、`dispatch/worker.py::process_once/_apply/apply_semantic`、
+  `core/engine.py::propose/add_reflection`、`core/ingest.py::run_ingest`、
+  `core/consolidation.py::admit_reflection`。
+  验证：`tests/unit/test_prepare_effect_wiring.py` 8 条（先红后绿：旧实现 vectors 恒空、
+  候选正文 embed 两次均被抓住）；全量 454 passed。
 
 ### 9.1 旧目标条目的最终去向
 

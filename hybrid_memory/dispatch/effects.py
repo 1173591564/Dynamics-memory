@@ -137,7 +137,7 @@ def enforce_capacity(svc) -> None:
         svc.engine.n_pool_truncated += 1
 
 
-def apply_conflict(svc, row, result) -> dict:
+def apply_conflict(svc, row, result, plan=None) -> dict:
     """conflict_pending applier：邮戳一致的裁决落地；过期对重排待判。"""
     t = row["t"]
     current, stale = [], []
@@ -156,7 +156,7 @@ def apply_conflict(svc, row, result) -> dict:
     return {"resolved": svc.engine.submit_verdicts(current, t)}
 
 
-def apply_feedback(svc, row, result) -> dict:
+def apply_feedback(svc, row, result, plan=None) -> dict:
     """feedback_pending applier：展示一致则结账记信用，否则按载荷 id 补记。"""
     payload, t = row["payload"], row["t"]
     used = result["used"]
@@ -185,7 +185,7 @@ def apply_feedback(svc, row, result) -> dict:
             "retired_source": True}
 
 
-def apply_maintenance(svc, row, result) -> dict:
+def apply_maintenance(svc, row, result, plan=None) -> dict:
     """maintenance_due applier：来源未漂移则写入 reflection，否则重排。"""
     payload, t = row["payload"], row["t"]
     if result["event"] is None:
@@ -201,7 +201,12 @@ def apply_maintenance(svc, row, result) -> dict:
                                     key=f"maint:{payload['scene']}",
                                     merge=lambda old, new: new)
         return {"reflected": 0}
-    svc.engine.add_reflection(Event(**result["event"]), payload["ids"], t)
+    vec = None
+    if plan and plan.get("vectors") and plan.get("events"):
+        if plan["events"][0].get("text") == result["event"].get("text"):
+            vec = plan["vectors"][0]
+    svc.engine.add_reflection(Event(**result["event"]), payload["ids"], t,
+                              vector=vec)
     enforce_capacity(svc)
     return {"reflected": 1}
 
@@ -215,7 +220,7 @@ def send_workflow(conn, svc, kind, uid, candidates, parent):
         svc._t, key=f"{kind}:{parent}", memory_next_id=svc.engine._next_id)
 
 
-def apply_hauler(svc, row, output, conn) -> dict:
+def apply_hauler(svc, row, output, conn, plan=None) -> dict:
     """hauler_due applier：校验候选 → 下发 selector_due。"""
     candidates = hauler.validate(output, row, svc)
     send_workflow(conn, svc, "selector_due", row["payload"]["unit_id"],
@@ -223,7 +228,7 @@ def apply_hauler(svc, row, output, conn) -> dict:
     return {"candidates": len(candidates)}
 
 
-def apply_selector(svc, row, output, conn) -> dict:
+def apply_selector(svc, row, output, conn, plan=None) -> dict:
     """selector_due applier：预检 → 逐决定校验+写入（同一事务，全有或全无）。"""
     selector.validate(output, row, svc)
     decisions = output.get("decisions")
@@ -233,6 +238,9 @@ def apply_selector(svc, row, output, conn) -> dict:
             != list(range(len(candidates)))):
         raise ValueError("Selector must return exactly one decision per candidate")
     uid = row["payload"]["unit_id"]
+    prepared = (plan or {}).get("events") or []
+    prepared_vecs = (plan or {}).get("vectors") or []
+    reuse = bool(prepared) and len(prepared) == len(candidates)
     outcomes = []
     for d in decisions:
         idx, action = d["candidate_index"], d.get("action")
@@ -245,10 +253,24 @@ def apply_selector(svc, row, output, conn) -> dict:
         # The selector cannot widen a source boundary established by its parent.
         hauler.validate_sources(svc, [c], uid)
         # Treat even model-produced recommendations as untrusted input.
-        ev, _ = svc._validate_proposal(c, None)
+        # prepare_effect 已在锁外静态校验并预计算向量：对齐时复用，不重算。
+        if reuse:
+            ev, _ = prepared[idx], None
+        else:
+            ev, _ = svc._validate_proposal(c, None)
         ev.origin = "agent"
         target = d.get("target_id")
         old = svc.engine.mems.get(target) if type(target) is int else None
+        # 入事务复核目标邮戳（N08）：prepare 与事务之间目标被并发推进则
+        # 整批拒绝重判，不沿旧 id 套新对象。
+        if reuse and plan.get("targets"):
+            pt = plan["targets"][idx] if idx < len(plan["targets"]) else None
+            if pt and pt.get("target_id") is not None and pt["target_id"] == target and old is not None:
+                stamp = [old.superseded_by, old.aggregated_into, old.last_seen]
+                if pt.get("stamps") is not None and pt["stamps"] != stamp:
+                    raise ValueError(
+                        f"selector target {target} drifted since prepare; "
+                        "batch rejected for re-judgement")
         # Exact re-extraction from overlapping windows cannot yield a second
         # identical memory even when the model misclassifies it as CREATE.
         if action == "CREATE":
@@ -286,7 +308,8 @@ def apply_selector(svc, row, output, conn) -> dict:
             old.pending_review = True
             outcomes.append({"index": idx, "action": action, "target_id": old.id})
             continue
-        ids = svc.engine.propose([ev], svc._t)
+        vec = prepared_vecs[idx] if reuse and idx < len(prepared_vecs) else None
+        ids = svc.engine.propose([ev], svc._t, vectors=[vec] if vec is not None else None)
         if action == "UPDATE" and ids:
             svc.engine.add_tension(ids[0], old.id, svc._t)
             svc.engine.submit_verdicts([(ids[0], old.id, "update")], svc._t)
@@ -297,21 +320,56 @@ def apply_selector(svc, row, output, conn) -> dict:
 
 
 def prepare_effect(svc, row: dict) -> dict:
-    """事务前效果计划（N08）：静态校验与向量预计算（锁外执行）。"""
+    """事务前效果计划（N08/§2.5）：静态校验与向量预计算在锁外完成。
+
+    - selector_due：候选逐条静态校验为已验证 Event；正文批量 embed（一次
+      调用、带 embedding_key）；ready 产物存在时记录目标邮戳与动作计划。
+    - maintenance_due：reflection 正文预计算单条向量（产物已冻结，正文
+      一致才可复用，防串档）。
+    - 其他 kind：空计划（无向量可预计算）。
+    embedding 失败没有内存效果；计划入事务后复核目标邮戳/lease/revision，
+    漂移整批拒绝重判。
+    """
     kind = row.get("kind", "")
     payload = row.get("payload", {})
-    events = []
-    vectors = []
-    targets = []
-    actions = []
+    result = row.get("result")
+    events: list = []
+    vectors: list = []
+    targets: list = []
+    actions: list = []
     expected_revision = svc._checkpoint_revision
     if kind == "selector_due":
         candidates = payload.get("candidates", [])
         for c in candidates:
             ev, _ = svc._validate_proposal(c, None)
             events.append(ev)
-            if hasattr(svc, "embedder") and svc.embedder is not None:
-                vectors.append(svc.embedder.embed(ev.text))
+        if events:
+            keys = [svc.semantics.embedding_key(e.belief_id, e.value)
+                    for e in events]
+            batch = svc.emb.embed([e.text for e in events], keys=keys)
+            vectors = [batch[i] for i in range(len(events))]
+        if isinstance(result, dict):
+            for d in result.get("decisions", []):
+                if not isinstance(d, dict):
+                    targets.append(None)
+                    actions.append(None)
+                    continue
+                actions.append(d.get("action"))
+                tid = d.get("target_id")
+                old = (svc.engine.mems.get(tid)
+                       if type(tid) is int and type(tid) is not bool else None)
+                targets.append({"target_id": tid,
+                                "stamps": ([old.superseded_by, old.aggregated_into,
+                                            old.last_seen]
+                                           if old is not None else None)}
+                               if old is not None else {"target_id": tid, "stamps": None})
+    elif kind == "maintenance_due" and isinstance(result, dict) \
+            and isinstance(result.get("event"), dict):
+        event = result["event"]
+        ev = Event(**event)
+        events.append(event)
+        key = svc.semantics.embedding_key(ev.belief_id, ev.value)
+        vectors.append(svc.emb.embed([ev.text], keys=[key])[0])
     return {
         "events": events,
         "vectors": vectors,
@@ -321,7 +379,7 @@ def prepare_effect(svc, row: dict) -> dict:
     }
 
 
-def apply_reviewer(svc, row, output, conn) -> dict:
+def apply_reviewer(svc, row, output, conn, plan=None) -> dict:
     """reviewer_due applier：预检 → 规则反馈/新规则/修复交接写入（同一事务）。"""
     bundle = reviewer.validate(output, row, svc)
     for rr in bundle["rule_reviews"]:

@@ -207,12 +207,13 @@ class MemoryEngine:
             n += 1
         return n
 
-    def add_reflection(self, event: Event, derived_from, t: int) -> Memory:
+    def add_reflection(self, event: Event, derived_from, t: int,
+                       vector=None) -> Memory:
         """操作面：worker 回报 consolidation 产物（reflection 记忆入库）。
-        derived_from 为源记忆 id 列表。"""
+        derived_from 为源记忆 id 列表；vector 为 prepare_effect 预计算值。"""
         chosen = sorted((self.mems[i] for i in derived_from
                          if i in self.mems), key=lambda m: (m.birth, m.id))
-        return consolidation.admit_reflection(self, event, chosen, t)
+        return consolidation.admit_reflection(self, event, chosen, t, vector=vector)
 
     def drain_signals(self) -> list:
         """worker 拉取待处理信号（清空队列）。"""
@@ -274,15 +275,16 @@ class MemoryEngine:
         self.signals.emit("extract_due", payload, t,
                           key=f"unit:{int(unit_id)}", merge=merge)
 
-    def propose(self, events: list[Event], t: int) -> list[int]:
+    def propose(self, events: list[Event], t: int, vectors=None) -> list[int]:
         """操作面：agent 提议的记忆入库。与 observe 走同一条 ingest 回路
         （同样 dedup、同样进 C 池、同样动力学）——提议不享有任何捷径。
-        返回本次真正新建的 memory id（verbatim 命中已有条目的不在其中）。"""
+        vectors 为 prepare_effect 预计算值（§2.5）。返回本次真正新建的
+        memory id（verbatim 命中已有条目的不在其中）。"""
         for ev in events:
             if ev.origin == "passive":
                 raise ValueError("propose 的 Event 必须标明非 passive 的 origin")
         before = self._next_id
-        ingest.run_ingest(self, events, t)
+        ingest.run_ingest(self, events, t, vectors=vectors)
         return list(range(before, self._next_id))
 
     # ---- 遥测 ----
