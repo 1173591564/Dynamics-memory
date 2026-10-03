@@ -66,4 +66,6 @@ def test_load_env_key_reads_project_dotenv(tmp_path, monkeypatch):
 
 def test_load_env_key_missing_is_none(tmp_path, monkeypatch):
     monkeypatch.delenv("ZAI_API_KEY", raising=False)
+    monkeypatch.setattr("hybrid_memory.config.__file__",
+                        str(tmp_path / "pkg" / "config.py"))
     assert load_env_key(tmp_path) is None
