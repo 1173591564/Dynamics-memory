@@ -14796,7 +14796,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`tests/memory_bridge.test.ts`（当前路径）。
 - 模块输入：fake HTTP/Bun/spy 与临时项目。
 - 模块输出：插件行为断言；过滤用例不得冒充完整通过。
-- 源校验：`63b67dd551e3ce4ab4639a944d2305bd58f1aa07614f4e0536ee5df0f77486a0`。
+- 源校验：`0c259306e2f86f30770068145e78ed9f91c2475e03ae23a449630fbad115ed08`。
 - 导出/输入依赖：TS 具名 arrow/hook/tool 与参数登记；匿名映射/spy 归其父入口
 
 ### `tests/memory_bridge.test.ts::hooks`

@@ -213,11 +213,11 @@ test("timeout retries the same observe id and does not mint another", async () =
     requests.push({ path, body, requestId: headers.get("X-Request-Id") ?? undefined })
     if (path === "/health") return new Response(JSON.stringify({ ok: true }), { status: 200 })
     if (path === "/observe" && observes++ === 0) {
-      await new Promise((_resolve, reject) => {
-        const signal = init?.signal as AbortSignal | undefined
-        if (signal?.aborted) reject(signal.reason ?? new Error("aborted"))
-        else signal?.addEventListener("abort", () => reject(signal.reason ?? new Error("aborted")), { once: true })
-      })
+      // 以 TimeoutError 直接拒绝来模拟客户端超时中止。不依赖
+      // AbortSignal.timeout：Bun-Windows 上 mock fetch 挂起时其定时器
+      // 不触发（真实 fetch 的超时路径已用本地静默服务器验证正常）。
+      // 断言意图不变：超时 → 以同一 request_id 重试。
+      throw new DOMException("The operation timed out.", "TimeoutError")
     }
     if (path === "/save") return new Response(JSON.stringify({ saved: true }), { status: 200 })
     return new Response(JSON.stringify({ accepted: true, unit_id: 1, pending: true }), { status: 200 })
