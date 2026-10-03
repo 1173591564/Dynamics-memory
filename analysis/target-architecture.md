@@ -713,6 +713,26 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
   验证：`tests/unit/test_sem_exhaustion.py` 5 条（先红后绿：模型 5 次耗尽 dead、
   应用 5 次耗尽 dead 保留产物、租约过期 5 轮计数不重置最终 dead、INV=2/3、
   退避有界）；characterization 快照 FREEZE_CHAR=1 重冻；全量 485 passed。
+- **N44 OpenCode 文件通道落地（P0-2，修 §10.4 文件通道项 / §3.7）**：
+  决定：run 命令形状改为 `opencode run --pure --agent <role> --format json
+  '<短协议指令>' --file <payload.json>`——短协议指令（PROTOCOL_INSTRUCTION 常量）
+  是位置参数，payload 全量经 --file 私有临时文件传递（mkstemp + fchmod 0600 +
+  UTF-8 + finally unlink，不进 argv——Windows 40k argv 已复现崩溃，无长 argv
+  回退）；子进程环境继承父环境，PYTHONPATH 用 os.pathsep 拼接；
+  verify_channel() 能力探测（run --help 输出须含 --file），bootstrap 在 serve
+  之前调用，缺失即 Fatal 拒绝启动（不进 HTTP）。
+  理由：§3.7 明确要求该命令形状与"不支持该通道的版本拒绝启动"；旧实现把
+  指令+payload 全塞文件、且 NamedTemporaryFile 系统临时目录权限非 0600。
+  被否决备选：保留全量进文件的旧形状（指令应在 argv，代理加载失败时无从
+  分辨）；探测缺失时回退 argv 传递（40k 崩溃路径，明确禁止）；探测在 serve
+  之后（缺通道的进程会先暴露 HTTP 再死）。
+  影响符号：`agents/opencode.py::OpenCodeRunner.run/verify_channel/_spawn_argv/
+  PROTOCOL_INSTRUCTION`、`transport/bootstrap.py::main`（serve 前探测）。
+  验证：`tests/unit/test_opencode_file_channel.py` 4 条（先红后绿：fake CLI
+  观测 argv 形状/文件内容= payload JSON/0600/用后删除/环境继承；无 --file 的
+  CLI → verify_channel Fatal；端到端子进程：缺通道 CLI → bootstrap 非零退出
+  且报错含 --file）。真 CLI 行为未验证（沙箱无 opencode），manual_opencode_smoke
+  保留为真实环境验证入口。全量 489 passed。
 
 ### 9.1 旧目标条目的最终去向
 

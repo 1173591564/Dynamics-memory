@@ -307,7 +307,16 @@ SYMBOL_OVERRIDES = {
     "hybrid_memory/dispatch/worker.py::run_semantic_tasks": (
         "语义任务阶段适配", "svc 与 limit", "judged/resolved/credited/reflected/thin/recog_fail/errors", "目标无独立线程，统一 due/quota/policy", "单任务失败不影响整批；fault 即停"),
     "hybrid_memory/agents/opencode.py::OpenCodeRunner.run": (
-        "真实角色调用", "name、封存 payload", "已解析 JSON 对象", "隔离 CLI、UTF-8、超时、JSONL 文本提取", "CLI/超时/协议错误显式；不得 log 原文与凭据"),
+        "真实角色调用（文件通道）", "name、封存 payload",
+        "已解析 JSON 对象",
+        "短协议指令为位置参数；payload 经 --file 私有 0600 UTF-8 JSON 临时文件（用后删除，不进 argv）；PYTHONPATH 用 os.pathsep 且继承父环境",
+        "CLI/超时/协议错误显式；不得 log 原文与凭据；不回退超长 argv"),
+    "hybrid_memory/agents/opencode.py::OpenCodeRunner.verify_channel": (
+        "文件通道能力探测（§3.7）", "无",
+        "True 或抛 Fatal",
+        "opencode run --help 输出含 --file 才算有通道；bootstrap 在 serve 前调用",
+        "缺失即拒绝启动，不回退超长 argv；探测不证明 provider/模型质量"),
+    "hybrid_memory/agents/opencode.py::PROTOCOL_INSTRUCTION": ("保留", "短协议指令常量（位置参数，§3.7/N44）"),
     "hybrid_memory/agents/payload.py::seal_context": (
         "封存一次模型调用的输入上下文",
         "kind、build_payload 产物、快照 revision",

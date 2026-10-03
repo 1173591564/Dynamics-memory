@@ -11,7 +11,13 @@ from pathlib import Path
 import shutil
 import subprocess
 
+from ..errors import Fatal
 from .protocol import AgentProtocolError, AgentTimeout
+
+# §3.7：短协议指令作为位置 message 参数；payload 走 --file 私有临时文件。
+PROTOCOL_INSTRUCTION = (
+    "Process this protocol message. Return exactly one JSON object. "
+    "Never claim to have read a source absent from the payload.")
 
 
 class OpenCodeRunner:
@@ -26,6 +32,33 @@ class OpenCodeRunner:
     def available(self) -> bool:
         return shutil.which(self.executable) is not None
 
+    def _spawn_argv(self, argv: list[str]) -> list[str]:
+        """实际执行的完整命令（executable 解析点；测试用子类注入包装）。"""
+        return [self.executable] + argv
+
+    def verify_channel(self) -> bool:
+        """能力探测（§3.7）：CLI 必须支持 --file 附件通道。
+
+        探测只证明通道存在，不证明 provider/模型质量。缺失即拒绝启动
+        （bootstrap 转 Fatal），不回退超长 argv（Windows 40k 字符已复现
+        崩溃）。help 输出缺失/命令失败都视为无通道。
+        """
+        if not self.available():
+            raise Fatal(f"OpenCode CLI not installed: {self.executable}")
+        try:
+            done = subprocess.run(
+                self._spawn_argv(["run", "--help"]),
+                cwd=self.agent_root, capture_output=True, text=True,
+                stdin=subprocess.DEVNULL, timeout=30, check=False)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise Fatal(f"OpenCode channel probe failed: {exc}") from exc
+        if done.returncode or "--file" not in (done.stdout + done.stderr):
+            raise Fatal(
+                f"OpenCode CLI {self.executable!r} lacks the --file attachment "
+                "channel required by \u00a73.7; refusing to start (no long-argv "
+                "fallback)")
+        return True
+
     def __call__(self, name: str, payload: dict) -> dict:
         return self.run(name, payload)
 
@@ -34,23 +67,24 @@ class OpenCodeRunner:
             raise ValueError("unknown agent")
         if not shutil.which(self.executable):
             raise RuntimeError(f"OpenCode CLI not installed: {self.executable}")
-        prompt = ("Process this protocol message. Return exactly one JSON object. "
-                  "Never claim to have read a source absent from the payload.\n"
-                  + json.dumps(payload, ensure_ascii=False, sort_keys=True))
-        env = dict(os.environ, DYNAMICS_MEMORY_INTERNAL_AGENT="1")
         # --pure loads local agent definitions but skips external plugins;
         # internal env guard is defence in depth against capturing worker text.
-        # Use private UTF-8 temporary file via --file to avoid Windows argv limit.
+        # 短指令是位置参数；payload 经 --file 私有 0600 UTF-8 JSON 临时文件
+        # 传递（不进 argv——Windows argv 上限 40k 字符会崩）。
         import tempfile
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", suffix=".json", delete=False,
-            dir=tempfile.gettempdir()) as tmp:
-            tmp.write(prompt)
-            tmp_path = tmp.name
+        fd, tmp_path = tempfile.mkstemp(prefix="dynmem-payload-", suffix=".json")
         try:
+            os.fchmod(fd, 0o600)              # 私有：payload 只许本进程与 CLI 读
+            with os.fdopen(fd, "w", encoding="utf-8") as tmp:
+                tmp.write(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+            env = dict(os.environ, DYNAMICS_MEMORY_INTERNAL_AGENT="1")
+            # Windows 兼容：PYTHONPATH 用 os.pathsep 拼接并继承父环境
+            env["PYTHONPATH"] = os.pathsep.join(
+                p for p in (str(self.agent_root), env.get("PYTHONPATH")) if p)
             done = subprocess.run(
-                [self.executable, "run", "--pure", "--agent", name,
-                 "--format", "json", "--file", tmp_path],
+                self._spawn_argv(["run", "--pure", "--agent", name,
+                                  "--format", "json", PROTOCOL_INSTRUCTION,
+                                  "--file", tmp_path]),
                 cwd=self.agent_root, env=env, capture_output=True, text=True,
                 stdin=subprocess.DEVNULL,
                 timeout=self.timeout, check=False)

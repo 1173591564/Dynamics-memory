@@ -93,6 +93,13 @@ def main() -> None:
         from ..legacy import warn_once  # P1：§2.11 legacy 启动提示（唯一新增行，行为不变）
         warn_once()
     service.start_unit_recovery()  # 即使 --no-agent，已提交 L0 也必须能恢复
+    # §3.7：trio 管线启用真实 agent 前，先探测 CLI 文件通道；缺失拒绝
+    # 启动（serve 之前，不进 HTTP），不回退超长 argv。
+    trio_runner = None
+    if service.trio_mode and not args.no_agent:
+        from ..agents.opencode import OpenCodeRunner
+        trio_runner = OpenCodeRunner(Path(args.project))
+        trio_runner.verify_channel()
     httpd = serve(service, args.port)
     port = httpd.server_address[1]
 
@@ -117,9 +124,8 @@ def main() -> None:
 
     trio = None
     if service.trio_mode and not args.no_agent:
-        from ..agents.opencode import OpenCodeRunner
         from ..dispatch.worker import DispatchWorker
-        trio = DispatchWorker(service, OpenCodeRunner(Path(args.project)))
+        trio = DispatchWorker(service, trio_runner)
         service.attach_dispatch(trio)
         trio.start()
 

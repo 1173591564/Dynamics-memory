@@ -5,7 +5,7 @@
 > 未在本页出现的函数/模块在下一轮统一删除前，必须先在此登记或列入删除项。
 > 生成命令：`python analysis/check_architecture.py --build-inventory`；核对：同命令不带参数。
 > 固定契约数据（目标路径、显式契约、计划新增、删除条件、模块备注）在 `analysis/architecture_contract.py`。
-> 当前登记 147 个 Python 模块、5 个 TS/角色定义模块、1468 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、139 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
+> 当前登记 148 个 Python 模块、5 个 TS/角色定义模块、1475 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、142 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
 
 每符号给出：功能、输入、输出、作用、错误、目标（目标路径/处置/变更）。
 公开产品符号在固定契约里逐条定义目标；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。
@@ -229,7 +229,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`analysis/architecture_contract.py`（当前路径）。
 - 模块输入：源码语法树与人工冻结的契约数据。
 - 模块输出：无运行逻辑；供检查器渲染逐符号目标与执行覆盖校验。
-- 源校验：`9a526bdea39caec9a8865f8434d463d2dd6f7a25fcb94fae429deea485c59a61`。
+- 源校验：`6ffd1502fd4f2e27c101cc2625919869d5b2965c838e7b85f51c240e4951c45b`。
 - 模块级常量：`TARGET_PATHS`（未登记）；`MODULE_IO`（未登记）；`SYMBOL_OVERRIDES`（未登记）；`PLANNED_MODULES`（未登记）；`PLANNED_SYMBOLS`（未登记）；`DELETIONS`（未登记）；`CONSTANTS`（未登记）；`MODULE_NOTES`（未登记）。
 - 输入/输出：本模块只有常量/数据契约，无独立函数；语义见模块输入/输出与备注。
 - 导出/输入依赖：annotations ← __future__.annotations
@@ -2090,8 +2090,9 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/agents/opencode.py`（当前路径）。
 - 模块输入：角色名、封存 JSON、CLI 路径与超时。
 - 模块输出：严格 JSON 对象；CLI 缺失/超时/坏输出显式失败，不回退假模型。
-- 源校验：`c5e4d46d442c797163b21e3d97f8a2a822d35552e7fc0a6f35ce921dfc8067c1`。
+- 源校验：`59991f25f6ab2159c29c20d8bb3590c33f9141db31e993ee1fe6521862ad4010`。
 - 模块备注：目标：payload 经私有 UTF-8 临时文件以 --file 附件传递；不支持该通道的 CLI 拒绝启动，不回退超长 argv；用后清理。
+- 模块级常量：`PROTOCOL_INSTRUCTION`（未登记）。
 
 ### `hybrid_memory/agents/opencode.py::OpenCodeRunner`
 
@@ -2100,7 +2101,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`类型/实例；基类 object`。
 - 作用：字段与方法契约；dataclass 自动生成的方法不另建手写符号。
 - 错误：见构造函数及方法。
-- 目标：`hybrid_memory/agents/opencode.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/agents/opencode.py#L17)。
+- 目标：`hybrid_memory/agents/opencode.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/agents/opencode.py#L23)。
 
 ### `hybrid_memory/agents/opencode.py::OpenCodeRunner.__init__`
 
@@ -2109,7 +2110,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 Path, Path(__file__).resolve, os.environ.get。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/agents/opencode.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/agents/opencode.py#L20)。
+- 目标：`hybrid_memory/agents/opencode.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/agents/opencode.py#L26)。
 
 ### `hybrid_memory/agents/opencode.py::OpenCodeRunner.available`
 
@@ -2118,7 +2119,25 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`bool；shutil.which(self.executable) is not None`。
 - 作用：调用 shutil.which。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/agents/opencode.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/agents/opencode.py#L26)。
+- 目标：`hybrid_memory/agents/opencode.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/agents/opencode.py#L32)。
+
+### `hybrid_memory/agents/opencode.py::OpenCodeRunner._spawn_argv`
+
+- 功能：实际执行的完整命令（executable 解析点；测试用子类注入包装）。
+- 输入：`self, argv: list[str]`。
+- 输出：`list[str]；[self.executable] + argv`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`hybrid_memory/agents/opencode.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/agents/opencode.py#L35)。
+
+### `hybrid_memory/agents/opencode.py::OpenCodeRunner.verify_channel`
+
+- 功能：文件通道能力探测（§3.7）
+- 输入：`无`。
+- 输出：`True 或抛 Fatal`。
+- 作用：opencode run --help 输出含 --file 才算有通道；bootstrap 在 serve 前调用。
+- 错误：缺失即拒绝启动，不回退超长 argv；探测不证明 provider/模型质量。
+- 目标：`hybrid_memory/agents/opencode.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/agents/opencode.py#L39)。
 
 ### `hybrid_memory/agents/opencode.py::OpenCodeRunner.__call__`
 
@@ -2127,16 +2146,16 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`dict；self.run(name, payload)`。
 - 作用：调用 self.run。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/agents/opencode.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/agents/opencode.py#L29)。
+- 目标：`hybrid_memory/agents/opencode.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/agents/opencode.py#L62)。
 
 ### `hybrid_memory/agents/opencode.py::OpenCodeRunner.run`
 
-- 功能：真实角色调用
+- 功能：真实角色调用（文件通道）
 - 输入：`name、封存 payload`。
 - 输出：`已解析 JSON 对象`。
-- 作用：隔离 CLI、UTF-8、超时、JSONL 文本提取。
-- 错误：CLI/超时/协议错误显式；不得 log 原文与凭据。
-- 目标：`hybrid_memory/agents/opencode.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/agents/opencode.py#L32)。
+- 作用：短协议指令为位置参数；payload 经 --file 私有 0600 UTF-8 JSON 临时文件（用后删除，不进 argv）；PYTHONPATH 用 os.pathsep 且继承父环境。
+- 错误：CLI/超时/协议错误显式；不得 log 原文与凭据；不回退超长 argv。
+- 目标：`hybrid_memory/agents/opencode.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/agents/opencode.py#L65)。
 
 ### `hybrid_memory/agents/opencode.py::OpenCodeRunner._parse_text`
 
@@ -2145,7 +2164,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`dict；obj`。
 - 作用：调用 AgentProtocolError, isinstance, json.loads, str, text.strip。
 - 错误：异常 AgentProtocolError('agent result must be a JSON object'), AgentProtocolError(f'OpenCode {name} returned no final text'), AgentProtocolError(str(exc))。
-- 目标：`hybrid_memory/agents/opencode.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/agents/opencode.py#L75)。
+- 目标：`hybrid_memory/agents/opencode.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/agents/opencode.py#L109)。
 
 ### `hybrid_memory/agents/opencode.py::_event`
 
@@ -2154,7 +2173,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；()；(obj,) if isinstance(obj, dict) else ()`。
 - 作用：调用 isinstance, json.loads。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/agents/opencode.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/agents/opencode.py#L87)。
+- 目标：`hybrid_memory/agents/opencode.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/agents/opencode.py#L121)。
 
 ## `hybrid_memory/agents/payload.py`
 
@@ -6858,7 +6877,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/transport/bootstrap.py`（当前路径）。
 - 模块输入：argv/env、项目目录与状态目录。
 - 模块输出：组装好的 MemoryService、HTTP 进程与真停机收尾；唯一组合根。
-- 源校验：`82dcc6c54c445430dffd75323f60cfa85781e38c637dc78c6d195449c5a4c784`。
+- 源校验：`2385acdbc09635c7ed0197ec628d1f683281c09aae9be9292c0b33e63b680caa`。
 
 ### `hybrid_memory/transport/bootstrap.py::build_default_service`
 
@@ -6894,7 +6913,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 SystemExit。
 - 错误：异常 SystemExit(0)。
-- 目标：`hybrid_memory/transport/bootstrap.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/transport/bootstrap.py#L134)。
+- 目标：`hybrid_memory/transport/bootstrap.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/transport/bootstrap.py#L140)。
 
 ## `hybrid_memory/transport/dto.py`
 
@@ -13669,6 +13688,61 @@ vendored `mvp/agent/` 完全排除。
 - 作用：调用 _imports_of, agents.is_dir, agents.rglob, i.startswith, sorted。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
 - 目标：`tests/unit/test_import_boundaries.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_import_boundaries.py#L184)。
+
+## `tests/unit/test_opencode_file_channel.py`
+
+- 模块功能：行为、恢复、权限及协议回归；不得按产品死代码删除。
+- 设计归属：验收资产；处置：保留迁移。
+- 目标路径：`tests/unit/test_opencode_file_channel.py`（当前路径）。
+- 模块输入：被测对象与 pytest 夹具。
+- 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
+- 源校验：`0a0ca4936751ded231be56f01226aafd6daf2df4d12c302dbaaf10d19b47ade2`。
+- 模块级常量：`FAKE_CLI`（未登记）；`FAKE_CLI_NO_FILE`（未登记）。
+
+### `tests/unit/test_opencode_file_channel.py::_make_cli`
+
+- 功能：测试场景/夹具/假实现：_make_cli；输入输出见本项，生产不调用
+- 输入：`tmp_path, body, name`。
+- 输出：`未注解；p`。
+- 作用：调用 p.chmod, p.write_text。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_opencode_file_channel.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_opencode_file_channel.py#L64)。
+
+### `tests/unit/test_opencode_file_channel.py::test_file_channel_shape_and_permissions`
+
+- 功能：行为断言：file_channel_shape_and_permissions；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path, monkeypatch`。
+- 输出：`未注解；None`。
+- 作用：调用 ' '.join, OpenCodeRunner, Path, Path(argv[file_idx]).exists, _make_cli, argv.index, data['env']['PYTHONPATH'].split, json.loads, monkeypatch.setenv, obs.read_text, runner.run, str。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_opencode_file_channel.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_opencode_file_channel.py#L71)。
+
+### `tests/unit/test_opencode_file_channel.py::test_verify_channel_accepts_file_capable_cli`
+
+- 功能：行为断言：verify_channel_accepts_file_capable_cli；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path, monkeypatch`。
+- 输出：`未注解；None`。
+- 作用：调用 OpenCodeRunner, _make_cli, monkeypatch.setenv, runner.verify_channel, str。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_opencode_file_channel.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_opencode_file_channel.py#L104)。
+
+### `tests/unit/test_opencode_file_channel.py::test_verify_channel_refuses_cli_without_file`
+
+- 功能：行为断言：verify_channel_refuses_cli_without_file；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path, monkeypatch`。
+- 输出：`未注解；None`。
+- 作用：调用 OpenCodeRunner, _make_cli, monkeypatch.setenv, pytest.raises, runner.verify_channel, str。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_opencode_file_channel.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_opencode_file_channel.py#L112)。
+
+### `tests/unit/test_opencode_file_channel.py::test_bootstrap_refuses_startup_without_channel`
+
+- 功能：端到端：CLI 缺 --file 通道 → bootstrap.main 在 serve 前 Fatal。
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 (proj / '.env').write_text, Path, Path(__file__).resolve, _make_cli, os.environ.get, proj.mkdir, str, subprocess.run。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_opencode_file_channel.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_opencode_file_channel.py#L121)。
 
 ## `tests/unit/test_prepare_effect_wiring.py`
 
