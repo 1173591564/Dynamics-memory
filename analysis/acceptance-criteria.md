@@ -93,5 +93,7 @@
 | PENDING-06 | 第二项目端口冲突（固定 17872） | BASELINE #5 | 端口分配方案 ADR |
 | PENDING-07 | L0 未脱敏进 LLM（log_search snippet 含原文） | BASELINE #2 | 脱敏层设计（注意：修了会影响调查员能力，需评测） |
 | PENDING-08 | L3 真实验证未做 | `validation=unverified`（H34） | 真实 provider + 人工抽检 |
+| PENDING-09 | checkpoint 全量 pickle O(N)（500 条≈301 KB/次） | design-debts.md §2 实测 | 触发线到 → 分段 pickle |
+| PENDING-10 | pin 占用无指标/告警（503 刹车不可预期） | design-debts.md §3.2 因果链 | health/stats 暴露 pin 占用 + 告警 |
 
 > `acceptance_check.py` 每次运行必须打印本表（H42）。消项走正常 PR，更新本表。

@@ -531,7 +531,7 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 - **N32 调用上下文与效果准备**：`store_call_context`、`prepare_effect` 已实现；**均未接线**；`prepare_effect` 的 `svc.embedder` 属性不存在（服务为 `svc.emb`），向量分支恒空。
 - **N33 清理收敛**：`clamp`、`cited_text`、`_has_int_gt` 删除完成，DELETIONS 已同步；不含其他行为变更。
 - **N34 模块级常量登记**：产品代码模块级常量/别名进入 `CONSTANTS` 逐条登记，检查器强制（未登记/失效/缺理由即红）；测试与评测常量随所属模块（TIDE 冻结）。本轮登记 69 条，判定范围＝顶层 Assign/AnnAssign 且全大写或 `_` 开头（dunder 除外）。
-- **N46 工程规范章程采纳（含已声明例外与计划错误码）**（编号重排：原为 N35，因与收尾轮 N35–N45 撞号，合并时重排为 N46）：采纳 [`engineering-charter.md`](engineering-charter.md)（14 条 + 五维 DoD + 门禁链）为开发过程标准。**已声明例外**（属契约认可行为，不得当作违规去"修"）：① `thin_recall` 易失遥测可丢但必须计数（N02）；② 裸引擎 `SignalWorker` 内存队列丢最旧、无 SQLite 死信（N26 兼容形态）；③ Legacy 调查兼容上限（INV 模型 2/应用 3）与 `skip_recent` TTL；④ §10.4 跟踪的未接线/未兑现项允许暂时存在，但不得长期滞留；⑤ 章程第 1 条约束生产代码（`hybrid_memory/**`），测试/评测资产受"保留登记"约束而非调用链约束；⑥ shim 仅允许无逻辑转发（第 3 条）。**计划错误码**（实现时必须进 `_STATUS`，并配"代码中出现的所有 code 均有映射"的回归）：`capacity_backpressure`→503（容量背压，`plan_capacity` 拒收路径）、`already_credited`→409（feedback 重复回执；插件已按此对齐，`test_http_feedback_retry_and_already_credited_are_distinct` 需同步断言 code）。**门禁边界**：Bun 超时用例已修复为 Windows 全量通过（`AbortSignal.timeout` 对 mock fetch 不触发属 Bun-Windows 运行时怪癖；真实 fetch 路径用本地静默服务器验证）；bench smoke（`--full`）仍属未验证项。门禁只规定"提交前必须跑什么"，不授权 AI 自宣布完成——该判断属于人。
+- **N46 工程规范章程采纳（含已声明例外与计划错误码）**（编号重排：原为 N35，因与收尾轮 N35–N45 撞号，合并时重排为 N46）：采纳 [`engineering-charter.md`](engineering-charter.md)（14 条 + 五维 DoD + 门禁链）为开发过程标准。**已声明例外**（属契约认可行为，不得当作违规去"修"）：① `thin_recall` 易失遥测可丢但必须计数（N02）；② 裸引擎 `SignalWorker` 内存队列丢最旧、无 SQLite 死信（N26 兼容形态）；③ Legacy 调查兼容上限（INV 模型 2/应用 3）与 `skip_recent` TTL；④ §10.4 跟踪的未接线/未兑现项允许暂时存在，但不得长期滞留；⑤ 章程第 1 条约束生产代码（`hybrid_memory/**`），测试/评测资产受"保留登记"约束而非调用链约束；⑥ shim 仅允许无逻辑转发（第 3 条）。**计划错误码**（实现时必须进 `_STATUS`，并配"代码中出现的所有 code 均有映射"的回归）：`capacity_backpressure`→503（容量背压，`plan_capacity` 拒收路径）、`already_credited`→409（feedback 重复回执；插件已按此对齐，`test_http_feedback_retry_and_already_credited_are_distinct` 需同步断言 code）。**追记（收尾轮后）**：两码已实现——`errors.py::_STATUS` 含 `capacity_backpressure:503` 与 `already_credited:409`，`tests/unit/test_http_codes.py` 按 code 断言；"计划"表述仅为采纳时点的登记。**门禁边界**：Bun 超时用例已修复为 Windows 全量通过（`AbortSignal.timeout` 对 mock fetch 不触发属 Bun-Windows 运行时怪癖；真实 fetch 路径用本地静默服务器验证）；bench smoke（`--full`）仍属未验证项。门禁只规定"提交前必须跑什么"，不授权 AI 自宣布完成——该判断属于人。
 
 未兑现契约与未接线清单见 §10.4；N29–N33 的"已完成"式表述作废，以本节如实状态为准。
 
@@ -758,7 +758,7 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
   isolation_level=None + 回滚完整 + 无悬挂事务、cache 高版本拒绝、
   双 DDL 消除 grep 断言）；全量 497 passed。
 
-- **N46 propose 直写路径效果事务化（修 §5.2"Legacy 直写也立即 checkpoint"
+- **N47 propose 直写路径效果事务化（编号重排：原登记 N46，与章程采纳重排后的 N46 撞号，合并时按后到原则重排为 N47）——propose 直写路径效果事务化（修 §5.2"Legacy 直写也立即 checkpoint"
   遗留缺口 / §4.2 收口 / I5 唯一入口）**：
   决定：Legacy 直写 propose（ctx.task_id 为空）不再锁内裸改引擎——先整批
   静态校验（validate_proposal + supersedes 因果边界），合法项在
@@ -824,10 +824,10 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 | `store_call_context` | `DispatchWorker.process_once`/`run_semantic_tasks` 模型调用前 | 封存窗口/规则/摘要+revision；校验对照封存口径（N38/N10） |
 | `prepare_effect` | worker 两路径锁外预计算，计划穿进事务 | 三硬伤修复+向量只 embed 一次+目标邮戳复核（N36/N08） |
 | `SemanticsProvider` | `build_default_service` 真实装配 + `health_view` | 写路径委托+缺失语义兼容+worker 解包+降级可观测（N39） |
-| `propose` 直写路径 | `effects.effect_transaction`（Legacy 直写原子提交） | 立即 checkpoint+深回滚+§4.2 收口，全 pin 背压；任务内腿按效果深度分流（N46） |
+| `propose` 直写路径 | `effects.effect_transaction`（Legacy 直写原子提交） | 立即 checkpoint+深回滚+§4.2 收口，全 pin 背压；任务内腿按效果深度分流（N47） |
 
 **未兑现契约（收尾轮已清，见 §9.3）**：N01 未知 `MEMORY_PIPELINE` 拒绝启动（N40）；N06 SEM 模型上限与耗尽 dead（N43）；OpenCode 文件通道形状与缺通道拒绝启动（N44，真实 CLI 行为未验证）；`store/schema.py` 接入三 Store（N45）；HTTP 稳定 `code` 全覆盖（N42）；`assert_consumers` 真 callable 检查与显式外部循环所有权（N42）。五处孤岛符号接线（plan_capacity 背压 N35、conflict_ledger N37、store_call_context N38、prepare_effect N36、SemanticsProvider N39）与 canonical 导入切换（N41）同轮完成。
 
-**声明与事实不符已修正**：N29–N33 由 decision-register 移入本文 §9.2 并改为如实状态；附录计数以重新生成为准（N46 后：156 模块 / 1500 符号）。
+**声明与事实不符已修正**：N29–N33 由 decision-register 移入本文 §9.2 并改为如实状态；附录计数以重新生成为准（N47 后：156 模块 / 1500 符号）。
 
-**收尾轮执行记录**：五处接线（N35–N39）→ N01/N06/文件通道/schema/HTTP code/消费者自检（N40–N45）→ canonical 导入（N41）→ 三门重跑。测试数字：基线 pytest 437 passed（Linux 实测，非任务书所写 427+1）；收尾轮后 500 passed（437 基线 + 63 新增回归）；checker 0 failures；acceptance 21 PASS/2 SKIP/0 FAIL（bun 与真实 opencode CLI 沙箱未装，记未验证）。**Windows 本机复测（合并后）**：pytest 499 passed/1 skipped（Linux 500/0 与 Windows 499/1 差同一平台条件用例）；checker 155 模块/1494 符号/0 failures；acceptance 22 PASS/1 SKIP/0 FAIL（A1-bun 由 SKIP 转 PASS：26 例全过）；bun 超时用例在 Windows 修复——mock fetch 挂起时 `AbortSignal.timeout` 定时器不触发属 Bun-Windows 运行时怪癖（真实 fetch 对本地静默服务器验证正常），mock 改为直接抛 `TimeoutError`；真实 opencode CLI 与 bench smoke（`--full`）仍未验证。 **追记（N46，Linux，合并 9205601 后复跑）**：直写 propose 效果事务化后 504 passed（500 + 4 新增回归）、checker 156 模块/1500 符号 0 failures、acceptance --full 22 PASS/1 SKIP/0 FAIL——A3-bench-smoke 由 SKIP 转 PASS（mock LLM 下 bench 跑通）；A2-bun 沙箱无 bun（Windows 侧 26 例已全过）。
+**收尾轮执行记录**：五处接线（N35–N39）→ N01/N06/文件通道/schema/HTTP code/消费者自检（N40–N45）→ canonical 导入（N41）→ 三门重跑。测试数字：基线 pytest 437 passed（Linux 实测，非任务书所写 427+1）；收尾轮后 500 passed（437 基线 + 63 新增回归）；checker 0 failures；acceptance 21 PASS/2 SKIP/0 FAIL（bun 与真实 opencode CLI 沙箱未装，记未验证）。**Windows 本机复测（合并后）**：pytest 499 passed/1 skipped（Linux 500/0 与 Windows 499/1 差同一平台条件用例）；checker 155 模块/1494 符号/0 failures；acceptance 22 PASS/1 SKIP/0 FAIL（A1-bun 由 SKIP 转 PASS：26 例全过）；bun 超时用例在 Windows 修复——mock fetch 挂起时 `AbortSignal.timeout` 定时器不触发属 Bun-Windows 运行时怪癖（真实 fetch 对本地静默服务器验证正常），mock 改为直接抛 `TimeoutError`；真实 opencode CLI 与 bench smoke（`--full`）仍未验证。 **追记（N47，Linux，合并 9205601 后复跑）**：直写 propose 效果事务化后 504 passed（500 + 4 新增回归）、checker 156 模块/1500 符号 0 failures、acceptance --full 22 PASS/1 SKIP/0 FAIL——A3-bench-smoke 由 SKIP 转 PASS（mock LLM 下 bench 跑通）；A2-bun 沙箱无 bun（Windows 侧 26 例已全过）。

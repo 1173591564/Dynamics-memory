@@ -194,7 +194,7 @@ def propose(svc, proposals: list, *, origin: str = "agent",
             origin = "agent"
 
         t = svc._t
-        # §5.2/N46：Legacy 直写也立即 checkpoint。先整批静态校验，合法项在
+        # §5.2/N47：Legacy 直写也立即 checkpoint。先整批静态校验，合法项在
         # effect_transaction 内原子应用（checkpoint + 深回滚 + 信号收口），
         # 与 resolve/feedback 同一提交语义；§4.2 直写新增同样 commit 前
         # plan_capacity 收口，全 pin 无法收口整批拒收回滚。
@@ -241,7 +241,7 @@ def propose(svc, proposals: list, *, origin: str = "agent",
             """effect_transaction 内腿：整批原子应用+commit 前容量收口。
 
             提交权归 effect_transaction（checkpoint 与回滚同事务，I5 唯一
-            入口）；此处只改内存，不自行落盘（N46）。
+            入口）；此处只改内存，不自行落盘（N47）。
             """
             from ..dispatch.effects import enforce_capacity
             n_accepted, n_ids = 0, []

@@ -1,4 +1,4 @@
-"""propose 直写路径的 checkpoint 与容量收口回归（P0-2 遗留 / §5.2 / N46）。
+"""propose 直写路径的 checkpoint 与容量收口回归（P0-2 遗留 / §5.2 / N47）。
 
 规范 §5.2：propose "Legacy 直写也立即 checkpoint"；§4.2：每种新增在
 commit 前 plan_capacity，全 pin 整批拒收/回滚。旧实现直写路径

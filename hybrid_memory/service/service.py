@@ -142,7 +142,7 @@ class MemoryService:
                   [(sig, sig.payload, sig.t) for sig in q._items])
         revision = self._checkpoint_revision
         # 效果深度：>0 表示外层效果上下文（任务操作/apply_effect）已拥有
-        # checkpoint 与回滚，内层直写只改内存、不再开嵌套事务（N46）。
+        # checkpoint 与回滚，内层直写只改内存、不再开嵌套事务（N47）。
         depth = getattr(self, "_effect_depth", 0) + 1
         self._effect_depth = depth
         try:

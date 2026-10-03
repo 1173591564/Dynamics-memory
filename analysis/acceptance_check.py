@@ -39,6 +39,8 @@ PENDING = [
     ("PENDING-06", "第二项目端口冲突（固定 17872）", "端口分配方案 ADR"),
     ("PENDING-07", "L0 未脱敏进 LLM", "脱敏层设计 + 能力评测"),
     ("PENDING-08", "L3 真实验证未做", "真实 provider + 人工抽检"),
+    ("PENDING-09", "checkpoint 全量 pickle O(N)", "dump_state>2MB 或持续>10效果/s → 分段 pickle（I5 单点接入）"),
+    ("PENDING-10", "pin 占用无指标/告警（503 刹车不可预期）", "health/stats 暴露 pin 占用 + 阈值告警"),
 ]
 
 results: list[tuple[str, str, str]] = []  # (id, VERDICT, detail)

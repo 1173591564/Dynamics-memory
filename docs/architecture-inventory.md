@@ -5187,7 +5187,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/service/operate.py`（当前路径）。
 - 模块输入：Legacy 提议/裁决/诊断/缺失与可信 context。
 - 模块输出：逐条回执、裁决计数与诊断统计；公开直写 Trio 拒绝、Legacy 立即 checkpoint。
-- 源校验：`5a4f8366141a799d0cfa0efa8d5f20abf7979df0ae0ee8919e6b5bbc6593547b`。
+- 源校验：`d4ce441c7bce7e47a03a888b576f70d195db8ae6c6a601f461c0ea9d1fd5b2b3`。
 - 模块级常量：`_SELF_REF_RE`（保留）；`_MAX_PROPOSAL_CHARS`（保留）；`VERDICTS`（保留）；`_MISS_SOURCES`（保留）。
 
 ### `hybrid_memory/service/operate.py::_cited_text`
@@ -5264,7 +5264,7 @@ vendored `mvp/agent/` 完全排除。
 
 ### `hybrid_memory/service/operate.py::propose.mutate`
 
-- 功能：effect_transaction 内腿：整批原子应用+commit 前容量收口。 提交权归 effect_transaction（checkpoint 与回滚同事务，I5 唯一 入口）；此处只改内存，不自行落盘（N46）。
+- 功能：effect_transaction 内腿：整批原子应用+commit 前容量收口。 提交权归 effect_transaction（checkpoint 与回滚同事务，I5 唯一 入口）；此处只改内存，不自行落盘（N47）。
 - 输入：`无参数`。
 - 输出：`未注解；(n_accepted, n_ids)`。
 - 作用：调用 enforce_capacity, n_ids.extend, svc.engine.add_tension, svc.engine.propose, svc.engine.submit_verdicts。
@@ -5424,7 +5424,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/service/service.py`（当前路径）。
 - 模块输入：cfg/embed/semantics/generator/stores 与业务请求。
 - 模块输出：单项目门面回执与锁内状态；不放业务算法、不 import transport。
-- 源校验：`c2940087b376000ca0a818161d1c71ccb8808c59ec15f4497eb2804f7db1ccb5`。
+- 源校验：`5b260505e23d14081485de327f536f77d2606673dc047cb86c35d32cf6d7e7ca`。
 
 ### `hybrid_memory/service/service.py::MemoryService`
 
@@ -8715,7 +8715,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`tests/test_durable_tasks.py`（当前路径）。
 - 模块输入：被测对象与 pytest 夹具。
 - 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
-- 源校验：`2ba9e810f1be739911e8e967fed53a2f6918cbb27763f44097221f1adf395b8c`。
+- 源校验：`03b04618f4b109039c8bf7d0f5ef0fafbab51cd10b7f4f7cb56ed3395ffb32dd`。
 - 模块级常量：`PROPOSAL`（未登记）。
 
 ### `tests/test_durable_tasks.py::_queued`
@@ -10498,7 +10498,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`tests/test_server.py`（当前路径）。
 - 模块输入：被测对象与 pytest 夹具。
 - 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
-- 源校验：`0d485f363ba78a70a066d393612224438c67138b597d7bf37b6886a0c2d6c264`。
+- 源校验：`738252d67d3785c40a4178cc841bb5f8578d66ab354afea8561753e20b458ae8`。
 
 ### `tests/test_server.py::_TableEmbedder`
 
@@ -13994,7 +13994,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`tests/unit/test_propose_checkpoint.py`（当前路径）。
 - 模块输入：被测对象与 pytest 夹具。
 - 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
-- 源校验：`12c673f11f8c2567ecafa90c4d43894bdd6a869185ed09ea5ebe1a14378e1991`。
+- 源校验：`b9a71f7881519a5af878344d56554426bf2050c7734ef9cdb1462f00ac96d338`。
 
 ### `tests/unit/test_propose_checkpoint.py::_pinned_archive`
 

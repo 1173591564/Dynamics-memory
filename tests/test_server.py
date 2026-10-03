@@ -624,7 +624,7 @@ def test_invalid_snapshot_does_not_publish_partially_loaded_memory(tmp_path):
 
     svc = _service(tmp_path, texts=())
     svc.log.add_unit(0, 0, user_text="old_module.py", assistant_text="evidence 部署在 B 服务器")
-    # N46 后 service.propose 当场 durable checkpoint，重启时优先于 state.pkl；
+    # N47 后 service.propose 当场 durable checkpoint，重启时优先于 state.pkl；
     # 本测试验证 state.pkl 的部分加载隔离，故用引擎级写入模拟
     # "只有旧快照、没有 durable checkpoint"的历史库。
     with svc._lock:
