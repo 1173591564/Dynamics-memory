@@ -77,38 +77,70 @@ def decide_human_review(svc, review_id: int, decision: str, capability: str) -> 
         return {"review_id": review_id, "decision": decision, "new_ids": ids}
 
 
+_MAX_LEDGER_CONFLICTS = 200    # 冲突行输出上界（超出标 truncated，不静默截断）
+_MAX_LEDGER_REVIEWS = 512      # 待审行输出上界（对齐 pending 人审 ≤512 的不变量）
+_MAX_LEDGER_AGGREGATES = 200   # 聚合容器+成员输出上界
+
+
 def conflict_ledger(svc, before: int | None = None) -> dict:
-    """冲突统一读模型（N14/N20）：只读汇总 conflicts/tensions/pending_reviews/aggregates/pin_roots/truncated。"""
+    """冲突统一读模型（N14/N20）：只读汇总 conflicts/tensions/pending_reviews/
+    aggregates/pin_roots/truncated，不触发裁决或人审。
+
+    - aggregates＝待裁决聚合容器（pending_review 且 agg_members）及其成员，
+      不是 kind=="reflection"；
+    - 各列表有界，超界置 truncated=True（不静默截断、不隐藏 stale）；
+    - 正文片段 ≤200 字符，不泄超界正文。
+    """
     from ..core.dynamics import pinned_ids
     with svc._lock:
         tensions = [
             (left, right) for left, right in svc.engine.tensions
             if before is None or (left < before and right < before)
         ]
-        conflicts = []
-        for left, right in tensions:
+        tension_rows = [svc.engine.tensions[t] for t in tensions]
+        conflicts, truncated = [], False
+        for (left, right), tension in zip(tensions, tension_rows):
             lm = svc.engine.mems.get(left)
             rm = svc.engine.mems.get(right)
             conflicts.append({
                 "left": left, "right": right,
-                "left_text": lm.text[:200] if lm else "",
-                "right_text": rm.text[:200] if rm else "",
+                "left_text": (lm.text[:200] if lm else ""),
+                "right_text": (rm.text[:200] if rm else ""),
+                "first_seen": tension.first_seen,
+                "observations": tension.observations,
                 "stale": lm is None or rm is None,
             })
-        reviews = []
+            if len(conflicts) >= _MAX_LEDGER_CONFLICTS:
+                truncated = len(tensions) > _MAX_LEDGER_CONFLICTS
+                break
+        if len(tensions) > _MAX_LEDGER_CONFLICTS:
+            truncated = True
+
+        reviews, review_rows = [], []
         for r in svc.tasks.pending_reviews():
             old = svc.engine.mems.get(r["target_id"])
-            reviews.append({
+            review_rows.append({
                 "id": r["id"],
                 "target_id": r["target_id"],
                 "candidate": r["candidate"],
                 "reason": r["reason"],
                 "stale": old is None or old.superseded_by is not None,
             })
-        aggregates = [
-            m.id for m in svc.engine.mems.values()
-            if m.kind == "reflection" and (before is None or m.birth < before)
-        ]
+            if len(review_rows) >= _MAX_LEDGER_REVIEWS:
+                truncated = True
+                break
+        reviews = review_rows
+
+        agg_ids: set[int] = set()
+        for m in svc.engine.mems.values():
+            if m.pending_review and m.agg_members:
+                agg_ids.add(m.id)
+                agg_ids.update(m.agg_members)
+        aggregates = sorted(agg_ids)
+        if len(aggregates) > _MAX_LEDGER_AGGREGATES:
+            aggregates = aggregates[:_MAX_LEDGER_AGGREGATES]
+            truncated = True
+
         pin_roots = sorted(pinned_ids(svc.engine))
         return {
             "conflicts": conflicts,
@@ -116,5 +148,5 @@ def conflict_ledger(svc, before: int | None = None) -> dict:
             "pending_reviews": reviews,
             "aggregates": aggregates,
             "pin_roots": pin_roots,
-            "truncated": False,
+            "truncated": truncated,
         }

@@ -5,7 +5,7 @@
 > 未在本页出现的函数/模块在下一轮统一删除前，必须先在此登记或列入删除项。
 > 生成命令：`python analysis/check_architecture.py --build-inventory`；核对：同命令不带参数。
 > 固定契约数据（目标路径、显式契约、计划新增、删除条件、模块备注）在 `analysis/architecture_contract.py`。
-> 当前登记 142 个 Python 模块、5 个 TS/角色定义模块、1392 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、134 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
+> 当前登记 143 个 Python 模块、5 个 TS/角色定义模块、1400 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、137 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
 
 每符号给出：功能、输入、输出、作用、错误、目标（目标路径/处置/变更）。
 公开产品符号在固定契约里逐条定义目标；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。
@@ -229,7 +229,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`analysis/architecture_contract.py`（当前路径）。
 - 模块输入：源码语法树与人工冻结的契约数据。
 - 模块输出：无运行逻辑；供检查器渲染逐符号目标与执行覆盖校验。
-- 源校验：`473bad60ee71b79cdcf828e76bcb01e1324ca7108c18ea7cc4ad8f20b1a2bfd9`。
+- 源校验：`84388dd52abd428dffc6e233fdc3f96990285fdbc6f273f14def26c86ff05dcc`。
 - 模块级常量：`TARGET_PATHS`（未登记）；`MODULE_IO`（未登记）；`SYMBOL_OVERRIDES`（未登记）；`PLANNED_MODULES`（未登记）；`PLANNED_SYMBOLS`（未登记）；`DELETIONS`（未登记）；`CONSTANTS`（未登记）；`MODULE_NOTES`（未登记）。
 - 输入/输出：本模块只有常量/数据契约，无独立函数；语义见模块输入/输出与备注。
 - 导出/输入依赖：annotations ← __future__.annotations
@@ -5287,7 +5287,8 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/service/review.py`（当前路径）。
 - 模块输入：人审台账、capability 与决策。
 - 模块输出：待审列表、幂等决定与统一冲突台账；退役/变化即 stale。
-- 源校验：`2e685b3ebf15489f9493547290c42b1e4bec8613b2abe4b66a37ad34946baf79`。
+- 源校验：`4375689f8244edfa25d2631f795801e1d8a9d27ec79d90d89237c8a9e911e1a8`。
+- 模块级常量：`_MAX_LEDGER_CONFLICTS`（保留）；`_MAX_LEDGER_REVIEWS`（保留）；`_MAX_LEDGER_AGGREGATES`（保留）。
 
 ### `hybrid_memory/service/review.py::review_token`
 
@@ -5321,9 +5322,9 @@ vendored `mvp/agent/` 完全排除。
 - 功能：冲突统一读模型
 - 输入：`svc 与可选 before`。
 - 输出：`{conflicts,tensions,pending_reviews,aggregates,pin_roots,truncated}`。
-- 作用：只读汇总；不触发裁决或人审。
-- 错误：越界正文不返回；缺失对象标 stale 而非隐藏。
-- 目标：`hybrid_memory/service/review.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/service/review.py#L80)。
+- 作用：只读汇总；不触发裁决或人审；经 tools.conflicts→HTTP /conflicts 接进生产。
+- 错误：越界正文不返回（≤200 字符）；缺失对象标 stale 而非隐藏；超界标 truncated。
+- 目标：`hybrid_memory/service/review.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/service/review.py#L85)。
 
 ## `hybrid_memory/service/service.py`
 
@@ -5773,7 +5774,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/service/tools.py`（当前路径）。
 - 模块输入：查询/实体/分组/IDs、before 与预算。
 - 模块输出：有界片段/时间线/统计/受限原文；不返回超因果界正文。
-- 源校验：`284e5fd793c57f41295fac3a19ce160e3bac8b29fe705de2a72b2386cf091fd8`。
+- 源校验：`777d3c84e1f130daec0e6e24ed317fd1e2710896b1c570b512dd1f7102ca7d40`。
 
 ### `hybrid_memory/service/tools.py::log_search`
 
@@ -5813,10 +5814,10 @@ vendored `mvp/agent/` 完全排除。
 
 ### `hybrid_memory/service/tools.py::conflicts`
 
-- 功能：未决张力读取；目标并入统一 ledger
+- 功能：统一冲突读模型入口：conflict_ledger 唯一数据源；旧字段保持、新增 ledger 字段、正文有界
 - 输入：`svc, *, signal_id: str | None=None`。
-- 输出：`dict；{'conflicts': out, 't': svc._t}`。
-- 作用：调用 out.append, svc._admit, svc._causal_memory_ids, svc._causal_tensions, svc.engine.mems.get, tensions.items。
+- 输出：`dict；{'conflicts': out['conflicts'], 't': svc._t, 'tensions': out['tensions'], 'pending_reviews': out['pending_reviews'], 'aggregates': out['aggregates'], 'pin_roots': out['pin_roots'], 'truncated': out['truncated']}`。
+- 作用：调用 conflict_ledger, set, svc._admit, svc._causal_memory_ids, svc._causal_tensions。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
 - 目标：`hybrid_memory/service/tools.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/service/tools.py#L50)。
 
@@ -12980,6 +12981,87 @@ vendored `mvp/agent/` 完全排除。
 - 作用：调用 load_env_key, monkeypatch.delenv, monkeypatch.setattr, str。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
 - 目标：`tests/unit/test_config.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_config.py#L67)。
+
+## `tests/unit/test_conflict_ledger.py`
+
+- 模块功能：行为、恢复、权限及协议回归；不得按产品死代码删除。
+- 设计归属：验收资产；处置：保留迁移。
+- 目标路径：`tests/unit/test_conflict_ledger.py`（当前路径）。
+- 模块输入：被测对象与 pytest 夹具。
+- 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
+- 源校验：`fef702c1f67a47c9b33b105fc9982ec8894b393c0829cf02ede05011dcb68345`。
+
+### `tests/unit/test_conflict_ledger.py::_mem`
+
+- 功能：测试场景/夹具/假实现：_mem；输入输出见本项，生产不调用
+- 输入：`i, pool=Pool.CANDIDATE, v=0.5, **kw`。
+- 输出：`未注解；Memory(id=i, belief_id=i + 1, value=f'v{i}', text=f'记忆正文{i}', emb=np.zeros(64), pool=pool, v=v, **kw)`。
+- 作用：调用 Memory, kw.setdefault, np.zeros。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_conflict_ledger.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_conflict_ledger.py#L24)。
+
+### `tests/unit/test_conflict_ledger.py::_ledger_service`
+
+- 功能：测试场景/夹具/假实现：_ledger_service；输入输出见本项，生产不调用
+- 输入：`tmp_path, **cfg`。
+- 输出：`未注解；svc`。
+- 作用：调用 _mem, _svc, eng.add_tension, max。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_conflict_ledger.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_conflict_ledger.py#L31)。
+
+### `tests/unit/test_conflict_ledger.py::test_conflict_ledger_aggregates_are_pending_containers_and_members`
+
+- 功能：行为断言：conflict_ledger_aggregates_are_pending_containers_and_members；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _ledger_service, conflict_ledger, set, svc.log.close, svc.tasks.close。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_conflict_ledger.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_conflict_ledger.py#L46)。
+
+### `tests/unit/test_conflict_ledger.py::test_conflict_ledger_truncated_is_real`
+
+- 功能：行为断言：conflict_ledger_truncated_is_real；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _mem, _svc, conflict_ledger, eng.add_tension, len, range, svc.log.close, svc.tasks.close。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_conflict_ledger.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_conflict_ledger.py#L61)。
+
+### `tests/unit/test_conflict_ledger.py::test_conflict_ledger_before_filter_and_stale`
+
+- 功能：行为断言：conflict_ledger_before_filter_and_stale；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _ledger_service, all, conflict_ledger, svc.log.close, svc.tasks.close。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_conflict_ledger.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_conflict_ledger.py#L79)。
+
+### `tests/unit/test_conflict_ledger.py::test_tools_conflicts_returns_old_fields_plus_ledger`
+
+- 功能：行为断言：tools_conflicts_returns_old_fields_plus_ledger；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _ledger_service, len, set, svc.log.close, svc.tasks.close, tools_conflicts。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_conflict_ledger.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_conflict_ledger.py#L94)。
+
+### `tests/unit/test_conflict_ledger.py::test_http_conflicts_returns_ledger`
+
+- 功能：行为断言：http_conflicts_returns_ledger；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _http, _ledger_service, get, svc.log.close, svc.tasks.close。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_conflict_ledger.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_conflict_ledger.py#L115)。
+
+### `tests/unit/test_conflict_ledger.py::test_tools_conflicts_signal_path_stays_causal`
+
+- 功能：行为断言：tools_conflicts_signal_path_stays_causal；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _ledger_service, pytest.raises, svc.log.close, svc.tasks.close, tools_conflicts。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_conflict_ledger.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_conflict_ledger.py#L130)。
 
 ## `tests/unit/test_defects_regression.py`
 

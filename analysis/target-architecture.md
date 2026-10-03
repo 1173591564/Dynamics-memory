@@ -573,6 +573,24 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
   `core/consolidation.py::admit_reflection`。
   验证：`tests/unit/test_prepare_effect_wiring.py` 8 条（先红后绿：旧实现 vectors 恒空、
   候选正文 embed 两次均被抓住）；全量 454 passed。
+- **N37 conflict_ledger 修复与统一冲突读模型接线（P0-1.2，兑现 §10.4 未接线项）**：
+  决定：aggregates 改为"待裁决聚合容器（pending_review 且 agg_members）及其成员"，
+  不再误用 kind=="reflection"；truncated 真实反映有界输出（conflicts ≤200、
+  pending_reviews ≤512、aggregates ≤200，超界标注不静默截断）；conflict 行补
+  first_seen/observations/stale，正文一律 ≤200 字符。tools.conflicts 以
+  conflict_ledger 为唯一数据源：旧字段（conflicts/t 及行内 left/right/left_text/
+  right_text/first_seen/observations）保持，新增 tensions/pending_reviews/
+  aggregates/pin_roots/truncated（A7 字段只增）；HTTP /conflicts 经
+  handle_conflicts→svc.conflicts→tools.conflicts 自动获得统一台账；signal_id
+  路径维持因果集过滤（causal_memory_ids/causal_tensions），ledger 取全量后筛。
+  理由：旧 tools.conflicts 泄全文正文（违背"不泄超界正文"）；truncated 恒 False
+  让调用方无法感知截断；reflection 是巩固产物不是聚合台账。
+  被否决备选：把 before 直接传给 ledger 过滤 signal 路径（before 是单元因果界，
+  不能当 memory id 比较——会错杀合法冲突，实测被 investigation_scope 回归抓住）；
+  tools.conflicts 保持双实现（第二份读模型违背统一台账契约）。
+  影响符号：`service/review.py::conflict_ledger`（+3 个上界常量）、
+  `service/tools.py::conflicts`；HTTP 无需改动（经 service 传导）。
+  验证：`tests/unit/test_conflict_ledger.py` 6 条（先红后绿）；全量 460 passed。
 
 ### 9.1 旧目标条目的最终去向
 

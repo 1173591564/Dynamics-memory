@@ -488,7 +488,7 @@ SYMBOL_OVERRIDES = {
     "hybrid_memory/service/tools.py::log_timeline": ("实体时间线（limit≤100）",),
     "hybrid_memory/service/tools.py::log_stats": ("分组统计（limit≤200，同因果界）",),
     "hybrid_memory/service/tools.py::log_window": ("唯一受限原文回展（预留+按实际结算）",),
-    "hybrid_memory/service/tools.py::conflicts": ("未决张力读取；目标并入统一 ledger",),
+    "hybrid_memory/service/tools.py::conflicts": ("统一冲突读模型入口：conflict_ledger 唯一数据源；旧字段保持、新增 ledger 字段、正文有界",),
     "hybrid_memory/store/state.py::RestrictedUnpickler": ("白名单反序列化（RCE 防线）",),
     "hybrid_memory/store/state.py::RestrictedUnpickler.find_class": ("只允许白名单 global",),
     "hybrid_memory/store/state.py::dump_state": ("健康门+pickle4 快照",),
@@ -588,8 +588,8 @@ SYMBOL_OVERRIDES = {
         "冲突统一读模型",
         "svc 与可选 before",
         "{conflicts,tensions,pending_reviews,aggregates,pin_roots,truncated}",
-        "只读汇总；不触发裁决或人审",
-        "越界正文不返回；缺失对象标 stale 而非隐藏"),
+        "只读汇总；不触发裁决或人审；经 tools.conflicts→HTTP /conflicts 接进生产",
+        "越界正文不返回（≤200 字符）；缺失对象标 stale 而非隐藏；超界标 truncated"),
 }
 
 # ---------------------------------------------------------------- 计划新增（当前源码不存在）
@@ -672,6 +672,9 @@ CONSTANTS = {
     "hybrid_memory/store/tasks.py::SEMANTIC_KINDS": ("保留", "语义 kind 集"),
     "hybrid_memory/store/tasks.py::WORKFLOW_KINDS": ("保留", "工作流 kind 集"),
     "hybrid_memory/store/tasks.py::_SCHEMA": ("保留", "任务库建表 DDL"),
+    "hybrid_memory/service/review.py::_MAX_LEDGER_CONFLICTS": ("保留", "冲突台账输出上界（N37）；超界标 truncated"),
+    "hybrid_memory/service/review.py::_MAX_LEDGER_REVIEWS": ("保留", "待审台账输出上界（N37）；对齐 pending 人审 ≤512"),
+    "hybrid_memory/service/review.py::_MAX_LEDGER_AGGREGATES": ("保留", "聚合台账输出上界（N37）"),
     "hybrid_memory/telemetry.py::_warned": ("保留", "限频告警键集"),
     "hybrid_memory/telemetry.py::_warned_lock": ("保留", "限频告警锁"),
     "hybrid_memory/transport/dto.py::SIGNAL_PATHS": ("保留", "信号路径白名单"),
