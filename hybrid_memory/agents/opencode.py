@@ -40,15 +40,27 @@ class OpenCodeRunner:
         env = dict(os.environ, DYNAMICS_MEMORY_INTERNAL_AGENT="1")
         # --pure loads local agent definitions but skips external plugins;
         # internal env guard is defence in depth against capturing worker text.
+        # Use private UTF-8 temporary file via --file to avoid Windows argv limit.
+        import tempfile
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", suffix=".json", delete=False,
+            dir=tempfile.gettempdir()) as tmp:
+            tmp.write(prompt)
+            tmp_path = tmp.name
         try:
             done = subprocess.run(
                 [self.executable, "run", "--pure", "--agent", name,
-                 "--format", "json", prompt],
+                 "--format", "json", "--file", tmp_path],
                 cwd=self.agent_root, env=env, capture_output=True, text=True,
                 stdin=subprocess.DEVNULL,
                 timeout=self.timeout, check=False)
         except subprocess.TimeoutExpired as exc:
             raise AgentTimeout(f"OpenCode {name} timed out after {self.timeout}s") from exc
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
         if done.returncode:
             raise RuntimeError(f"OpenCode {name} exited {done.returncode}: {done.stderr[-500:]}")
         if f'agent "{name}" not found' in done.stdout + done.stderr:

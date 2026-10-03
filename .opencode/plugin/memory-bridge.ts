@@ -390,7 +390,7 @@ export default (async ({ directory }) => {
     if (r.status === 401) return "stop"
     if (r.data?.accepted === true || r.data?.replayed === true) return "acked"
     if (r.ok && typeof r.data?.n_useful === "number") return "acked"
-    if (r.status === 409 && String(r.data?.error ?? "").includes("already")) return "acked"
+    if (r.status === 409 && (r.data?.code === "already_credited" || String(r.data?.error ?? "").includes("already"))) return "acked"
     if (r.status === 400 || r.status === 404 || r.status === 409) return "stop"
     return "retry"
   }

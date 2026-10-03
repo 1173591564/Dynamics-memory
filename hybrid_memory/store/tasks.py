@@ -103,6 +103,11 @@ CREATE TABLE IF NOT EXISTS capture_receipts (
  request_id TEXT PRIMARY KEY, kind TEXT NOT NULL, fingerprint TEXT NOT NULL,
  response TEXT NOT NULL, created_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS task_call_contexts (
+ task_id INTEGER NOT NULL REFERENCES tasks(id), token TEXT NOT NULL,
+ context TEXT NOT NULL, created_at REAL NOT NULL,
+ PRIMARY KEY(task_id, token)
+);
 """
 
 
@@ -150,7 +155,7 @@ class TaskStore:
             return self._decode(self._conn.execute("SELECT * FROM tasks WHERE id=?",
                                                    (task_id,)).fetchone())
 
-    def list_tasks(self, *, states=None, kinds=None):
+    def list_tasks(self, *, states=None, kinds=None, due_before: float | None = None, limit: int | None = None):
         query, params = "SELECT * FROM tasks WHERE 1=1", []
         for field, values in (("state", states), ("kind", kinds)):
             if values is not None:
@@ -159,8 +164,15 @@ class TaskStore:
                     return []
                 query += f" AND {field} IN ({','.join('?' for _ in values)})"
                 params.extend(values)
+        if due_before is not None:
+            query += " AND next_run_at <= ?"
+            params.append(due_before)
+        query += " ORDER BY id"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
         with self._lock:
-            return [self._decode(r) for r in self._conn.execute(query + " ORDER BY id", params)]
+            return [self._decode(r) for r in self._conn.execute(query, params)]
 
     def enqueue(self, kind, payload, t, *, key="", merge=None, memory_next_id=0):
         with self.transaction() as conn:
@@ -255,7 +267,11 @@ class TaskStore:
                 policy = policy_for(r["kind"])
                 applying = r["state"] == "applying"
                 attempts = r["apply_attempts"] if applying else r["attempts"]
-                cap = max_apply_attempts if applying else max_attempts
+                cap = (
+                    (max_apply_attempts if max_apply_attempts is not None else policy.max_apply_attempts)
+                    if applying
+                    else (max_attempts if max_attempts is not None else policy.max_attempts)
+                )
                 if (cap is not None and attempts >= cap
                         and policy.on_exhausted == "dead"):
                     state = "dead"
@@ -269,19 +285,21 @@ class TaskStore:
                     conn.execute("UPDATE tasks SET state=?,token=NULL,lease_until=NULL,"
                                  "last_error='lease expired',updated_at=? WHERE id=?",
                                  (state, now, r["id"]))
-            # A 机旧语义：pending/ready 上已达上限的 dead-policy 任务直接 dead
-            #（B 机无此条：语义/trio 调用方不传上限，天然跳过）。
-            if max_attempts is not None or max_apply_attempts is not None:
-                for kind in kinds:
-                    if policy_for(kind).on_exhausted != "dead":
-                        continue
+            # 已达上限的 dead-policy 任务直接 dead
+            for kind in kinds:
+                pol = policy_for(kind)
+                if pol.on_exhausted != "dead":
+                    continue
+                eff_max = max_attempts if max_attempts is not None else pol.max_attempts
+                eff_app_max = max_apply_attempts if max_apply_attempts is not None else pol.max_apply_attempts
+                if eff_max is not None or eff_app_max is not None:
                     conn.execute("UPDATE tasks SET state='dead',"
                                  "last_error='attempt limit exhausted',updated_at=? "
                                  "WHERE kind=? AND ((state='pending' AND attempts>=?) "
                                  "OR (state='ready' AND apply_attempts>=?))",
                                  (now, kind,
-                                  max_attempts if max_attempts is not None else 2**62,
-                                  max_apply_attempts if max_apply_attempts is not None else 2**62))
+                                  eff_max if eff_max is not None else 2**62,
+                                  eff_app_max if eff_app_max is not None else 2**62))
 
     def skip_recent(self, task_id, ttl):
         now = self.clock()
@@ -348,6 +366,25 @@ class TaskStore:
         with self._lock:
             self._owned(self._conn, task_id, token)
 
+    def store_call_context(self, task_id: int, token: str, context: dict) -> None:
+        """封存一次模型调用的原始输入上下文（N10）。"""
+        if not isinstance(context, dict):
+            raise ValueError("context must be a dictionary")
+        now = self.clock()
+        with self.transaction() as conn:
+            self._owned(conn, task_id, token, ("running",))
+            existing = conn.execute(
+                "SELECT context FROM task_call_contexts WHERE task_id=? AND token=?",
+                (task_id, token)).fetchone()
+            ctx_str = json.dumps(context, ensure_ascii=False, sort_keys=True)
+            if existing:
+                if existing[0] != ctx_str:
+                    raise CaptureConflict(f"task {task_id} already has conflicting context")
+                return
+            conn.execute(
+                "INSERT INTO task_call_contexts(task_id, token, context, created_at) "
+                "VALUES (?, ?, ?, ?)", (task_id, token, ctx_str, now))
+
     def store_result(self, task_id, token, result, *, checkpoint: bytes | None = None,
                      expected_revision: int | None = None, rule_ids=()):
         """统一存产物（P3 合并）。checkpoint=None 不写检查点、返回 None（B 机旧形状）；
@@ -379,7 +416,7 @@ class TaskStore:
             state = "pending" if retry_model else ("ready" if applying else "pending")
             cap = max_apply_attempts if applying else max_attempts
             if cap is None:
-                cap = policy.max_attempts
+                cap = policy.max_apply_attempts if applying else policy.max_attempts
             if cap is not None and attempts >= cap and policy.on_exhausted == "dead":
                 state = "dead"
             if delay is None:

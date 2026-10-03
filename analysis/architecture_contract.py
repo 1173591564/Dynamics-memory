@@ -6,10 +6,7 @@
 from __future__ import annotations
 
 # ---------------------------------------------------------------- 目标路径（模块迁移）
-TARGET_PATHS = {
-    "hybrid_memory/logstore.py": "hybrid_memory/store/evidence.py",
-    "hybrid_memory/llm.py": "hybrid_memory/llm/client.py",
-}
+TARGET_PATHS = {}
 
 # ---------------------------------------------------------------- 模块级输入/输出（必须覆盖全部登记模块，含前缀）
 MODULE_IO = {
@@ -23,10 +20,15 @@ MODULE_IO = {
                                    "health/signals 只增字段视图、脱敏结构日志与限频告警"),
     "hybrid_memory/server.py": ("`python -m hybrid_memory.server` 的进程参数",
                                 "兼容导出 MemoryService/serve/build_default_service/main；无独立业务逻辑"),
-    "hybrid_memory/logstore.py": ("L0 单元原文、请求绑定、逐单元工作与查询",
-                                  "不可覆盖证据、FTS/mentions/向量索引、片段/统计/受限窗口与恢复回执；见目标路径迁移"),
-    "hybrid_memory/llm.py": ("OpenAI 兼容 chat 请求、凭据、模型与磁盘缓存目录",
-                             "message/文本结果或 ZhipuChatError；缓存命中不证明新推理；见目标路径迁移"),
+    "hybrid_memory/logstore.py": ("旧导入位", "store.evidence 对应符号 re-export"),
+    "hybrid_memory/llm.py": ("旧导入位", "llm.client 对应符号 re-export"),
+    "hybrid_memory/llm/client.py": ("OpenAI 兼容 chat 请求、凭据、模型与磁盘缓存目录",
+                                   "message/文本结果或 ZhipuChatError；缓存命中不证明新推理"),
+    "hybrid_memory/llm/__init__.py": ("llm 包导入", "客户端函数与异常 re-export"),
+    "hybrid_memory/store/evidence.py": ("L0 单元原文、请求绑定、逐单元工作与查询",
+                                       "不可覆盖证据、FTS/mentions/向量索引、片段/统计/受限窗口与恢复回执"),
+    "hybrid_memory/semantics/provider.py": ("两段值/指纹、实际展示记忆、reflection 记忆列表与时间步",
+                                           "verdict 判定、used bool 列表、reflection Event 与 health 观测"),
     "hybrid_memory/interaction.py": ("旧导入位", "core.interaction 的 InteractionUnit/InteractionWindow 同一对象"),
     "hybrid_memory/investigation_context.py": ("旧导入位", "service.context 的调查上下文与异常同一对象"),
     "hybrid_memory/taskstore.py": ("旧导入位", "store.tasks 的状态机、异常与常量同一对象"),
@@ -344,15 +346,15 @@ SYMBOL_OVERRIDES = {
         "请求体解析", "headers 与 rfile", "JSON 对象 dict", "媒体/长度 4MiB/对象校验", "HttpError 400/413/415"),
     "hybrid_memory/transport/bootstrap.py::main": (
         "进程入口", "argv/env", "None", "解析→组装→恢复→HTTP/worker→信号→serve→真停机", "非法参数拒绝；stop 未收束不得静默退出"),
-    "hybrid_memory/logstore.py::LogStore.append_unit": (
+    "hybrid_memory/store/evidence.py::LogStore.append_unit": (
         "在线追加 L0", "t、文本、scene、请求绑定与游标下界", "unit_id/t/entities/new_entities/replayed", "L0+work+request 同事务；向量提交后补", "请求冲突/证据不可覆盖显式"),
-    "hybrid_memory/logstore.py::LogStore.add_unit": (
+    "hybrid_memory/store/evidence.py::LogStore.add_unit": (
         "导入或重放单元", "id、t、文本与绑定", "unit_id/t/entities/new_entities", "同内容 no-op；异内容拒绝", "CaptureConflict/ValueError"),
-    "hybrid_memory/logstore.py::LogStore.window": (
+    "hybrid_memory/store/evidence.py::LogStore.window": (
         "唯一原文回展", "unit_ids、max_chars、before", "units/chars/truncated/missing/omitted", "按序字符预算；missing 与 omitted 分开", "越界/缺失不静默补"),
-    "hybrid_memory/logstore.py::LogStore.retention_report": (
+    "hybrid_memory/store/evidence.py::LogStore.retention_report": (
         "L0 保留报告", "可选 src_ids", "units/bytes/oldest_unit_id/oldest_t/dangling_src", "只告警不删", "不宣称含全部 WAL/缓存磁盘"),
-    "hybrid_memory/llm.py::chat": (
+    "hybrid_memory/llm/client.py::chat": (
         "单轮 chat", "凭据/模型/system/user/超时/重试/缓存目录", "content 文本", "磁盘缓存命中可复用；无则请求", "缺凭据/传输/结构错误 ZhipuChatError"),
     "hybrid_memory/semantics/llm.py::LLMSemantics.relevant_set": (
         "回答归因", "texts、question、answer", "bool 列表或 None", "失败 None 由调用方计数退化", "None 不是 NONE（NONE 是合法没用）"),
@@ -439,19 +441,19 @@ SYMBOL_OVERRIDES = {
     "hybrid_memory/legacy/prompt.py::priority_to_salience": ("priority → salience 兼容映射",),
     "hybrid_memory/legacy/prompt.py::parse_candidate": ("宽松候选解析；公共 parse 目标迁 guards",),
     "hybrid_memory/legacy/worker.py::SignalWorker": ("裸引擎内存信号消费者（易失队列语义）",),
-    "hybrid_memory/llm.py::ZhipuChatError": ("chat 传输/结构错误",),
-    "hybrid_memory/logstore.py::LogStore": ("L0 证据库：不可覆盖原文+索引+逐单元恢复",),
-    "hybrid_memory/logstore.py::LogStore.capture_receipt": ("查请求绑定回执",),
-    "hybrid_memory/logstore.py::LogStore.work": ("单元工作行：状态/结果/上下文/退避",),
-    "hybrid_memory/logstore.py::LogStore.pending_units": ("严格 uid 顺序的待处理单元",),
-    "hybrid_memory/logstore.py::LogStore.work_stats": ("pending/result_saved/failed/done 计数",),
-    "hybrid_memory/logstore.py::LogStore.save_work_result": ("首次合法抽取结果落库；重复拒绝",),
-    "hybrid_memory/logstore.py::LogStore.fail_work": ("记录错误与退避，不删单元",),
-    "hybrid_memory/logstore.py::LogStore.finish_work": ("跨库回执确认；重复 done 可接受",),
-    "hybrid_memory/logstore.py::LogStore.get": ("按 id 取单元",),
-    "hybrid_memory/logstore.py::LogStore.count": ("单元数（可限因果界）",),
-    "hybrid_memory/logstore.py::LogStore.mention_counts": ("实体提及计数",),
-    "hybrid_memory/logstore.py::LogStore.close": ("关闭连接",),
+    "hybrid_memory/llm/client.py::ZhipuChatError": ("chat 传输/结构错误",),
+    "hybrid_memory/store/evidence.py::LogStore": ("L0 证据库：不可覆盖原文+索引+逐单元恢复",),
+    "hybrid_memory/store/evidence.py::LogStore.capture_receipt": ("查请求绑定回执",),
+    "hybrid_memory/store/evidence.py::LogStore.work": ("单元工作行：状态/结果/上下文/退避",),
+    "hybrid_memory/store/evidence.py::LogStore.pending_units": ("严格 uid 顺序的待处理单元",),
+    "hybrid_memory/store/evidence.py::LogStore.work_stats": ("pending/result_saved/failed/done 计数",),
+    "hybrid_memory/store/evidence.py::LogStore.save_work_result": ("首次合法抽取结果落库；重复拒绝",),
+    "hybrid_memory/store/evidence.py::LogStore.fail_work": ("记录错误与退避，不删单元",),
+    "hybrid_memory/store/evidence.py::LogStore.finish_work": ("跨库回执确认；重复 done 可接受",),
+    "hybrid_memory/store/evidence.py::LogStore.get": ("按 id 取单元",),
+    "hybrid_memory/store/evidence.py::LogStore.count": ("单元数（可限因果界）",),
+    "hybrid_memory/store/evidence.py::LogStore.mention_counts": ("实体提及计数",),
+    "hybrid_memory/store/evidence.py::LogStore.close": ("关闭连接",),
     "hybrid_memory/semantics/llm.py::LLMSemantics": ("在线裁判实现：judge/归因/巩固",),
     "hybrid_memory/semantics/llm.py::LLMSemantics.judge": ("本地→LLM→失败 pending",),
     "hybrid_memory/semantics/real.py::RealChatSemantics.judge": ("精确同值/标注/pending",),
@@ -543,63 +545,55 @@ SYMBOL_OVERRIDES = {
     "hybrid_memory/transport/http.py::Handler.do_POST": ("鉴权→POST 白名单→body→dispatch",),
     "hybrid_memory/transport/review_cli.py::main": ("人审/规则审计 CLI",),
     "hybrid_memory/transport/review_cli.py::main.post": ("带 capability 的 HTTP 调用",),
+    "hybrid_memory/semantics/provider.py::SemanticsProvider.health": (
+        "双语义通路的可观测健康段",
+        "无参数；provider/model 与内部计数",
+        "{provider,model,calls,failures,last_error}",
+        "只读；合法 NONE 与 transport/parse 失败分开计数",
+        "读取失败返回 last_error，不外抛掩盖真实任务错误"),
+    "hybrid_memory/semantics/provider.py::SemanticsProvider.judge": (
+        "存量张力关系判定包装", "两段值/指纹与当前计数", "verdict 字符串（含 pending）",
+        "调用配置的 chat；锁外执行", "传输失败返回 pending 并计入 failures，不冒充关系"),
+    "hybrid_memory/semantics/provider.py::SemanticsProvider.relevant_set": (
+        "实际展示记忆归因包装", "texts、question、answer", "bool 列表或 None",
+        "失败计数外显；退化 selected-hit 由调用方负责", "None=失败，NONE=合法没用，两者不得混同"),
+    "hybrid_memory/semantics/provider.py::SemanticsProvider.consolidate": (
+        "reflection 语义包装", "Memory 列表与 t", "Event 或 None",
+        "返回前脱敏；来源并集", "失败与合法 NONE 分开记录"),
+    "hybrid_memory/store/tasks.py::TaskStore.store_call_context": (
+        "封存一次模型调用的原始输入上下文",
+        "task_id、token、context（窗口 ids、规则 id、快照 revision、协议版本、正文摘要）",
+        "None（写入）或明确冲突",
+        "running 且 owned 时同事务写入；同 attempt 不可改绑",
+        "租约/版本不符 TaskLeaseLost；重复封存不同内容拒绝"),
+    "hybrid_memory/dispatch/effects.py::prepare_effect": (
+        "事务前效果计划",
+        "svc 与任务行",
+        "{events,vectors,targets,expected_revision,actions} 计划",
+        "embedding 与静态校验在锁外完成；失败无内存效果",
+        "来源/因果/窗口非法即失败，不部分构建"),
+    "hybrid_memory/core/dynamics.py::plan_capacity": (
+        "提交前容量收口模拟",
+        "mems、cfg、pinned",
+        "{archive,delete,remaining,accepted,reason}",
+        "模拟 C→A 后重算 A 与 cap_context；无 I/O、不衰减 V",
+        "全 pin 时 accepted=false 背压，禁止破上限或解除保护"),
+    "hybrid_memory/service/review.py::conflict_ledger": (
+        "冲突统一读模型",
+        "svc 与可选 before",
+        "{conflicts,tensions,pending_reviews,aggregates,pin_roots,truncated}",
+        "只读汇总；不触发裁决或人审",
+        "越界正文不返回；缺失对象标 stale 而非隐藏"),
 }
 
 # ---------------------------------------------------------------- 计划新增（当前源码不存在）
-PLANNED_MODULES = [
-    ("hybrid_memory/store/evidence.py", "由 logstore.py 迁入；符号清单=LogStore 现集合，签名与行为不变（除显式条目）"),
-    ("hybrid_memory/llm/client.py", "由 llm.py 迁入；cache helper 保留在本模块，不另拆 llm/cache.py"),
-    ("hybrid_memory/semantics/provider.py", "SemanticsProvider 新模块；health/judge/relevant_set/consolidate 显式化双语义通路"),
-]
+PLANNED_MODULES = []
 
 # (模块, 符号, 功能, 输入, 输出, 作用, 错误)
-PLANNED_SYMBOLS = [
-    ("hybrid_memory/semantics/provider.py", "SemanticsProvider.health",
-     "双语义通路的可观测健康段",
-     "无参数；provider/model 与内部计数",
-     "{provider,model,calls,failures,last_error}",
-     "只读；合法 NONE 与 transport/parse 失败分开计数",
-     "读取失败返回 last_error，不外抛掩盖真实任务错误"),
-    ("hybrid_memory/semantics/provider.py", "SemanticsProvider.judge",
-     "存量张力关系判定包装", "两段值/指纹与当前计数", "verdict 字符串（含 pending）",
-     "调用配置的 chat；锁外执行", "传输失败返回 pending 并计入 failures，不冒充关系"),
-    ("hybrid_memory/semantics/provider.py", "SemanticsProvider.relevant_set",
-     "实际展示记忆归因包装", "texts、question、answer", "bool 列表或 None",
-     "失败计数外显；退化 selected-hit 由调用方负责", "None=失败，NONE=合法没用，两者不得混同"),
-    ("hybrid_memory/semantics/provider.py", "SemanticsProvider.consolidate",
-     "reflection 语义包装", "Memory 列表与 t", "Event 或 None",
-     "返回前脱敏；来源并集", "失败与合法 NONE 分开记录"),
-    ("hybrid_memory/store/tasks.py", "TaskStore.store_call_context",
-     "封存一次模型调用的原始输入上下文",
-     "task_id、token、context（窗口 ids、规则 id、快照 revision、协议版本、正文摘要）",
-     "None（写入）或明确冲突",
-     "running 且 owned 时同事务写入；同 attempt 不可改绑",
-     "租约/版本不符 TaskLeaseLost；重复封存不同内容拒绝"),
-    ("hybrid_memory/dispatch/effects.py", "prepare_effect",
-     "事务前效果计划",
-     "svc 与任务行",
-     "{events,vectors,targets,expected_revision,actions} 计划",
-     "embedding 与静态校验在锁外完成；失败无内存效果",
-     "来源/因果/窗口非法即失败，不部分构建"),
-    ("hybrid_memory/core/dynamics.py", "plan_capacity",
-     "提交前容量收口模拟",
-     "mems、cfg、pinned",
-     "{archive,delete,remaining,accepted,reason}",
-     "模拟 C→A 后重算 A 与 cap_context；无 I/O、不衰减 V",
-     "全 pin 时 accepted=false 背压，禁止破上限或解除保护"),
-    ("hybrid_memory/service/review.py", "conflict_ledger",
-     "冲突统一读模型",
-     "svc 与可选 before",
-     "{conflicts,tensions,pending_reviews,aggregates,pin_roots,truncated}",
-     "只读汇总；不触发裁决或人审",
-     "越界正文不返回；缺失对象标 stale 而非隐藏"),
-]
+PLANNED_SYMBOLS = []
 
 # ---------------------------------------------------------------- 明确删除项（必须存在于源码）
 DELETIONS = {
-    "hybrid_memory/guards/bounds.py::clamp": ("直接删除", "未接线的通用钳制壳，无业务调用"),
-    "hybrid_memory/guards/grounding.py::cited_text": ("直接删除", "未接线壳；正文联接由 service/operate._cited_text 唯一负责"),
-    "analysis/acceptance_check.py::_has_int_gt": ("直接删除", "未使用的机械检查 helper"),
     "hybrid_memory/store/tasks.py::TaskStore.rules_for": ("迁移后删除", "无作用域旧读法仅测试使用；rule_snapshot/rule_report 接管后移除"),
     "hybrid_memory/core/maintenance.py::_warn_promote_reject_once": ("迁移后删除", "core 内打印违背纯状态层；telemetry 限频告警接管后移除"),
     "eval/run_sidecar_offline.py::_Request": ("迁移后删除", "旧请求劫持；Settings endpoint 注入接管后移除"),

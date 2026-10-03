@@ -71,3 +71,46 @@ def decide_human_review(svc, review_id: int, decision: str, capability: str) -> 
             revision = svc.tasks._write_checkpoint(conn, svc._dump_state(), svc._checkpoint_revision)
         svc._checkpoint_revision = revision
         return {"review_id": review_id, "decision": decision, "new_ids": ids}
+
+
+def conflict_ledger(svc, before: int | None = None) -> dict:
+    """冲突统一读模型（N14/N20）：只读汇总 conflicts/tensions/pending_reviews/aggregates/pin_roots/truncated。"""
+    from ..core.dynamics import pinned_ids
+    with svc._lock:
+        tensions = [
+            (left, right) for left, right in svc.engine.tensions
+            if before is None or (left < before and right < before)
+        ]
+        conflicts = []
+        for left, right in tensions:
+            lm = svc.engine.mems.get(left)
+            rm = svc.engine.mems.get(right)
+            conflicts.append({
+                "left": left, "right": right,
+                "left_text": lm.text[:200] if lm else "",
+                "right_text": rm.text[:200] if rm else "",
+                "stale": lm is None or rm is None,
+            })
+        reviews = []
+        for r in svc.tasks.pending_reviews():
+            old = svc.engine.mems.get(r["target_id"])
+            reviews.append({
+                "id": r["id"],
+                "target_id": r["target_id"],
+                "candidate": r["candidate"],
+                "reason": r["reason"],
+                "stale": old is None or old.superseded_by is not None,
+            })
+        aggregates = [
+            m.id for m in svc.engine.mems.values()
+            if m.kind == "reflection" and (before is None or m.birth < before)
+        ]
+        pin_roots = sorted(pinned_ids(svc.engine))
+        return {
+            "conflicts": conflicts,
+            "tensions": tensions,
+            "pending_reviews": reviews,
+            "aggregates": aggregates,
+            "pin_roots": pin_roots,
+            "truncated": False,
+        }

@@ -165,6 +165,7 @@ def apply_resolution(eng, a: Memory, b: Memory, verdict: str, t: int) -> None:
         keep.salience = max(a.salience, b.salience)
         drop.superseded_by = keep.id
         drop.pool = Pool.ARCHIVE
+        drop.archived_at = t
         eng.n_merge += 1
     elif verdict == "update":
         # 新替旧：同一时间步诞生时按 id 定新旧（后入库者新），否则
@@ -176,6 +177,7 @@ def apply_resolution(eng, a: Memory, b: Memory, verdict: str, t: int) -> None:
         keep.salience = max(a.salience, b.salience)
         drop.superseded_by = keep.id
         drop.pool = Pool.ARCHIVE
+        drop.archived_at = t
         eng.n_merge += 1
     elif verdict == "contradiction":
         pa = eng.semantics.scope(a.belief_id)

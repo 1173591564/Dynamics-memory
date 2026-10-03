@@ -16,7 +16,6 @@ import pytest
 
 PKG = "hybrid_memory"
 ALWAYS_OK = {"__future__"}          # 不计入判定
-NUMPY_OK_IN = {"core", "embed"}     # 允许用 numpy 的包（数值内核）
 
 NEW_SHELLS = [
     "hybrid_memory.errors",

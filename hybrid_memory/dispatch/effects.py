@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ..agents import hauler, reviewer, selector
-from ..core import triggers
+from ..core import dynamics, triggers
 from ..core.types import Event, Pool, is_visible
 from ..logstore import entities_in
 from ..store.tasks import SEMANTIC_KINDS, WORKFLOW_KINDS
@@ -27,6 +27,11 @@ class Applier:
     kind: str
     owner: str
     apply: Callable | None = None
+
+    @property
+    def runner(self) -> str:
+        """运行器标识，对齐 owner。"""
+        return self.owner
 
 
 def journal_signal(svc, kind, payload, t, key, merge):
@@ -241,7 +246,7 @@ def apply_selector(svc, row, output, conn) -> dict:
         if action == "UPDATE":
             # Recent != correct. Without an explicit user correction, refer
             # incompatible statements to a human rather than choosing newest.
-            confirmed = bool(d.get("verified_correction")) and any(
+            confirmed = (d.get("verified_correction") is True) and any(
                 triggers.is_correction(svc.log.get(i)["user_text"])
                 for i in ev.src if svc.log.get(i))
             if not confirmed:
@@ -259,7 +264,43 @@ def apply_selector(svc, row, output, conn) -> dict:
             svc.engine.add_tension(ids[0], old.id, svc._t)
             svc.engine.submit_verdicts([(ids[0], old.id, "update")], svc._t)
         outcomes.append({"index": idx, "action": action if ids else "EXIST", "new_ids": ids})
+    if svc.cfg.capacity_on:
+        victims = dynamics.overflow_policy(
+            svc.engine.mems, svc.cfg, dynamics.pinned_ids(svc.engine))
+        for vid in victims["archive"]:
+            m = svc.engine.mems[vid]
+            m.pool = Pool.ARCHIVE
+            m.archived_at = svc._t
+            svc.engine.n_pool_truncated += 1
+        for vid in victims["delete"]:
+            del svc.engine.mems[vid]
+            svc.engine.n_pool_truncated += 1
     return {"outcomes": outcomes}
+
+
+def prepare_effect(svc, row: dict) -> dict:
+    """事务前效果计划（N08）：静态校验与向量预计算（锁外执行）。"""
+    kind = row.get("kind", "")
+    payload = row.get("payload", {})
+    events = []
+    vectors = []
+    targets = []
+    actions = []
+    expected_revision = svc._checkpoint_revision
+    if kind == "selector_due":
+        candidates = payload.get("candidates", [])
+        for c in candidates:
+            ev, _ = svc._validate_proposal(c, None)
+            events.append(ev)
+            if hasattr(svc, "embedder") and svc.embedder is not None:
+                vectors.append(svc.embedder.embed(ev.text))
+    return {
+        "events": events,
+        "vectors": vectors,
+        "targets": targets,
+        "expected_revision": expected_revision,
+        "actions": actions,
+    }
 
 
 def apply_reviewer(svc, row, output, conn) -> dict:

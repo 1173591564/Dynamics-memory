@@ -49,7 +49,7 @@ def evictable(pool: Pool, mems: dict[int, Memory], cfg,
         over = [m for m in mems.values() if m.pool is Pool.ARCHIVE]
         over.sort(key=lambda m: (m.archived_at if m.archived_at is not None
                                  else -1, m.id))
-        return [m.id for m in over][:max(0, len(over) - cfg.cap_a)]
+        return [m.id for m in over if m.id not in pinned][:max(0, len(over) - cfg.cap_a)]
     raise ValueError(f"unknown pool {pool!r}")
 
 
@@ -58,3 +58,41 @@ def overflow_policy(mems: dict[int, Memory], cfg,
     """C/A 溢出裁决。返回 {"archive": [...], "delete": [...]}。"""
     return {"archive": evictable(Pool.CANDIDATE, mems, cfg, pinned),
             "delete": evictable(Pool.ARCHIVE, mems, cfg, pinned)}
+
+
+def plan_capacity(mems: dict[int, Memory], cfg,
+                  pinned: frozenset[int]) -> dict[str, object]:
+    """提交前容量收口模拟：给出 archive/delete 计划与背压判定。"""
+    c_mems = [m for m in mems.values() if m.pool is Pool.CANDIDATE]
+    c_unpinned = [m for m in c_mems if m.id not in pinned]
+    c_unpinned.sort(key=lambda m: (m.v, m.last_hit if m.last_hit is not None
+                                 else m.birth, m.id))
+    archive_count = max(0, len(c_mems) - cfg.cap_c)
+    to_archive = [m.id for m in c_unpinned[:archive_count]]
+
+    a_mems = [m for m in mems.values() if m.pool is Pool.ARCHIVE] + [mems[mid] for mid in to_archive if mid in mems]
+    a_unpinned = [m for m in a_mems if m.id not in pinned]
+    a_unpinned.sort(key=lambda m: (m.archived_at if m.archived_at is not None
+                                 else -1, m.id))
+    delete_count = max(0, len(a_mems) - cfg.cap_a)
+    to_delete = [m.id for m in a_unpinned[:delete_count]]
+
+    delete_set = set(to_delete)
+    remaining = [mid for mid in mems if mid not in delete_set]
+
+    accepted = True
+    reason = None
+    if cfg.capacity_on:
+        rem_c = len(c_mems) - len(to_archive)
+        rem_a = len(a_mems) - len(to_delete)
+        if rem_c > cfg.cap_c or rem_a > cfg.cap_a:
+            accepted = False
+            reason = "capacity backpressure: all items pinned or pool over limit"
+
+    return {
+        "archive": to_archive,
+        "delete": to_delete,
+        "remaining": remaining,
+        "accepted": accepted,
+        "reason": reason,
+    }

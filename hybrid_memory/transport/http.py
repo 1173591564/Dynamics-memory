@@ -6,9 +6,11 @@
 from __future__ import annotations
 
 import json
+import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from ..errors import Rejected, http_status
 from ..service.context import CausalViolation, SignalClosed
 from ..service.operate import VERDICTS
 from ..service.service import MemoryService
@@ -20,6 +22,7 @@ TRIO_DISABLED = {
     "/resolve": "direct resolution disabled; human review is required",
     "/propose": "direct proposals disabled; use Hauler and Selector",
     "/diagnose": "direct diagnosis disabled; Reviewer owns this work",
+    "/miss": "miss reporting disabled; Trio pipeline does not consume recall_miss",
 }
 
 ROUTES = {
@@ -113,9 +116,18 @@ class Handler(BaseHTTPRequestHandler):
         rid = dto.opt_int(body, "review_id")
         if rid is None:
             raise HttpError(400, "review_id required")
-        self._reply(200, self.service.decide_human_review(
-            rid, str(body.get("decision", "")),
-            self.headers.get("X-Human-Review-Token", "")))
+        cap = self.headers.get("X-Human-Review-Token", "")
+        if not secrets.compare_digest(cap, self.service.human_review_token):
+            raise HttpError(403, "human review capability required")
+        try:
+            out = self.service.decide_human_review(rid, str(body.get("decision", "")), cap)
+        except ValueError as exc:
+            if "not found" in str(exc):
+                raise HttpError(404, str(exc)) from exc
+            if "changed" in str(exc) or "conflicting" in str(exc):
+                raise HttpError(409, str(exc)) from exc
+            raise HttpError(400, str(exc)) from exc
+        self._reply(200, out)
 
     def handle_resolve(self, q, body, sid) -> None:
         svc = self.service
@@ -226,10 +238,12 @@ class Handler(BaseHTTPRequestHandler):
     def _run(self, path: str, q: dict, body: dict) -> None:
         try:
             self._dispatch(path, q, body)
+        except Rejected as exc:
+            self._reply(http_status(exc.code), {"error": str(exc), "code": exc.code})
         except HttpError as exc:
             self._reply(exc.code, {"error": str(exc)})
         except CaptureConflict as exc:
-            self._reply(409, {"error": str(exc)})
+            self._reply(409, {"error": str(exc), "code": "conflict"})
         except (TaskQueueFull, CheckpointConflict) as exc:
             payload = {"error": str(exc)}
             if getattr(exc, "accepted", False):

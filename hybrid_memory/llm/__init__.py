@@ -1,11 +1,11 @@
-"""智谱 chat 客户端旧导入位（H23/N24/N26）：真实实现已迁入 llm/client.py。"""
+"""llm 模块包导出。"""
 from __future__ import annotations
 
 import os
 import time
 from urllib.request import Request, urlopen
 
-from .llm.client import (
+from .client import (
     BASE_URL,
     ZhipuChatError,
     _cache_lookup,

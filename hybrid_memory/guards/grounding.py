@@ -1,8 +1,7 @@
-"""正文接地校验（P4：content_grounded 通电；cited_text 随 propose 在 P5 落地）。"""
+"""正文接地校验（P4/N25）：content_grounded 纯校验。"""
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable
 
 
 def content_grounded(candidate_text, window_text: str) -> bool:
@@ -11,8 +10,6 @@ def content_grounded(candidate_text, window_text: str) -> bool:
     可核对片段是连续两个汉字，或长度 ≥ 4 的 ASCII/数字串。长度 ≥ 8 的标识
     （脱敏占位 REDACTED 除外）必须全部出现，不能靠一个真片段夹带假标识。
     没有任何可核对片段时拒绝：无法区分空话和编造。
-
-    P4 从 server 原样迁入（仅参数改名对齐 §2.8）。
     """
     if not isinstance(candidate_text, str) or not isinstance(window_text, str):
         return False
@@ -33,9 +30,3 @@ def content_grounded(candidate_text, window_text: str) -> bool:
     if any(tok.lower() in src_l for tok in tokens if tok.lower() != "redacted"):
         matched = True
     return matched
-
-
-def cited_text(source_ids: Iterable[int],
-               get_text: Callable[[int], str]) -> str:
-    """取被引来源的正文拼窗（供 content_grounded 用）。"""
-    raise NotImplementedError("guards.grounding.cited_text: P5 通电")

@@ -192,6 +192,7 @@ def propose(svc, proposals: list, *, origin: str = "agent",
             origin = ctx.origin
         if origin not in _ORIGINS:
             origin = "agent"
+
         t = svc._t
         for i, p in enumerate(proposals):
             if not isinstance(p, dict):
@@ -219,9 +220,9 @@ def propose(svc, proposals: list, *, origin: str = "agent",
                         svc.engine.add_tension(new, old, t)
                         svc.engine.submit_verdicts([(new, old, "update")], t)
         pool = svc.engine.pool_sizes()
-    return {"accepted": accepted, "new_ids": new_ids,
-            "merged": accepted - len(new_ids), "rejected": rejected,
-            "origin": origin, "pool": pool, "t": t}
+        return {"accepted": accepted, "new_ids": new_ids,
+                "merged": accepted - len(new_ids), "rejected": rejected,
+                "origin": origin, "pool": pool, "t": t}
 
 
 def diagnose(svc, miss_type: str, note: str = "", *,

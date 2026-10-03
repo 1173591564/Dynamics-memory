@@ -121,7 +121,8 @@ def run_semantic_tasks(svc, limit: int = 8) -> dict:
             stats["thin"] = len(svc.engine.signals.take(("thin_recall",)))
         svc.tasks.recover_expired(kinds=SEMANTIC_KINDS,
                                   reset_next_run_at=True)
-        for item in svc.tasks.list_tasks(states=("pending", "ready"), kinds=SEMANTIC_KINDS)[:limit]:
+        for item in svc.tasks.list_tasks(states=("pending", "ready"), kinds=SEMANTIC_KINDS,
+                                         due_before=svc.tasks.clock(), limit=limit):
             row = None
             try:
                 with svc._lock:
@@ -227,7 +228,9 @@ class DispatchWorker:
             store = self.svc.tasks
             store.recover_expired(kinds=WORKFLOW_KINDS, reset_next_run_at=True)
             for item in store.list_tasks(states=self._claim_from,
-                                         kinds=WORKFLOW_KINDS)[:limit]:
+                                         kinds=WORKFLOW_KINDS,
+                                         due_before=store.clock(),
+                                         limit=limit):
                 if self._stop.is_set():
                     break
                 row = store.claim(item["id"], expected_version=item["version"],

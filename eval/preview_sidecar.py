@@ -76,7 +76,7 @@ def _mem_rows(service) -> list[dict]:
     return rows
 
 
-class PreviewHandler(S._Handler):
+class PreviewHandler(H.Handler):
     def _send(self, code: int, body: bytes, ctype: str) -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)

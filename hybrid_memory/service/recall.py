@@ -42,27 +42,42 @@ def approx_tokens(text: str) -> int:
 def context_lines(ret: Retrieval) -> tuple[list[tuple[str, object]], bool]:
     """渲染注入行；返回 (lines, truncated)。
 
-    H29：contested 按入选记忆去重（首个对手胜出），总行数不超过
+    H29/N20：contested 按入选记忆去重（首个对手胜出），总行数不超过
     CONTESTED_K；有任何 contested 对被丢弃即 truncated=True。
+    对手被省略的入选条目，在主条目显式标注“[有未决冲突，不可断言为当前事实]”。
     """
     prov_ids = {m.id for m in ret.provisional}
-    lines = []
-    for m in ret.selected:
-        lines.append((
-            f"- {'[未确认] ' if m.id in prov_ids else ''}"
-            f"{'[待人审冲突，不可断言为当前事实] ' if m.pending_review else ''}"
-            f"{'[项目状态汇总] ' if m.kind == 'reflection' else ''}"
-            f"[t={m.birth}] {_safe_mem_text(m.text)}", m))
     shown: set[int] = set()
     emitted = 0
+    emitted_m_ids: set[int] = set()
+    contested_m_ids = {m.id for m, _ in ret.contested}
     for m, rival in ret.contested:
         if m.id in shown or emitted >= CONTESTED_K:
             continue
         shown.add(m.id)
         emitted += 1
-        lines.append((f"- ⚠️未决冲突：[t={rival.birth}] "
-                      f"{_safe_mem_text(rival.text)}"
-                      f"（与 t={m.birth} 条目冲突）", None))
+        emitted_m_ids.add(m.id)
+
+    lines = []
+    for m in ret.selected:
+        has_omitted_rival = (m.id in contested_m_ids and m.id not in emitted_m_ids)
+        conflict_prefix = (
+            "[待人审冲突，不可断言为当前事实] " if m.pending_review
+            else ("[有未决冲突，不可断言为当前事实] " if has_omitted_rival else "")
+        )
+        lines.append((
+            f"- {'[未确认] ' if m.id in prov_ids else ''}"
+            f"{conflict_prefix}"
+            f"{'[项目状态汇总] ' if m.kind == 'reflection' else ''}"
+            f"[t={m.birth}] {_safe_mem_text(m.text)}", m))
+
+    emitted_set = set(emitted_m_ids)
+    for m, rival in ret.contested:
+        if m.id in emitted_set:
+            emitted_set.remove(m.id)
+            lines.append((f"- ⚠️未决冲突：[t={rival.birth}] "
+                          f"{_safe_mem_text(rival.text)}"
+                          f"（与 t={m.birth} 条目冲突）", None))
     return lines, emitted != len(ret.contested)
 
 

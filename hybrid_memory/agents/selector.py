@@ -24,7 +24,8 @@ def validate(reply, row, svc) -> list[Decision]:
     decisions = reply.get("decisions")
     candidates = row["payload"]["candidates"]
     if (not isinstance(decisions, list) or len(decisions) != len(candidates)
-            or sorted(d.get("candidate_index") for d in decisions if isinstance(d, dict))
+            or any(not isinstance(d, dict) or type(d.get("candidate_index")) is not int for d in decisions)
+            or sorted(d["candidate_index"] for d in decisions)
             != list(range(len(candidates)))):
         raise ValueError("Selector must return exactly one decision per candidate")
     uid = row["payload"]["unit_id"]
@@ -41,7 +42,7 @@ def validate(reply, row, svc) -> list[Decision]:
         ev, _ = svc._validate_proposal(c, None)
         ev.origin = "agent"
         target = d.get("target_id")
-        old = svc.engine.mems.get(target) if type(target) is int else None
+        old = svc.engine.mems.get(target) if type(target) is int and type(target) is not bool else None
         # Exact re-extraction from overlapping windows cannot yield a second
         # identical memory even when the model misclassifies it as CREATE.
         if action == "CREATE":

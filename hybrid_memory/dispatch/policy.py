@@ -28,7 +28,8 @@ class KindPolicy:
     claim_from: tuple[str, ...] = ("pending", "ready")
     daily_cap: int | None = None
     max_attempts: int | None = None
-    on_exhausted: str = "dead"      # dead | requeue（调查→dead，语义→requeue）
+    max_apply_attempts: int | None = None
+    on_exhausted: str = "dead"      # dead | requeue
     lease_s: float | None = None
     backoff: float = 0.0
 
@@ -37,7 +38,8 @@ _INVESTIGATION = KindPolicy(
     kinds=("recall_miss", "extract_due"),
     claim_from=("pending", "ready"),
     daily_cap=None,                 # worker 调用参数持有
-    max_attempts=None,              # worker 调用参数持有
+    max_attempts=3,                 # INV=3
+    max_apply_attempts=3,
     on_exhausted="dead",            # H8：证据/输入问题，重试不改变输入
     lease_s=None,                   # worker 调用参数持有
     backoff=0.0,                    # 调用方必传 delay，本值不用
@@ -47,7 +49,8 @@ _SEMANTIC = KindPolicy(
     kinds=("conflict_pending", "feedback_pending", "maintenance_due"),
     claim_from=("pending", "ready"),
     daily_cap=None,
-    max_attempts=None,              # H8 现状：无调用方传 max，即无上限
+    max_attempts=None,              # H8 现状：模型重试无上限（或由调用方指定）
+    max_apply_attempts=5,           # SEM=5 (N06)
     on_exhausted="requeue",         # H8：模型瞬时错误，输入依然有效
     lease_s=120.0,                  # 旧 claim_semantic 默认值
     backoff=2.0,                    # 旧 retry_semantic 公式底数
@@ -57,7 +60,8 @@ _WORKFLOW = KindPolicy(
     kinds=("hauler_due", "selector_due", "reviewer_due"),
     claim_from=("pending", "ready"),
     daily_cap=None,
-    max_attempts=5,                 # 照抄 trio 当前硬编码（H8 上限见 KindPolicy）
+    max_attempts=5,                 # WF=5 (N06)
+    max_apply_attempts=5,
     on_exhausted="dead",            # H8：trio 类归调查类，耗尽即 dead
     lease_s=120.0,                  # 旧 claim_semantic 默认值
     backoff=2.0,                    # 旧 retry_semantic 公式底数
@@ -79,7 +83,16 @@ def policy_for(kind: str) -> KindPolicy:
 
 
 def assert_consumers(appliers) -> None:  # noqa: ANN001 — applier 类型 P5 定
-    """启动自检（H25/A6）：POLICIES 的每个 kind 必须在 appliers 有消费者，否则 Fatal。"""
+    """启动自检（H25/A6/Defect10）：POLICIES 的每个 kind 必须在 appliers 有真实消费者，反向无野项。"""
     missing = [kind for kind in POLICIES if kind not in appliers]
     if missing:
         raise Fatal(f"task kinds without consumers: {sorted(missing)}")
+    wild = [kind for kind in appliers if kind not in POLICIES and kind != "feedback"]
+    if wild:
+        raise Fatal(f"unknown applier kinds not in POLICIES: {sorted(wild)}")
+    for kind, app in appliers.items():
+        if hasattr(app, "runner") and getattr(app, "runner") == "dispatch":
+            if not callable(getattr(app, "apply", None)):
+                raise Fatal(f"dispatch applier for {kind} must be callable")
+        elif not callable(app) and not hasattr(app, "runner"):
+            raise Fatal(f"applier for {kind} is not callable")

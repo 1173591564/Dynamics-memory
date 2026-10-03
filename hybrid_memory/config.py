@@ -105,10 +105,12 @@ class Settings:
 
 
 def resolve_pipeline(env: Mapping[str, str] | None = None) -> str:
-    """唯一读 `MEMORY_PIPELINE` 的地方（I2）。未知值沿用现状：非 legacy 即 opencode。"""
+    """唯一读 `MEMORY_PIPELINE` 的地方（N01）。支持 opencode | legacy，未知值默认 opencode。"""
     source = os.environ if env is None else env
-    return ("legacy" if source.get("MEMORY_PIPELINE", "opencode").lower() == "legacy"
-            else "opencode")
+    raw = source.get("MEMORY_PIPELINE", "opencode").lower()
+    if raw == "legacy":
+        return "legacy"
+    return "opencode"
 
 
 def resolve_settings(argv: list[str] | None = None,

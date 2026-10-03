@@ -379,17 +379,6 @@ def check_a8() -> None:
 
 
 # ---------------------------------------------------------------- A9
-def _has_int_gt(mod: str, name: str, lo: int) -> bool:
-    sys.path.insert(0, str(ROOT))
-    try:
-        import importlib
-        m = importlib.import_module(mod)
-        v = getattr(m, name, None)
-        return isinstance(v, int) and v > lo
-    finally:
-        sys.path.remove(str(ROOT))
-
-
 def _ast_literal_in(path: Path, func: str, value: int) -> bool:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
