@@ -14,6 +14,7 @@
 - 公开产品符号的目标契约（含结构化返回字段）在 `architecture_contract.py` 逐条固定；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。计划新增与删除项同样在该文件冻结，见 §5.9 与 §9。产品代码的模块级常量/别名在 `CONSTANTS` 表逐条登记（判定范围＝顶层 Assign/AnnAssign 且全大写或 `_` 开头，dunder 除外），检查器强制未登记即红。
 - 后续清理只执行第 9 节的明确处置。漏登是覆盖检查失败，不是自动删除授权；调用方、状态/部署兼容和替代测试迁完才删。数据目录、证据、凭据、Git 历史、第三方源码未获删除授权。
 - 测试和 TIDE 是验收资产，不能按“生产没 import”判断死代码。本文与附录不得各自保存不同的目标策略；附录只自动记录现状形态，行为决策只在本文。
+- 过程标准（开发行为、五维 DoD、门禁链）见 [`engineering-charter.md`](engineering-charter.md)；其例外与计划错误码见 §9.2 N35。本文仍是唯一系统设计，章程不替代它。
 
 ## 1. 公理、闭环与目录
 
@@ -530,6 +531,7 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 - **N32 调用上下文与效果准备**：`store_call_context`、`prepare_effect` 已实现；**均未接线**；`prepare_effect` 的 `svc.embedder` 属性不存在（服务为 `svc.emb`），向量分支恒空。
 - **N33 清理收敛**：`clamp`、`cited_text`、`_has_int_gt` 删除完成，DELETIONS 已同步；不含其他行为变更。
 - **N34 模块级常量登记**：产品代码模块级常量/别名进入 `CONSTANTS` 逐条登记，检查器强制（未登记/失效/缺理由即红）；测试与评测常量随所属模块（TIDE 冻结）。本轮登记 69 条，判定范围＝顶层 Assign/AnnAssign 且全大写或 `_` 开头（dunder 除外）。
+- **N35 工程规范章程采纳（含已声明例外与计划错误码）**：采纳 [`engineering-charter.md`](engineering-charter.md)（14 条 + 五维 DoD + 门禁链）为开发过程标准。**已声明例外**（属契约认可行为，不得当作违规去"修"）：① `thin_recall` 易失遥测可丢但必须计数（N02）；② 裸引擎 `SignalWorker` 内存队列丢最旧、无 SQLite 死信（N26 兼容形态）；③ Legacy 调查兼容上限（INV 模型 2/应用 3）与 `skip_recent` TTL；④ §10.4 跟踪的未接线/未兑现项允许暂时存在，但不得长期滞留；⑤ 章程第 1 条约束生产代码（`hybrid_memory/**`），测试/评测资产受"保留登记"约束而非调用链约束；⑥ shim 仅允许无逻辑转发（第 3 条）。**计划错误码**（实现时必须进 `_STATUS`，并配"代码中出现的所有 code 均有映射"的回归）：`capacity_backpressure`→503（容量背压，`plan_capacity` 拒收路径）、`already_credited`→409（feedback 重复回执；插件已按此对齐，`test_http_feedback_retry_and_already_credited_are_distinct` 需同步断言 code）。**门禁边界**：完整 Bun 超时用例与 bench smoke 仍属 §10.4 未验证项，按"如实记录、不得过滤"执行；门禁只规定"提交前必须跑什么"，不授权 AI 自宣布完成——该判断属于人。
 
 未兑现契约与未接线清单见 §10.4；N29–N33 的"已完成"式表述作废，以本节如实状态为准。
 
@@ -555,7 +557,7 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 - Pool门：C/M/A/context组合、全pin背压、A保护/戳/引用、CREATE/EXIST/复活/聚合/reflection/审批同commit收口、截对手仍警告、一次衰减/迟信用/registry硬界。
 - IO门：Legacy直写成功立即checkpoint、双库crash、人审403、high schema拒、UTF-8/大附件/CLI权限与清理、完整Bun timeout。
 - Python/Bun/旧checker/TIDE meta继续；A6/A8/A9转真实行为，A7查旧字段子集+类型语义并准合法新增，不静默重冻。
-- CI脚本组合门，不新增会递归跑整套pytest的test_acceptance。旧测试/fixtures/子进程import随迁，.env不是测试修复的删除对象。
+- CI脚本组合门，不新增会递归跑整套pytest的test_acceptance。旧测试/fixtures/子进程import随迁，.env不是测试修复的删除对象。门禁链与五维 DoD 见 `engineering-charter.md` 第 12/13 条；执行边界（Bun/bench 未验证项、禁止自宣布完成）见 §9.2 N35。
 
 收尾顺序：先失败回归和关键漏洞→接Settings/schema/policy/provider/ledger/telemetry及统一effects/dispatch/context→plan_capacity与公共parse去Legacy→迁evidence/client/harness/测试夹具修CLI与preview→更新登记、README、doc地图、CI，只执行N25明确代码清理。数据删除另行确认。
 
