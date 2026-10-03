@@ -5,7 +5,7 @@
 > 未在本页出现的函数/模块在下一轮统一删除前，必须先在此登记或列入删除项。
 > 生成命令：`python analysis/check_architecture.py --build-inventory`；核对：同命令不带参数。
 > 固定契约数据（目标路径、显式契约、计划新增、删除条件、模块备注）在 `analysis/architecture_contract.py`。
-> 当前登记 145 个 Python 模块、5 个 TS/角色定义模块、1453 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、138 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
+> 当前登记 145 个 Python 模块、5 个 TS/角色定义模块、1454 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、138 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
 
 每符号给出：功能、输入、输出、作用、错误、目标（目标路径/处置/变更）。
 公开产品符号在固定契约里逐条定义目标；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。
@@ -3307,7 +3307,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/dispatch/effects.py`（当前路径）。
 - 模块输入：任务行、模型产物、连接与回执上下文。
 - 模块输出：唯一效果编排与九类 applier 的结构化结果；整批原子、容量复核。
-- 源校验：`e596ee7e6d0f2c25f60861363d964bc23c1c8fff760b663569ce77c239b20286`。
+- 源校验：`11e0a347ab71c1816484018eb853f80093d981a3b37c26e48c2ed62b079fd861`。
 - 模块级常量：`EFFECTS`（保留）。
 
 ### `hybrid_memory/dispatch/effects.py::Applier`
@@ -4066,7 +4066,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/legacy/inline.py`（当前路径）。
 - 模块输入：信号 payload 与注入 chat。
 - 模块输出：Investigation 或 None；只读工具、预算与因果由服务端闸。
-- 源校验：`1ba3858411c6828915404b021adc1eeb34ef75bddefefee79580eb3358f8aba9`。
+- 源校验：`9b74e0d355ad9f291944639c5ffa1115d773b0d4d6a7a7dcdf2963292c62bc90`。
 - 模块级常量：`TOOLS`（兼容保留）。
 
 ### `hybrid_memory/legacy/inline.py::_fn`
@@ -4621,7 +4621,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/semantics/llm.py`（当前路径）。
 - 模块输入：判定输入、注入 chat 或客户端与缓存。
 - 模块输出：verdict、used 列表或 None、reflection Event 或 None；失败必须外显。
-- 源校验：`8f0f29b7358bf35c3eb981b1a44fc93ffddabc6e7728d65441cd6bea55b846a7`。
+- 源校验：`3846c5cc0f7f3e808358f2ba610309e165ff151b329d7ec1f616054fbc2c355e`。
 - 模块级常量：`_JUDGE_SYS`（保留）；`_RECOG_SYS`（保留）；`_CONSOLIDATE_SYS`（保留）。
 
 ### `hybrid_memory/semantics/llm.py::_one_word`
@@ -5097,7 +5097,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/service/observe.py`（当前路径）。
 - 模块输入：一轮 user/assistant、request_id 与有序单元工作。
 - 模块输出：接受回执与逐单元交付回执；先持久证据再效果，重放不推进时钟。
-- 源校验：`f38062997515e809764b0bb99de41fa63e1cd051819305a600c4d6c29e4d23e8`。
+- 源校验：`0b20179ab9d145c6d68fd7ec67f5cfb0b5dda43676fc19964c1afdea52750283`。
 
 ### `hybrid_memory/service/observe.py::_annotate_observe`
 
@@ -5160,7 +5160,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/service/operate.py`（当前路径）。
 - 模块输入：Legacy 提议/裁决/诊断/缺失与可信 context。
 - 模块输出：逐条回执、裁决计数与诊断统计；公开直写 Trio 拒绝、Legacy 立即 checkpoint。
-- 源校验：`09122eb0c9b69cbb71f9e06f4210b1d534e376dc67bc291e9ce1400c902b674a`。
+- 源校验：`a9c6d7dbcecd1e05c72bd4f467502353b9aa8cf6c3d704d2ddf31a03d8f35fd4`。
 - 模块级常量：`_SELF_REF_RE`（保留）；`_MAX_PROPOSAL_CHARS`（保留）；`VERDICTS`（保留）；`_MISS_SOURCES`（保留）。
 
 ### `hybrid_memory/service/operate.py::_cited_text`
@@ -5388,7 +5388,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/service/service.py`（当前路径）。
 - 模块输入：cfg/embed/semantics/generator/stores 与业务请求。
 - 模块输出：单项目门面回执与锁内状态；不放业务算法、不 import transport。
-- 源校验：`efee662782bc359bfd13320b2aa7b3c25a5b950ff844fdf39f78a219eb6cb0ff`。
+- 源校验：`30c8e6cf141e19795fd547632d25a8ee90711845eebb7ed124bbce59f05061f7`。
 
 ### `hybrid_memory/service/service.py::MemoryService`
 
@@ -6849,7 +6849,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/transport/bootstrap.py`（当前路径）。
 - 模块输入：argv/env、项目目录与状态目录。
 - 模块输出：组装好的 MemoryService、HTTP 进程与真停机收尾；唯一组合根。
-- 源校验：`7e7928d79a11809a08000d759ecc551cfaf0bb0c38d7f534bdd20138c53c5dd2`。
+- 源校验：`82dcc6c54c445430dffd75323f60cfa85781e38c637dc78c6d195449c5a4c784`。
 
 ### `hybrid_memory/transport/bootstrap.py::build_default_service`
 
@@ -13242,7 +13242,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`tests/unit/test_defects_regression.py`（当前路径）。
 - 模块输入：被测对象与 pytest 夹具。
 - 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
-- 源校验：`55ffeea6d0d1ac1b1088ff0da74533c5dbd62c15ab729fa60c4e848102681c36`。
+- 源校验：`3eb2bd2bfa843092a4907befd4a388f1d23c21b32ca85ae1eb1ee470a83a6d6d`。
 
 ### `tests/unit/test_defects_regression.py::test_plan_capacity_under_limit`
 
@@ -13397,6 +13397,15 @@ vendored `mvp/agent/` 完全排除。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
 - 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L141)。
 
+### `tests/unit/test_defects_regression.py::test_production_uses_canonical_imports`
+
+- 功能：Defect 7 收口：8 个生产模块全部走 canonical 导入 （store.evidence / llm.client）；shim 仅供旧消费者。
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 (root / rel).read_text, Path。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L153)。
+
 ### `tests/unit/test_defects_regression.py::test_policy_consumers_registration`
 
 - 功能：行为断言：policy_consumers_registration；成功正常返回，违约抛 AssertionError/pytest 失败
@@ -13404,7 +13413,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 effects.EFFECTS.items, policy.assert_consumers。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L153)。
+- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L170)。
 
 ### `tests/unit/test_defects_regression.py::test_resolve_pipeline_matrix_behavior`
 
@@ -13413,7 +13422,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 pytest.raises, resolve_pipeline。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L159)。
+- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L176)。
 
 ## `tests/unit/test_errors.py`
 

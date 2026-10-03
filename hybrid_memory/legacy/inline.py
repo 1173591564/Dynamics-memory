@@ -16,7 +16,7 @@ import json
 import sys
 from typing import Callable
 
-from ..llm import ZhipuChatError, chat_messages
+from ..llm.client import ZhipuChatError, chat_messages
 from .investigator import (_CLI_INSTRUCTION, INVESTIGATOR_SYS, Investigation,
                            parse_investigation)
 

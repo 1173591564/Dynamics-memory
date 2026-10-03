@@ -17,7 +17,7 @@ from ..errors import ProposalRejected
 from ..guards.grounding import content_grounded as _content_grounded
 from ..guards.redact import redact_secrets
 from ..legacy.prompt import parse_ids, parse_salience
-from ..logstore import entities_in
+from ..store.evidence import entities_in
 from ..semantics import normalize
 from .context import _ORIGINS, CausalViolation, InvestigationContext
 

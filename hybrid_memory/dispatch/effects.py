@@ -17,7 +17,7 @@ from ..agents import hauler, reviewer, selector
 from ..core import dynamics, triggers
 from ..core.types import Event, Pool, is_visible
 from ..errors import Degraded
-from ..logstore import entities_in
+from ..store.evidence import entities_in
 from ..store.tasks import SEMANTIC_KINDS, WORKFLOW_KINDS
 
 

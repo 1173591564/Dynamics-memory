@@ -12,10 +12,10 @@ import signal as _signal
 import sys
 from pathlib import Path
 
-from ..llm import chat
+from ..llm.client import chat
 from ..config import Cfg, load_env_key, resolve_pipeline
 from ..legacy.candgen import ChatGenerator
-from ..logstore import LogStore
+from ..store.evidence import LogStore
 from ..semantics.llm import LLMSemantics
 from ..semantics.provider import SemanticsProvider
 from ..service.service import MemoryService

@@ -16,7 +16,7 @@ from ..core.types import Event
 from ..guards.bounds import capture_fingerprint as _capture_fingerprint
 from ..guards.bounds import validate_request_id as _validate_request_id
 from ..guards.grounding import content_grounded as _content_grounded
-from ..logstore import entities_in
+from ..store.evidence import entities_in
 from ..semantics import normalize
 from ..store.tasks import (SEMANTIC_KINDS, WORKFLOW_KINDS, CheckpointConflict,
                            TaskQueueFull, encode)

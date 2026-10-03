@@ -22,7 +22,7 @@ from . import budgets, feedback, lifecycle, observe, operate, recall, review, to
 from .context import InvestigationContext
 from ..dispatch import effects, policy, worker
 from .operate import ProposalRejected  # noqa: F401 — trio/review 经门面复用
-from ..logstore import LogStore
+from ..store.evidence import LogStore
 from ..store import state
 from ..store.state import _COUNTERS, _SERVICE_COUNTERS
 from ..store.tasks import TaskStore

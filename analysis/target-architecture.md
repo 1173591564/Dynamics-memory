@@ -650,6 +650,18 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
   `tests/unit/test_config.py`（含进程级拒绝启动回归）、
   `tests/unit/test_defects_regression.py::test_resolve_pipeline_matrix_behavior`。
   验证：全量 473 passed。
+- **N41 生产代码 canonical 导入切换（P0-2，修 §10.4 canonical 项）**：
+  决定：8 处生产导入全部切到 canonical——dispatch/effects、service/{observe,
+  operate,service}、transport/bootstrap、legacy/inline 的 `..logstore`→
+  `..store.evidence`；transport/bootstrap、legacy/inline、semantics/llm 的
+  `..llm`→`..llm.client`。shim（hybrid_memory/logstore.py、llm 包 __init__
+  再导出）保留，旧消费者（含本仓库旧测试，作为 shim 存活证据）不受影响；
+  新增锁定测试扫描生产模块禁止再走 shim 导入。
+  理由：双导入位让"迁移完成"不可判定（H23/N24/N26 的收尾）；shim 只为兼容，
+  不为自用。
+  影响符号：上述 7 个文件的 import 行（无行为变化）+ 新增
+  `test_production_uses_canonical_imports`。
+  验证：全量 474 passed。
 
 ### 9.1 旧目标条目的最终去向
 

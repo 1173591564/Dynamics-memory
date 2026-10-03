@@ -150,6 +150,23 @@ def test_evidence_and_llm_shims(tmp_path):
     assert old_llm.ZhipuChatError is new_llm.ZhipuChatError
 
 
+def test_production_uses_canonical_imports():
+    """Defect 7 收口：8 个生产模块全部走 canonical 导入
+    （store.evidence / llm.client）；shim 仅供旧消费者。"""
+    from pathlib import Path
+    import hybrid_memory
+    root = Path(hybrid_memory.__file__).parent
+    prod = [
+        "dispatch/effects.py", "service/observe.py", "service/operate.py",
+        "service/service.py", "transport/bootstrap.py", "legacy/inline.py",
+        "semantics/llm.py",
+    ]
+    for rel in prod:
+        src = (root / rel).read_text(encoding="utf-8")
+        assert "from ..logstore import" not in src, f"{rel} 必须走 store.evidence"
+        assert "from ..llm import" not in src, f"{rel} 必须走 llm.client"
+
+
 def test_policy_consumers_registration():
     policy.assert_consumers(effects.EFFECTS)
     for kind, app in effects.EFFECTS.items():
