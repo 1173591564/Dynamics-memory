@@ -229,7 +229,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`analysis/architecture_contract.py`（当前路径）。
 - 模块输入：源码语法树与人工冻结的契约数据。
 - 模块输出：无运行逻辑；供检查器渲染逐符号目标与执行覆盖校验。
-- 源校验：`6ffd1502fd4f2e27c101cc2625919869d5b2965c838e7b85f51c240e4951c45b`。
+- 源校验：`b2b55c99943869f9265befd3c66ed2c408ea7c3c6fb163a4dc4f66c920f0a6a8`。
 - 模块级常量：`TARGET_PATHS`（未登记）；`MODULE_IO`（未登记）；`SYMBOL_OVERRIDES`（未登记）；`PLANNED_MODULES`（未登记）；`PLANNED_SYMBOLS`（未登记）；`DELETIONS`（未登记）；`CONSTANTS`（未登记）；`MODULE_NOTES`（未登记）。
 - 输入/输出：本模块只有常量/数据契约，无独立函数；语义见模块输入/输出与备注。
 - 导出/输入依赖：annotations ← __future__.annotations
@@ -2092,7 +2092,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输出：严格 JSON 对象；CLI 缺失/超时/坏输出显式失败，不回退假模型。
 - 源校验：`59991f25f6ab2159c29c20d8bb3590c33f9141db31e993ee1fe6521862ad4010`。
 - 模块备注：目标：payload 经私有 UTF-8 临时文件以 --file 附件传递；不支持该通道的 CLI 拒绝启动，不回退超长 argv；用后清理。
-- 模块级常量：`PROTOCOL_INSTRUCTION`（未登记）。
+- 模块级常量：`PROTOCOL_INSTRUCTION`（保留）。
 
 ### `hybrid_memory/agents/opencode.py::OpenCodeRunner`
 

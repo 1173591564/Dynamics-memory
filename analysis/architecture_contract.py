@@ -316,7 +316,6 @@ SYMBOL_OVERRIDES = {
         "True 或抛 Fatal",
         "opencode run --help 输出含 --file 才算有通道；bootstrap 在 serve 前调用",
         "缺失即拒绝启动，不回退超长 argv；探测不证明 provider/模型质量"),
-    "hybrid_memory/agents/opencode.py::PROTOCOL_INSTRUCTION": ("保留", "短协议指令常量（位置参数，§3.7/N44）"),
     "hybrid_memory/agents/payload.py::seal_context": (
         "封存一次模型调用的输入上下文",
         "kind、build_payload 产物、快照 revision",
@@ -724,6 +723,7 @@ CONSTANTS = {
     "hybrid_memory/service/review.py::_MAX_LEDGER_REVIEWS": ("保留", "待审台账输出上界（N37）；对齐 pending 人审 ≤512"),
     "hybrid_memory/service/review.py::_MAX_LEDGER_AGGREGATES": ("保留", "聚合台账输出上界（N37）"),
     "hybrid_memory/agents/payload.py::PROTOCOL_VERSION": ("保留", "模型调用 payload 形状版本（N38 封存上下文随附）"),
+    "hybrid_memory/agents/opencode.py::PROTOCOL_INSTRUCTION": ("保留", "OpenCode 短协议指令常量（位置参数，§3.7/N44）"),
     "hybrid_memory/telemetry.py::_warned": ("保留", "限频告警键集"),
     "hybrid_memory/telemetry.py::_warned_lock": ("保留", "限频告警锁"),
     "hybrid_memory/transport/dto.py::SIGNAL_PATHS": ("保留", "信号路径白名单"),
