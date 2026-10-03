@@ -591,6 +591,29 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
   影响符号：`service/review.py::conflict_ledger`（+3 个上界常量）、
   `service/tools.py::conflicts`；HTTP 无需改动（经 service 传导）。
   验证：`tests/unit/test_conflict_ledger.py` 6 条（先红后绿）；全量 460 passed。
+- **N38 store_call_context 封存接线（P0-1.3，兑现 §10.4 未接线项 / N10）**：
+  决定：worker 两路径在模型调用前封存输入上下文——workflow（process_once）封
+  `payload.seal_context(kind, build_payload 产物, 快照 revision)`（窗口/规则/候选/
+  移交规则 ids + canonical json sha256 摘要 + PROTOCOL_VERSION）；语义路径
+  （run_semantic_tasks）封 kind+协议版本+快照 revision+payload 摘要。TaskStore 增
+  `call_context(task_id)` 读取器（多次尝试取最新）。校验对照封存口径：
+  `hauler.validate_sources` 接受 `sealed=` 窗口（selector 取父 hauler 任务的封存窗口，
+  因为候选引用边界由父任务建立）；`reviewer.validate` 优先用封存 handoff_rule_ids；
+  `selector.validate`/`apply_selector` 同走 sealed_window。无封存（历史任务）回退
+  重建口径，保持兼容。
+  理由：N10 问题是"校验用重建口径，迟到数据（旧单元导入/新规则使用）会事后混进
+  合法观测集，批准模型从未见过的引用"——只有封存当时的观测集才能挡住。
+  被否决备选：校验时直接重建 recent_ids/rules（现状，即漏洞本身）；封存窗口按
+  selector 自身 payload 取（selector payload 无 window，会得到空窗口全拒——实测
+  被 trio 回归抓住）；payload.seal_context import store.tasks 取 encode（agents 碰
+  store 边界违规，被 import_boundaries 抓住，改为本地 canonical dumps）。
+  影响符号：`agents/payload.py::PROTOCOL_VERSION/seal_context`、
+  `agents/hauler.py::sealed_context/sealed_window/validate_sources/validate`、
+  `agents/reviewer.py::validate`、`agents/selector.py::validate`、
+  `dispatch/effects.py::apply_selector`、`dispatch/worker.py::process_once/
+  run_semantic_tasks`、`store/tasks.py::TaskStore.call_context`。
+  验证：`tests/unit/test_call_context_sealing.py` 5 条（先红后绿：迟到旧单元、
+  迟到规则使用在封存口径下被拒而重建口径会放行均有前置断言）；全量 465 passed。
 
 ### 9.1 旧目标条目的最终去向
 

@@ -366,6 +366,19 @@ class TaskStore:
         with self._lock:
             self._owned(self._conn, task_id, token)
 
+    def call_context(self, task_id: int) -> dict | None:
+        """读取该任务最近一次模型调用的封存上下文（N10）。
+
+        无封存（早于接线的历史任务）返回 None，校验方回退重建口径。
+        同任务多次尝试取最新一次（与产出 result 的那次调用一致）。
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT context FROM task_call_contexts WHERE task_id=? "
+                "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                (task_id,)).fetchone()
+        return json.loads(row[0]) if row else None
+
     def store_call_context(self, task_id: int, token: str, context: dict) -> None:
         """封存一次模型调用的原始输入上下文（N10）。"""
         if not isinstance(context, dict):

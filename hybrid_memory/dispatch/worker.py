@@ -136,6 +136,14 @@ def run_semantic_tasks(svc, limit: int = 8) -> dict:
                 if row is None:
                     continue
                 if row["state"] == "running":
+                    # N10：语义路径同样封存（payload 已冻结在库，摘要绑定 +
+                    # 快照 revision + 协议版本）。
+                    with svc._lock:
+                        seal_revision = svc._checkpoint_revision
+                    svc.tasks.store_call_context(
+                        row["id"], row["token"],
+                        payload.seal_context(row["kind"], row["payload"],
+                                             seal_revision))
                     result = svc._semantic_model(row)
                     if row["kind"] == "conflict_pending":
                         stats["judged"] += len(result["verdicts"])
@@ -245,6 +253,13 @@ class DispatchWorker:
                     if row["state"] == "running":
                         name = row["kind"].removesuffix("_due")
                         task_payload = payload.build_payload(row["kind"], self.svc, row)
+                        with self.svc.lock:
+                            revision = self.svc._checkpoint_revision
+                        # N10：模型调用前封存输入上下文（窗口/规则/移交 ids、
+                        # 快照 revision、协议版本、正文摘要）；校验对照封存值。
+                        store.store_call_context(
+                            row["id"], row["token"],
+                            payload.seal_context(row["kind"], task_payload, revision))
                         result = self.run_agent(name, task_payload)
                         store.store_result(row["id"], row["token"], result,
                             rule_ids=[r["id"] for r in task_payload["rules"]])

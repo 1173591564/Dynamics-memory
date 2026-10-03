@@ -26,6 +26,41 @@ def memory_snapshot(svc):
             for m in sorted(memories, key=lambda m: m.id)]
 
 
+PROTOCOL_VERSION = 1  # 模型调用 payload 形状版本（N10：封存上下文随附）
+
+
+def seal_context(kind: str, built: dict, revision: int) -> dict:
+    """封存一次模型调用的输入上下文（N10）：窗口/规则/候选/移交规则 ids、
+    快照 revision、协议版本与正文摘要。校验时对照封存值，不重建批准旧输出
+    （迟到数据不能事后混进窗口/观测集）。"""
+    import hashlib
+    import json as _json
+    digest = hashlib.sha256(_json.dumps(
+        built, ensure_ascii=False, sort_keys=True,
+        separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
+    ctx = {
+        "kind": kind,
+        "protocol_version": PROTOCOL_VERSION,
+        "snapshot_revision": revision,
+        "payload_sha256": digest,
+    }
+    if kind in ("hauler_due", "selector_due", "reviewer_due"):
+        ctx["unit_id"] = built.get("unit_id")
+        # 窗口只封真实存在的（selector payload 无 window，其候选引用
+        # 边界由父 hauler 任务的封存窗口约束，见 hauler.sealed_window）
+        if isinstance(built.get("window"), list):
+            ctx["window_ids"] = [u.get("unit_id") for u in built.get("window", [])]
+    if kind in ("hauler_due", "selector_due"):
+        ctx["rule_ids"] = [r.get("id") for r in built.get("rules", [])]
+    if kind == "selector_due":
+        ctx["candidate_texts"] = [c.get("text") for c in built.get("candidates", [])]
+    if kind == "reviewer_due":
+        ctx["handoff_rule_ids"] = sorted(
+            {rid for t in built.get("handoffs", [])
+             for rid in t.get("rule_ids", [])})
+    return ctx
+
+
 def build_payload(kind, svc, row):
     """组装某工作流任务的 agent 输入；只读（调用方持锁与否由调用点定）。"""
     with svc.lock:

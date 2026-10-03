@@ -251,7 +251,10 @@ def apply_selector(svc, row, output, conn, plan=None) -> dict:
             outcomes.append({"index": idx, "action": action})
             continue
         # The selector cannot widen a source boundary established by its parent.
-        hauler.validate_sources(svc, [c], uid)
+        # N10：对照封存窗口（selector 取父任务封存），不重建 recent_ids
+        # 批准旧输出。
+        hauler.validate_sources(svc, [c], uid,
+                                sealed=hauler.sealed_window(svc, row))
         # Treat even model-produced recommendations as untrusted input.
         # prepare_effect 已在锁外静态校验并预计算向量：对齐时复用，不重算。
         if reuse:

@@ -306,6 +306,12 @@ SYMBOL_OVERRIDES = {
         "语义任务阶段适配", "svc 与 limit", "judged/resolved/credited/reflected/thin/recog_fail/errors", "目标无独立线程，统一 due/quota/policy", "单任务失败不影响整批；fault 即停"),
     "hybrid_memory/agents/opencode.py::OpenCodeRunner.run": (
         "真实角色调用", "name、封存 payload", "已解析 JSON 对象", "隔离 CLI、UTF-8、超时、JSONL 文本提取", "CLI/超时/协议错误显式；不得 log 原文与凭据"),
+    "hybrid_memory/agents/payload.py::seal_context": (
+        "封存一次模型调用的输入上下文",
+        "kind、build_payload 产物、快照 revision",
+        "{kind,protocol_version,snapshot_revision,payload_sha256,unit_id?,window_ids?,rule_ids?,candidate_texts?,handoff_rule_ids?}",
+        "纯函数：窗口/规则/移交 ids + 摘要；selector 不封 window（边界由父任务封存约束）",
+        "不触碰 store（agents 不碰库）；摘要为 canonical json sha256"),
     "hybrid_memory/agents/payload.py::build_payload": (
         "角色输入组装", "kind、svc、row（目标：封存上下文）", "kind/task_id/unit_id/window|complaint/handoffs/previous_retrieval/rules/memories|candidates", "只读；窗≤12k；Reviewer 含真实规则使用", "超限/缺 unit 失败不截断"),
     "hybrid_memory/agents/payload.py::memory_snapshot": (
@@ -360,6 +366,18 @@ SYMBOL_OVERRIDES = {
         "回答归因", "texts、question、answer", "bool 列表或 None", "失败 None 由调用方计数退化", "None 不是 NONE（NONE 是合法没用）"),
     "hybrid_memory/guards/provenance.py::sources_known": (
         "来源集合纯判定", "ids 与已知集合", "bool", "无 I/O", "未知只是 False；目标实现接线，当前为 stub"),
+    "hybrid_memory/agents/hauler.py::sealed_context": (
+        "读取任务封存上下文",
+        "svc 与任务行",
+        "封存 dict 或 None",
+        "委托 TaskStore.call_context",
+        "无封存回 None（回退重建），不抛错"),
+    "hybrid_memory/agents/hauler.py::sealed_window": (
+        "封存窗口口径",
+        "svc 与任务行",
+        "窗口 unit id 列表或 None",
+        "selector 取父 hauler 任务的封存窗口；hauler/reviewer 取自身",
+        "候选引用边界由父任务建立，不得事后放宽"),
     "hybrid_memory/guards/provenance.py::validate_sources": (
         "来源存在性校验", "ids 与注入的 exists 查询", "None 或 Rejected", "无 I/O；I/O 由 service 预取", "未知 id 拒绝；目标实现接线，当前为 stub"),
     "hybrid_memory/guards/provenance.py::ensure_within_before": (
@@ -560,6 +578,12 @@ SYMBOL_OVERRIDES = {
     "hybrid_memory/semantics/provider.py::SemanticsProvider.consolidate": (
         "reflection 语义包装", "Memory 列表与 t", "Event 或 None",
         "返回前脱敏；来源并集", "失败与合法 NONE 分开记录"),
+    "hybrid_memory/store/tasks.py::TaskStore.call_context": (
+        "封存上下文读取器",
+        "task_id",
+        "最新封存上下文 dict 或 None（历史任务无封存）",
+        "读库不加锁外事务；多次尝试取最新（与产出 result 的调用一致）",
+        "无封存返回 None 由校验方回退重建，不抛错"),
     "hybrid_memory/store/tasks.py::TaskStore.store_call_context": (
         "封存一次模型调用的原始输入上下文",
         "task_id、token、context（窗口 ids、规则 id、快照 revision、协议版本、正文摘要）",
@@ -675,6 +699,7 @@ CONSTANTS = {
     "hybrid_memory/service/review.py::_MAX_LEDGER_CONFLICTS": ("保留", "冲突台账输出上界（N37）；超界标 truncated"),
     "hybrid_memory/service/review.py::_MAX_LEDGER_REVIEWS": ("保留", "待审台账输出上界（N37）；对齐 pending 人审 ≤512"),
     "hybrid_memory/service/review.py::_MAX_LEDGER_AGGREGATES": ("保留", "聚合台账输出上界（N37）"),
+    "hybrid_memory/agents/payload.py::PROTOCOL_VERSION": ("保留", "模型调用 payload 形状版本（N38 封存上下文随附）"),
     "hybrid_memory/telemetry.py::_warned": ("保留", "限频告警键集"),
     "hybrid_memory/telemetry.py::_warned_lock": ("保留", "限频告警锁"),
     "hybrid_memory/transport/dto.py::SIGNAL_PATHS": ("保留", "信号路径白名单"),

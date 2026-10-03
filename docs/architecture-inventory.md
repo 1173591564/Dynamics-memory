@@ -5,7 +5,7 @@
 > 未在本页出现的函数/模块在下一轮统一删除前，必须先在此登记或列入删除项。
 > 生成命令：`python analysis/check_architecture.py --build-inventory`；核对：同命令不带参数。
 > 固定契约数据（目标路径、显式契约、计划新增、删除条件、模块备注）在 `analysis/architecture_contract.py`。
-> 当前登记 143 个 Python 模块、5 个 TS/角色定义模块、1400 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、137 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
+> 当前登记 144 个 Python 模块、5 个 TS/角色定义模块、1413 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、138 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
 
 每符号给出：功能、输入、输出、作用、错误、目标（目标路径/处置/变更）。
 公开产品符号在固定契约里逐条定义目标；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。
@@ -229,7 +229,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`analysis/architecture_contract.py`（当前路径）。
 - 模块输入：源码语法树与人工冻结的契约数据。
 - 模块输出：无运行逻辑；供检查器渲染逐符号目标与执行覆盖校验。
-- 源校验：`84388dd52abd428dffc6e233fdc3f96990285fdbc6f273f14def26c86ff05dcc`。
+- 源校验：`6e77ea88412be3831b2da716ad2c969a690074c8235f48294b55eb90422bff93`。
 - 模块级常量：`TARGET_PATHS`（未登记）；`MODULE_IO`（未登记）；`SYMBOL_OVERRIDES`（未登记）；`PLANNED_MODULES`（未登记）；`PLANNED_SYMBOLS`（未登记）；`DELETIONS`（未登记）；`CONSTANTS`（未登记）；`MODULE_NOTES`（未登记）。
 - 输入/输出：本模块只有常量/数据契约，无独立函数；语义见模块输入/输出与备注。
 - 导出/输入依赖：annotations ← __future__.annotations
@@ -2045,16 +2045,34 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/agents/hauler.py`（当前路径）。
 - 模块输入：Hauler 回复、任务行与封存窗口。
 - 模块输出：规范化候选列表或整批拒绝；来源必须属于实际供给。
-- 源校验：`697386754fbcbb5e79e09d1edaa634f220164b9844e5fbfe600eed6ce361d5bb`。
+- 源校验：`bbc636bd305895a1e5574c59f04deae5351353ea4f01b70f026956fb6aec50e1`。
+
+### `hybrid_memory/agents/hauler.py::sealed_context`
+
+- 功能：读取任务封存上下文
+- 输入：`svc 与任务行`。
+- 输出：`封存 dict 或 None`。
+- 作用：委托 TaskStore.call_context。
+- 错误：无封存回 None（回退重建），不抛错。
+- 目标：`hybrid_memory/agents/hauler.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/agents/hauler.py#L8)。
+
+### `hybrid_memory/agents/hauler.py::sealed_window`
+
+- 功能：封存窗口口径
+- 输入：`svc 与任务行`。
+- 输出：`窗口 unit id 列表或 None`。
+- 作用：selector 取父 hauler 任务的封存窗口；hauler/reviewer 取自身。
+- 错误：候选引用边界由父任务建立，不得事后放宽。
+- 目标：`hybrid_memory/agents/hauler.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/agents/hauler.py#L16)。
 
 ### `hybrid_memory/agents/hauler.py::validate_sources`
 
-- 功能：每条候选必须是非空文本，且只引用所给窗口内的 unit。
-- 输入：`svc, candidates, uid`。
+- 功能：每条候选必须是非空文本，且只引用所给窗口内的 unit。 sealed：封存窗口 id 列表（N10）；None 时回退重建口径（旧任务行兼容）。
+- 输入：`svc, candidates, uid, sealed=None`。
 - 输出：`未注解；None`。
 - 作用：调用 ValueError, any, c.get, c['text'].strip, isinstance, set, svc.log.recent_ids, type。
 - 错误：异常 ValueError('candidate must cite only units in the supplied window')。
-- 目标：`hybrid_memory/agents/hauler.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/agents/hauler.py#L8)。
+- 目标：`hybrid_memory/agents/hauler.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/agents/hauler.py#L31)。
 
 ### `hybrid_memory/agents/hauler.py::validate`
 
@@ -2063,7 +2081,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`规范候选列表`。
 - 作用：类型/来源/因果/长度/去重。
 - 错误：整批 ValueError；空批合法。
-- 目标：`hybrid_memory/agents/hauler.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/agents/hauler.py#L19)。
+- 目标：`hybrid_memory/agents/hauler.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/agents/hauler.py#L46)。
 
 ## `hybrid_memory/agents/opencode.py`
 
@@ -2145,7 +2163,8 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/agents/payload.py`（当前路径）。
 - 模块输入：任务行、封存上下文、规则与记忆快照。
 - 模块输出：角色 payload；窗≤12k、快照≤500 且≤1MiB，超限失败不截断。
-- 源校验：`233a7fdcd3d323aaf7db592421895cbd4664258d719e88df7a66f98b572febad`。
+- 源校验：`afbfbdf797d4676c109ceb73d20cc70f93c17825517b638301f5e3811ebabbb4`。
+- 模块级常量：`PROTOCOL_VERSION`（保留）。
 
 ### `hybrid_memory/agents/payload.py::rules_for`
 
@@ -2165,6 +2184,15 @@ vendored `mvp/agent/` 完全排除。
 - 错误：>500 或 >1MiB 直接失败，禁截断猜测。
 - 目标：`hybrid_memory/agents/payload.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/agents/payload.py#L17)。
 
+### `hybrid_memory/agents/payload.py::seal_context`
+
+- 功能：封存一次模型调用的输入上下文
+- 输入：`kind、build_payload 产物、快照 revision`。
+- 输出：`{kind,protocol_version,snapshot_revision,payload_sha256,unit_id?,window_ids?,rule_ids?,candidate_texts?,handoff_rule_ids?}`。
+- 作用：纯函数：窗口/规则/移交 ids + 摘要；selector 不封 window（边界由父任务封存约束）。
+- 错误：不触碰 store（agents 不碰库）；摘要为 canonical json sha256。
+- 目标：`hybrid_memory/agents/payload.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/agents/payload.py#L32)。
+
 ### `hybrid_memory/agents/payload.py::build_payload`
 
 - 功能：角色输入组装
@@ -2172,7 +2200,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`kind/task_id/unit_id/window|complaint/handoffs/previous_retrieval/rules/memories|candidates`。
 - 作用：只读；窗≤12k；Reviewer 含真实规则使用。
 - 错误：超限/缺 unit 失败不截断。
-- 目标：`hybrid_memory/agents/payload.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/agents/payload.py#L29)。
+- 目标：`hybrid_memory/agents/payload.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/agents/payload.py#L64)。
 
 ## `hybrid_memory/agents/protocol.py`
 
@@ -2237,7 +2265,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/agents/reviewer.py`（当前路径）。
 - 模块输入：Reviewer 回复、任务行与封存 handoffs。
 - 模块输出：归一化 bundle 或整包拒绝；规则引用必须来自实际使用记录。
-- 源校验：`16c52f7c40556ad86d45f7d80817ffc2e93aa7d8c5bfe1893d0f288f749da68f`。
+- 源校验：`63b24cc7bd2bbb3a6a9a6e9d2393e5ce8c9d7e2304607f5ae6a353cc365c2e6a`。
 
 ### `hybrid_memory/agents/reviewer.py::scope_of`
 
@@ -2264,7 +2292,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/agents/selector.py`（当前路径）。
 - 模块输入：Selector 回复、任务行与已给快照。
 - 模块输出：规范 Decision 计划；严格类型、每候选恰一、目标在快照。
-- 源校验：`a45a5df0358dab039861b36fd416ab150aa384fa5378a7554a71e34821efa4d5`。
+- 源校验：`fd70bb6799b5e3eb5714bc648f34bc014cb2dcaf50cdb054e67ee220a2729cb0`。
 
 ### `hybrid_memory/agents/selector.py::Decision`
 
@@ -3279,7 +3307,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/dispatch/effects.py`（当前路径）。
 - 模块输入：任务行、模型产物、连接与回执上下文。
 - 模块输出：唯一效果编排与九类 applier 的结构化结果；整批原子、容量复核。
-- 源校验：`dbc1044e9cc2c82a1118d8ac2d76cc5fd52ac277ff3042035709453a4f136f5b`。
+- 源校验：`e596ee7e6d0f2c25f60861363d964bc23c1c8fff760b663569ce77c239b20286`。
 - 模块级常量：`EFFECTS`（保留）。
 
 ### `hybrid_memory/dispatch/effects.py::Applier`
@@ -3415,7 +3443,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`{events,vectors,targets,expected_revision,actions} 计划`。
 - 作用：embedding 与静态校验在锁外完成；失败无内存效果；经 worker 两路径（process_once/apply_semantic）接进生产。
 - 错误：来源/因果/窗口非法即失败，不部分构建；目标邮戳漂移整批拒绝重判。
-- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L322)。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L325)。
 
 ### `hybrid_memory/dispatch/effects.py::apply_reviewer`
 
@@ -3424,7 +3452,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`{'rules':n,'repair_candidates':n}`。
 - 作用：规则/停用/审计与接力同事务。
 - 错误：非法 bundle 整拒；上限满背压。
-- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L382)。
+- 目标：`hybrid_memory/dispatch/effects.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/effects.py#L385)。
 
 ## `hybrid_memory/dispatch/policy.py`
 
@@ -3471,7 +3499,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/dispatch/worker.py`（当前路径）。
 - 模块输入：service、runner、settings/policy 与轮次上限。
 - 模块输出：本轮完成的 Task 数与阶段统计；模型锁外、产物可复用、停止有界。
-- 源校验：`f0685e7b4a336355e54071ec342f80f28aa313042deaeea08cadcf021433819a`。
+- 源校验：`f15dff9e1d2b7e25619de64cfe81ddce2632c6d29570ce7e6e751c0bf0231dd1`。
 - 模块备注：目标：run_semantic_tasks 与 Legacy.process_once 降为无独立线程 adapter，统一 due 筛选/额度/策略；unit_work 仍按 uid 顺序。
 
 ### `hybrid_memory/dispatch/worker.py::semantic_model`
@@ -3526,7 +3554,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`类型/实例；基类 object`。
 - 作用：字段与方法契约；dataclass 自动生成的方法不另建手写符号。
 - 错误：见构造函数及方法。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L168)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L176)。
 
 ### `hybrid_memory/dispatch/worker.py::DispatchWorker.__init__`
 
@@ -3535,7 +3563,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 threading.Event, threading.Lock。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L175)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L183)。
 
 ### `hybrid_memory/dispatch/worker.py::DispatchWorker.start`
 
@@ -3544,7 +3572,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 self._stop.clear, self._thread.is_alive, self._thread.start, self._wake.clear, threading.Thread。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L188)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L196)。
 
 ### `hybrid_memory/dispatch/worker.py::DispatchWorker.stop`
 
@@ -3553,7 +3581,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None`。
 - 作用：停领取、唤醒、等在途、产物可存则 ready。
 - 错误：未停成功必须报告，不假装安全保存。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L197)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L205)。
 
 ### `hybrid_memory/dispatch/worker.py::DispatchWorker.notify`
 
@@ -3562,7 +3590,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 self._wake.set。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L203)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L211)。
 
 ### `hybrid_memory/dispatch/worker.py::DispatchWorker.stats`
 
@@ -3571,7 +3599,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`dict；{'processed': self._processed, 'errors': self._errors}`。
 - 作用：调用 无外部调用。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L206)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L214)。
 
 ### `hybrid_memory/dispatch/worker.py::DispatchWorker._loop`
 
@@ -3580,7 +3608,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 print, self._stop.is_set, self._wake.clear, self._wake.wait, self.process_once, type。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L209)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L217)。
 
 ### `hybrid_memory/dispatch/worker.py::DispatchWorker._apply`
 
@@ -3589,7 +3617,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；applier(self.svc, row, output, conn, plan=plan)`。
 - 作用：调用 ValueError, applier。
 - 错误：异常 ValueError(f"无 dispatch applier: {row['kind']}")。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L221)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L229)。
 
 ### `hybrid_memory/dispatch/worker.py::DispatchWorker.process_once`
 
@@ -3598,7 +3626,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`int 完成数`。
 - 作用：recover→due→claim→模型或复用→效果；类别公平。
 - 错误：异常不杀循环；dead 留人工。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L227)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L235)。
 
 ## `hybrid_memory/embed/__init__.py`
 
@@ -6256,7 +6284,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/store/tasks.py`（当前路径）。
 - 模块输入：kind/payload/版本/租约/回执/checkpoint 与效果回调。
 - 模块输出：任务行、状态迁移、原子效果回执与查询统计；不承诺模型只执行一次。
-- 源校验：`b5586ab3f28600e3c859087496f83c9c3b4a5a18387dcaa5a5d151d2ceff2eef`。
+- 源校验：`0cbd51553cd7acb2161ecc16db2769d18d796fc324318cd7c23722be9f781eb7`。
 - 模块备注：旧 claim_semantic/complete_semantic 等 API 已删除，不得复活；目标新增 store_call_context。
 - 模块级常量：`SEMANTIC_KINDS`（保留）；`WORKFLOW_KINDS`（保留）；`_SCHEMA`（保留）。
 
@@ -6467,6 +6495,15 @@ vendored `mvp/agent/` 完全排除。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
 - 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L365)。
 
+### `hybrid_memory/store/tasks.py::TaskStore.call_context`
+
+- 功能：封存上下文读取器
+- 输入：`task_id`。
+- 输出：`最新封存上下文 dict 或 None（历史任务无封存）`。
+- 作用：读库不加锁外事务；多次尝试取最新（与产出 result 的调用一致）。
+- 错误：无封存返回 None 由校验方回退重建，不抛错。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L369)。
+
 ### `hybrid_memory/store/tasks.py::TaskStore.store_call_context`
 
 - 功能：封存一次模型调用的原始输入上下文
@@ -6474,7 +6511,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None（写入）或明确冲突`。
 - 作用：running 且 owned 时同事务写入；同 attempt 不可改绑。
 - 错误：租约/版本不符 TaskLeaseLost；重复封存不同内容拒绝。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L369)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L382)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.store_result`
 
@@ -6483,7 +6520,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`新 revision 或 None`。
 - 作用：产物转 ready 并冻结规则引用。
 - 错误：租约失效 TaskLeaseLost。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L388)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L401)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.retry`
 
@@ -6492,7 +6529,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`新 state`。
 - 作用：区分模型与应用尝试；合法产物保留。
 - 错误：耗尽按 policy 转 dead/requeue。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L405)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L418)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.finish`
 
@@ -6501,7 +6538,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 conn.execute, self._owned, self.clock, self.transaction。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L431)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L444)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.unit_receipt`
 
@@ -6510,7 +6547,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；json.loads(row[0]) if row else None`。
 - 作用：调用 json.loads, self._conn.execute, self._conn.execute('SELECT response FROM unit_receipts WHERE unit_id=?', (unit_id,)).fetchone。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L437)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L450)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.apply_unit`
 
@@ -6519,7 +6556,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`(response, revision, replayed)`。
 - 作用：L0 回执与效果同事务；跨库确认另行。
 - 错误：重复单元返回原回执。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L443)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L456)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.read_capture`
 
@@ -6528,7 +6565,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None；{'kind': row[0], 'fingerprint': row[1], 'response': json.loads(row[2])}`。
 - 作用：调用 json.loads, self._conn.execute, self._conn.execute('SELECT kind, fingerprint, response FROM capture_receipts WHERE request_id=?', (r…。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L462)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L475)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore._capture_hit`
 
@@ -6537,7 +6574,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None；json.loads(old[1])`。
 - 作用：调用 CaptureConflict, conn.execute, conn.execute('SELECT fingerprint, response FROM capture_receipts WHERE request_id=?', (capture['requ…, json.loads。
 - 错误：异常 CaptureConflict(f"request_id {capture['request_id']} 已绑定不同请求")。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/store/tasks.py#L471)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/store/tasks.py#L484)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.remember_capture`
 
@@ -6546,7 +6583,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；(old, True)；(response, False)`。
 - 作用：调用 conn.execute, encode, self._capture_hit, self.clock, self.transaction。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/store/tasks.py#L481)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/store/tasks.py#L494)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.apply_effect`
 
@@ -6555,7 +6592,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；(out, revision)`。
 - 作用：调用 CheckpointConflict, conn.execute, conn.execute('SELECT revision FROM checkpoint WHERE id=1').fetchone, dump_state, mutate, self._write_checkpoint, self.transaction。
 - 错误：异常 CheckpointConflict('checkpoint 已推进；拒绝旧内存实例')。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/store/tasks.py#L494)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/store/tasks.py#L507)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.apply_captured_effect`
 
@@ -6564,7 +6601,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；(old, expected_revision, True)；(out, revision, False)`。
 - 作用：调用 CheckpointConflict, conn.execute, conn.execute('SELECT revision FROM checkpoint WHERE id=1').fetchone, dump_state, encode, mutate, self._capture_hit, self._write_checkpoint, self.clock, self.transaction。
 - 错误：异常 CheckpointConflict('checkpoint 已推进；拒绝旧内存实例')。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/store/tasks.py#L504)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/store/tasks.py#L517)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.complete`
 
@@ -6573,7 +6610,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`(out, revision)`。
 - 作用：效果+新 Task+checkpoint+回执+done 同事务。
 - 错误：CAS 冲突/租约失效显式。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L522)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L535)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.apply_operation`
 
@@ -6582,7 +6619,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`(response, revision, replayed)`。
 - 作用：同 task 操作签名去重；慢 I/O 后复核租约。
 - 错误：过期 token 不得写入。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L551)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L564)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.rule_snapshot`
 
@@ -6591,7 +6628,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`有效规则行列表`。
 - 作用：project 或 entity 字面匹配。
 - 错误：不执行规则文本。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L570)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L583)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.rule_report`
 
@@ -6600,7 +6637,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；[dict(r) for r in self._conn.execute('SELECT r.id,r.target,r.scope,r.instruction,r.enabled,r.source_task,COUNT(u.task_id) AS uses FROM agent_rules r LEFT JOIN agent_rule_uses u ON u.rule_id=r.id GROUP BY r.id ORDER BY r.id')]`。
 - 作用：调用 dict, self._conn.execute。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L581)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L594)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.disable_rule`
 
@@ -6609,7 +6646,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；bool(cur.rowcount)`。
 - 作用：调用 bool, conn.execute, self.clock, self.transaction。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/store/tasks.py#L588)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/store/tasks.py#L601)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.rules_for`
 
@@ -6618,7 +6655,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；[r[0] for r in self._conn.execute('SELECT instruction FROM agent_rules WHERE target=? AND enabled=1 ORDER BY id', (target,)).fetchall()]`。
 - 作用：调用 self._conn.execute, self._conn.execute('SELECT instruction FROM agent_rules WHERE target=? AND enabled=1 ORDER BY id', (…。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/store/tasks.py`；处置：迁移后删除；变更：删除条件：无作用域旧读法仅测试使用；rule_snapshot/rule_report 接管后移除；[源码](../hybrid_memory/store/tasks.py#L598)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：迁移后删除；变更：删除条件：无作用域旧读法仅测试使用；rule_snapshot/rule_report 接管后移除；[源码](../hybrid_memory/store/tasks.py#L611)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.workflow_trace`
 
@@ -6627,7 +6664,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`有界 trace 列表`。
 - 作用：只承认派发前完成；≤18 项/24000 字符。
 - 错误：超限 ValueError 需人工调查。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L604)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L617)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.pending_reviews`
 
@@ -6636,7 +6673,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；[dict(r) for r in self._conn.execute("SELECT * FROM human_reviews WHERE status='pending' ORDER BY id")]`。
 - 作用：调用 dict, self._conn.execute。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L646)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L659)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.queued_counts`
 
@@ -6645,7 +6682,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；dict(self._conn.execute("SELECT kind,COUNT(*) FROM tasks WHERE state IN ('pending','ready') GROUP BY kind"))`。
 - 作用：调用 dict, self._conn.execute。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L651)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L664)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.semantic_stats`
 
@@ -6654,7 +6691,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；{'states': dict(rows), 'retrying': retrying, 'errors': errors, 'recog_fail': failure[0] if failure else 0}`。
 - 作用：调用 dict, list, self._conn.execute, self._conn.execute("SELECT COUNT(*) FROM tasks WHERE kind IN ('conflict_pending','feedback_pending',…, self._conn.execute("SELECT value FROM metadata WHERE key='semantic_recog_fail'").fetchone, self.clock。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L656)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L669)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.stats`
 
@@ -6663,7 +6700,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；counts`。
 - 作用：调用 self._conn.execute, self._conn.execute('SELECT COUNT(*) FROM operations').fetchone。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L674)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L687)。
 
 ### `hybrid_memory/store/tasks.py::TaskStore.close`
 
@@ -6672,7 +6709,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 self._conn.close。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L680)。
+- 目标：`hybrid_memory/store/tasks.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/store/tasks.py#L693)。
 
 ## `hybrid_memory/taskstore.py`
 
@@ -12738,6 +12775,96 @@ vendored `mvp/agent/` 完全排除。
 - 作用：调用 OSError。
 - 错误：异常 OSError('replace failed')。
 - 目标：`tests/test_zhipu_embedder.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/test_zhipu_embedder.py#L226)。
+
+## `tests/unit/test_call_context_sealing.py`
+
+- 模块功能：行为、恢复、权限及协议回归；不得按产品死代码删除。
+- 设计归属：验收资产；处置：保留迁移。
+- 目标路径：`tests/unit/test_call_context_sealing.py`（当前路径）。
+- 模块输入：被测对象与 pytest 夹具。
+- 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
+- 源校验：`ff0ad82b078f50708e4b5a9d100a7c880168fad608437e1aaccf15ad3e2029dd`。
+
+### `tests/unit/test_call_context_sealing.py::_fake`
+
+- 功能：测试场景/夹具/假实现：_fake；输入输出见本项，生产不调用
+- 输入：`calls`。
+- 输出：`未注解；fake`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_call_context_sealing.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_call_context_sealing.py#L22)。
+
+### `tests/unit/test_call_context_sealing.py::_fake.fake`
+
+- 功能：测试场景/夹具/假实现：_fake.fake；输入输出见本项，生产不调用
+- 输入：`name, p`。
+- 输出：`未注解；{'candidates': [{'text': '项目统一使用 bun 工具', 'source_unit_ids': [p['unit_id']]}]}；{'decisions': [{'candidate_index': 0, 'action': 'CREATE'}]}；{'diagnosis': 'd', 'rules': [], 'repair_candidates': [], 'rule_reviews': []}`。
+- 作用：调用 calls.append。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_call_context_sealing.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_call_context_sealing.py#L23)。
+
+### `tests/unit/test_call_context_sealing.py::_context`
+
+- 功能：测试场景/夹具/假实现：_context；输入输出见本项，生产不调用
+- 输入：`svc, task_id`。
+- 输出：`未注解；json.loads(row[0]) if row else None`。
+- 作用：调用 json.loads, svc.tasks._conn.execute, svc.tasks._conn.execute('SELECT context FROM task_call_contexts WHERE task_id=? ORDER BY created_at …。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_call_context_sealing.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_call_context_sealing.py#L35)。
+
+### `tests/unit/test_call_context_sealing.py::test_worker_seals_workflow_call_context`
+
+- 功能：行为断言：worker_seals_workflow_call_context；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 DispatchWorker, _context, _fake, _svc, encode, encode(sent).encode, hashlib.sha256, hashlib.sha256(encode(sent).encode('utf-8')).hexdigest, isinstance, pytest.raises, svc.log.close, svc.observe, svc.tasks.close, svc.tasks.list_tasks, svc.tasks.store_call_context, worker.process_once。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_call_context_sealing.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_call_context_sealing.py#L43)。
+
+### `tests/unit/test_call_context_sealing.py::test_semantic_path_seals_call_context`
+
+- 功能：行为断言：semantic_path_seals_call_context；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _context, _svc, encode, encode({'scene': 's', 'ids': [1]}).encode, hashlib.sha256, hashlib.sha256(encode({'scene': 's', 'ids': [1]}).encode('utf-8')).hexdigest, isinstance, svc.log.close, svc.process_semantic_tasks, svc.tasks.close, svc.tasks.enqueue。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_call_context_sealing.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_call_context_sealing.py#L78)。
+
+### `tests/unit/test_call_context_sealing.py::test_validate_sources_uses_sealed_window_not_rebuild`
+
+- 功能：行为断言：validate_sources_uses_sealed_window_not_rebuild；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _svc, _time.time, conn.execute, dict, hauler.validate, hauler.validate_sources, pytest.raises, svc.log.add_unit, svc.log.close, svc.log.recent_ids, svc.observe, svc.tasks.close, svc.tasks.store_call_context, svc.tasks.transaction, svc_reply。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_call_context_sealing.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_call_context_sealing.py#L100)。
+
+### `tests/unit/test_call_context_sealing.py::test_reviewer_validate_uses_sealed_rule_ids`
+
+- 功能：行为断言：reviewer_validate_uses_sealed_rule_ids；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _svc, _time.time, conn.execute, payload_mod.build_payload, pytest.raises, reviewer.validate, svc.log.close, svc.observe, svc.tasks.close, svc.tasks.store_call_context, svc.tasks.transaction, t.get。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_call_context_sealing.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_call_context_sealing.py#L137)。
+
+### `tests/unit/test_call_context_sealing.py::test_validate_falls_back_without_seal`
+
+- 功能：行为断言：validate_falls_back_without_seal；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _svc, hauler.validate_sources, svc.log.close, svc.observe, svc.tasks.close。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_call_context_sealing.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_call_context_sealing.py#L185)。
+
+### `tests/unit/test_call_context_sealing.py::svc_reply`
+
+- 功能：测试场景/夹具/假实现：svc_reply；输入输出见本项，生产不调用
+- 输入：`obj`。
+- 输出：`未注解；obj`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_call_context_sealing.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_call_context_sealing.py#L200)。
 
 ## `tests/unit/test_capacity_backpressure.py`
 
