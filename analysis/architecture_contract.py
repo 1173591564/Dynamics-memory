@@ -574,10 +574,17 @@ SYMBOL_OVERRIDES = {
         "调用配置的 chat；锁外执行", "传输失败返回 pending 并计入 failures，不冒充关系"),
     "hybrid_memory/semantics/provider.py::SemanticsProvider.relevant_set": (
         "实际展示记忆归因包装", "texts、question、answer", "bool 列表或 None",
-        "失败计数外显；退化 selected-hit 由调用方负责", "None=失败，NONE=合法没用，两者不得混同"),
+        "失败计数外显；退化 selected-hit 由调用方负责；委托缺失该能力返回 None 且不计失败",
+        "None=失败，NONE=合法没用，两者不得混同"),
     "hybrid_memory/semantics/provider.py::SemanticsProvider.consolidate": (
         "reflection 语义包装", "Memory 列表与 t", "Event 或 None",
-        "返回前脱敏；来源并集", "失败与合法 NONE 分开记录"),
+        "返回前脱敏；来源并集；委托缺失该能力返回 None 且不计失败", "失败与合法 NONE 分开记录"),
+    "hybrid_memory/semantics/provider.py::SemanticsProvider.valid": (
+        "MemorySemantics 写路径委托", "belief_id、value、t", "bool", "透传 delegate", "构造时已验证委托具备全部方法"),
+    "hybrid_memory/semantics/provider.py::SemanticsProvider.relevant": (
+        "MemorySemantics 检索路径委托", "belief_id、value、query、t", "bool", "透传 delegate", "构造时已验证委托具备全部方法"),
+    "hybrid_memory/semantics/provider.py::SemanticsProvider.embedding_key": (
+        "MemorySemantics 写路径委托", "belief_id、value", "embedding key 元组", "透传 delegate", "构造时已验证委托具备全部方法"),
     "hybrid_memory/store/tasks.py::TaskStore.call_context": (
         "封存上下文读取器",
         "task_id",

@@ -17,6 +17,7 @@ from ..config import Cfg, load_env_key, resolve_pipeline
 from ..legacy.candgen import ChatGenerator
 from ..logstore import LogStore
 from ..semantics.llm import LLMSemantics
+from ..semantics.provider import SemanticsProvider
 from ..service.service import MemoryService
 from .http import serve
 
@@ -42,7 +43,9 @@ def build_default_service(project_dir: str | Path,
 
     emb = ZhipuEmbedder(api_key=key,
                         cache=SqliteEmbeddingCache(mem_dir / "emb.sqlite3"))
-    semantics = LLMSemantics(None, chat_fn=chat_fn, model=model)
+    # H27/N15/N22：真实语义经 SemanticsProvider 包装（双通路 + 降级计数）
+    semantics = SemanticsProvider(LLMSemantics(None, chat_fn=chat_fn, model=model),
+                                  provider="zhipu", model=model)
     cfg = Cfg(theta=0.35, cap_m=8, k=5, tau_dup=0.85, tau_sim=0.78,
               useful_hit=True, defer_credit=True)
     log = LogStore(mem_dir / "log.sqlite", embedder=emb if embed_log else None)

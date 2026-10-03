@@ -26,6 +26,18 @@ class Counters:
     n_dead_tasks: int = 0
 
 
+def _provider_health(service: object) -> dict | None:
+    """语义 provider 降级计数段（N15/N22）；非 provider 装配返回 None。
+
+    地基层不得 import 语义层（import_boundaries），按鸭子类型探测 health()。
+    """
+    sem = getattr(service, "semantics", None)
+    health = getattr(sem, "health", None)
+    if callable(health):
+        return health()
+    return None
+
+
 def health_view(service: object) -> dict:
     """现字段集冻结（只许加字段，A7）。从 server.py 原样迁入（P4）。"""
     with service.lock:
@@ -44,7 +56,8 @@ def health_view(service: object) -> dict:
                 "tensions": len(service.engine.tensions),
                 "signals": sum(service.tasks.queued_counts().values()) + len(service.engine.signals),
                 "log_units": service.log.count(),
-                "agent": bool(service.agent or service.dispatch_worker)}
+                "agent": bool(service.agent or service.dispatch_worker),
+                "semantic_provider": _provider_health(service)}
 
 
 def signals_view(service: object) -> dict:

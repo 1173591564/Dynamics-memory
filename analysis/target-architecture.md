@@ -614,6 +614,29 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
   run_semantic_tasks`、`store/tasks.py::TaskStore.call_context`。
   验证：`tests/unit/test_call_context_sealing.py` 5 条（先红后绿：迟到旧单元、
   迟到规则使用在封存口径下被拒而重建口径会放行均有前置断言）；全量 465 passed。
+- **N39 SemanticsProvider 接线（P0-1.5，兑现 §10.4 未接线项 / H27/N15/N22）**：
+  决定：provider 补齐 MemorySemantics 写路径委托（embedding_key/valid/relevant/
+  scope/fingerprint 透传 delegate，构造时验证委托具备全部 MemorySemantics 方法，
+  MemorySemantics 是 Protocol 不可 runtime_checkable——包装层显式验证，启动即失败
+  而非首条 observe 写入途中 AttributeError）；relevant_set/consolidate 委托缺失该
+  能力时返回 None 且不计失败（能力缺失不是错误，缺失语义退化由 worker 兜底）。
+  bootstrap.build_default_service 以 SemanticsProvider(LLMSemantics(...)) 装配真实
+  语义；worker.semantic_model 对包装解包 delegate 做 isinstance 能力判定、调用仍走
+  provider（judge/relevant_set/consolidate 计数与降级可观测）；telemetry.health_view
+  增 semantic_provider 段（A7 只增；地基层不 import 语义层，鸭子类型探测 health()）。
+  理由：§10.4 该符号"已定义未接线"——真实装配从未经过 provider，双通路与健康
+  可观测性是空转的；且 provider 若无写路径委托，一经接线每条 ingest 都会炸。
+  被否决备选：telemetry import SemanticsProvider 做类型判定（地基层越界，被
+  import_boundaries 抓住）；worker 对 provider 也做能力判定（包装层不声明
+  relevant_set 时 isinstance 恒 False，recognizer 被静默跳过——改为解包判 delegate）；
+  委托缺失能力时抛错（把"合法无能力"当故障，违背缺失语义兼容）。
+  影响符号：`semantics/provider.py::SemanticsProvider`（+委托方法与构造验证）、
+  `transport/bootstrap.py::build_default_service`、`dispatch/worker.py::semantic_model`、
+  `telemetry.py::health_view/_provider_health`。
+  验证：`tests/unit/test_provider_wiring.py` 7 条（先红后绿）；
+  `tests/unit/test_defects_regression.py::test_semantics_provider_health_and_calls`
+  空洞断言（`res is not None or failures >= 0` 恒真）重写为逐字段可失败断言；
+  全量 472 passed。
 
 ### 9.1 旧目标条目的最终去向
 

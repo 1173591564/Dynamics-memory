@@ -50,21 +50,26 @@ def semantic_model(svc, row):
                            if (m := svc.engine.mems.get(i)) is not None
                            and is_visible(m) and not m.pending_review and m.kind == "fact"),
                           key=lambda m: (m.birth, m.id))
+    # H27/N15：svc.semantics 可能是 SemanticsProvider 包装——能力判定看
+    # delegate，调用走 provider（计数与降级可观测）。
+    from ..semantics.provider import SemanticsProvider
+    sem = svc.semantics
+    delegate = sem.delegate if isinstance(sem, SemanticsProvider) else sem
     if kind == "conflict_pending":
-        return {"verdicts": [[a, b, svc.semantics.judge(*args) if args else "pending", stamp]
+        return {"verdicts": [[a, b, sem.judge(*args) if args else "pending", stamp]
                              for a, b, args, stamp in jobs]}
     if kind == "feedback_pending":
-        fn = svc.semantics.relevant_set if isinstance(svc.semantics, FeedbackSemantics) else None
+        fn = sem.relevant_set if isinstance(delegate, FeedbackSemantics) else None
         used = fn(texts, payload["question"], payload["answer"]) if fn else [True] * len(texts)
         failed = used is None or len(used) != len(texts)
         if failed:
             used = [True] * len(texts)
         return {"used": [bool(u) for u in used], "recog_fail": failed}
     if kind == "maintenance_due":
-        if (not isinstance(svc.semantics, ConsolidationSemantics)
+        if (not isinstance(delegate, ConsolidationSemantics)
                 or len(mems) < svc.cfg.consolidation_min_items):
             return {"event": None, "sources": sources}
-        event = svc.semantics.consolidate(mems, row["t"])
+        event = sem.consolidate(mems, row["t"])
         return {"event": asdict(event) if event is not None else None, "sources": sources}
     raise ValueError(f"未知语义任务 {kind}")
 

@@ -5,7 +5,7 @@
 > 未在本页出现的函数/模块在下一轮统一删除前，必须先在此登记或列入删除项。
 > 生成命令：`python analysis/check_architecture.py --build-inventory`；核对：同命令不带参数。
 > 固定契约数据（目标路径、显式契约、计划新增、删除条件、模块备注）在 `analysis/architecture_contract.py`。
-> 当前登记 144 个 Python 模块、5 个 TS/角色定义模块、1413 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、138 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
+> 当前登记 145 个 Python 模块、5 个 TS/角色定义模块、1452 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、138 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
 
 每符号给出：功能、输入、输出、作用、错误、目标（目标路径/处置/变更）。
 公开产品符号在固定契约里逐条定义目标；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。
@@ -229,7 +229,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`analysis/architecture_contract.py`（当前路径）。
 - 模块输入：源码语法树与人工冻结的契约数据。
 - 模块输出：无运行逻辑；供检查器渲染逐符号目标与执行覆盖校验。
-- 源校验：`6e77ea88412be3831b2da716ad2c969a690074c8235f48294b55eb90422bff93`。
+- 源校验：`f009d8b6d730fdec873803857a0ca68732084f86b7fedb2849024a70611d96a0`。
 - 模块级常量：`TARGET_PATHS`（未登记）；`MODULE_IO`（未登记）；`SYMBOL_OVERRIDES`（未登记）；`PLANNED_MODULES`（未登记）；`PLANNED_SYMBOLS`（未登记）；`DELETIONS`（未登记）；`CONSTANTS`（未登记）；`MODULE_NOTES`（未登记）。
 - 输入/输出：本模块只有常量/数据契约，无独立函数；语义见模块输入/输出与备注。
 - 导出/输入依赖：annotations ← __future__.annotations
@@ -3499,15 +3499,15 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/dispatch/worker.py`（当前路径）。
 - 模块输入：service、runner、settings/policy 与轮次上限。
 - 模块输出：本轮完成的 Task 数与阶段统计；模型锁外、产物可复用、停止有界。
-- 源校验：`f15dff9e1d2b7e25619de64cfe81ddce2632c6d29570ce7e6e751c0bf0231dd1`。
+- 源校验：`6914b7c6c047c9737531ce42c1ad04658bae8383a06d68a4ad5280124ebbce2e`。
 - 模块备注：目标：run_semantic_tasks 与 Legacy.process_once 降为无独立线程 adapter，统一 due 筛选/额度/策略；unit_work 仍按 uid 顺序。
 
 ### `hybrid_memory/dispatch/worker.py::semantic_model`
 
 - 功能：只读取判定输入；调用外部语义模型时不持服务锁。
 - 输入：`svc, row`。
-- 输出：`未注解；{'event': None, 'sources': sources}；{'event': asdict(event) if event is not None else None, 'sources': sources}；{'used': [bool(u) for u in used], 'recog_fail': failed}；{'verdicts': [[a, b, svc.semantics.judge(*args) if args else 'pending', stamp] for a, b, args, stamp in jobs]}`。
-- 作用：调用 ValueError, asdict, bool, copy.deepcopy, fn, is_visible, isinstance, jobs.append, len, maintenance.follow_chain, payload.get, sorted, svc._ensure_healthy, svc.engine.mems.get, svc.engine.tensions.get, svc.semantics.consolidate, svc.semantics.judge, tuple。
+- 输出：`未注解；{'event': None, 'sources': sources}；{'event': asdict(event) if event is not None else None, 'sources': sources}；{'used': [bool(u) for u in used], 'recog_fail': failed}；{'verdicts': [[a, b, sem.judge(*args) if args else 'pending', stamp] for a, b, args, stamp in jobs]}`。
+- 作用：调用 ValueError, asdict, bool, copy.deepcopy, fn, is_visible, isinstance, jobs.append, len, maintenance.follow_chain, payload.get, sem.consolidate, sem.judge, sorted, svc._ensure_healthy, svc.engine.mems.get, svc.engine.tensions.get, tuple。
 - 错误：异常 ValueError('反馈文本快照与入选记忆不匹配'), ValueError(f'未知语义任务 {kind}')。
 - 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L24)。
 
@@ -3518,7 +3518,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；out`。
 - 作用：调用 dict, effects.prepare_effect, old_ret.__dict__.clear, old_ret.__dict__.update, svc._kick, svc._retrievals.get, svc._rollback_effect, svc.tasks.complete。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L72)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L77)。
 
 ### `hybrid_memory/dispatch/worker.py::apply_semantic.mutate`
 
@@ -3527,7 +3527,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；applier(svc, row, result, plan=plan)`。
 - 作用：调用 ValueError, applier。
 - 错误：异常 ValueError(f"无 dispatch applier: {row['kind']}")。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L84)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L89)。
 
 ### `hybrid_memory/dispatch/worker.py::apply_semantic.mutate.collect`
 
@@ -3536,7 +3536,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；old_emit(kind, payload, t, key, merge)；svc.tasks._enqueue(conn, kind, effects.signal_payload(svc, kind, payload), t, key=key, merge=merge, memory_next_id=svc.engine._next_id)`。
 - 作用：调用 effects.signal_payload, old_emit, svc.tasks._enqueue。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L88)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L93)。
 
 ### `hybrid_memory/dispatch/worker.py::run_semantic_tasks`
 
@@ -3545,7 +3545,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`judged/resolved/credited/reflected/thin/recog_fail/errors`。
 - 作用：目标无独立线程，统一 due/quota/policy。
 - 错误：单任务失败不影响整批；fault 即停。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L117)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L122)。
 
 ### `hybrid_memory/dispatch/worker.py::DispatchWorker`
 
@@ -3554,7 +3554,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`类型/实例；基类 object`。
 - 作用：字段与方法契约；dataclass 自动生成的方法不另建手写符号。
 - 错误：见构造函数及方法。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L176)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L181)。
 
 ### `hybrid_memory/dispatch/worker.py::DispatchWorker.__init__`
 
@@ -3563,7 +3563,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 threading.Event, threading.Lock。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L183)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L188)。
 
 ### `hybrid_memory/dispatch/worker.py::DispatchWorker.start`
 
@@ -3572,7 +3572,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 self._stop.clear, self._thread.is_alive, self._thread.start, self._wake.clear, threading.Thread。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L196)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L201)。
 
 ### `hybrid_memory/dispatch/worker.py::DispatchWorker.stop`
 
@@ -3581,7 +3581,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None`。
 - 作用：停领取、唤醒、等在途、产物可存则 ready。
 - 错误：未停成功必须报告，不假装安全保存。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L205)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L210)。
 
 ### `hybrid_memory/dispatch/worker.py::DispatchWorker.notify`
 
@@ -3590,7 +3590,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 self._wake.set。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L211)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L216)。
 
 ### `hybrid_memory/dispatch/worker.py::DispatchWorker.stats`
 
@@ -3599,7 +3599,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`dict；{'processed': self._processed, 'errors': self._errors}`。
 - 作用：调用 无外部调用。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L214)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L219)。
 
 ### `hybrid_memory/dispatch/worker.py::DispatchWorker._loop`
 
@@ -3608,7 +3608,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 print, self._stop.is_set, self._wake.clear, self._wake.wait, self.process_once, type。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L217)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L222)。
 
 ### `hybrid_memory/dispatch/worker.py::DispatchWorker._apply`
 
@@ -3617,7 +3617,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；applier(self.svc, row, output, conn, plan=plan)`。
 - 作用：调用 ValueError, applier。
 - 错误：异常 ValueError(f"无 dispatch applier: {row['kind']}")。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L229)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/dispatch/worker.py#L234)。
 
 ### `hybrid_memory/dispatch/worker.py::DispatchWorker.process_once`
 
@@ -3626,7 +3626,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`int 完成数`。
 - 作用：recover→due→claim→模型或复用→效果；类别公平。
 - 错误：异常不杀循环；dead 留人工。
-- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L235)。
+- 目标：`hybrid_memory/dispatch/worker.py`；处置：统一接线；变更：按本项目标契约实施；[源码](../hybrid_memory/dispatch/worker.py#L240)。
 
 ## `hybrid_memory/embed/__init__.py`
 
@@ -4703,7 +4703,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/semantics/provider.py`（当前路径）。
 - 模块输入：两段值/指纹、实际展示记忆、reflection 记忆列表与时间步。
 - 模块输出：verdict 判定、used bool 列表、reflection Event 与 health 观测。
-- 源校验：`dcf11fb936189e0ffdfc49897f4c995dc1e3efe74fd9e038d88204f1b2f9beda`。
+- 源校验：`02281820a7d6dae7de14979dd31b8f61c9953a7325262b7307e970f27b5518da`。
 
 ### `hybrid_memory/semantics/provider.py::SemanticsProvider`
 
@@ -4719,9 +4719,9 @@ vendored `mvp/agent/` 完全排除。
 - 功能：用给定参数与依赖初始化 SemanticsProvider，建立其对象状态；业务归属为SemanticsProvider 双语义通路与健康可观测性
 - 输入：`self, delegate: RealChatSemantics | None=None, *, provider: str='zhipu', model: str='glm-5.3-flash'`。
 - 输出：`未注解；None`。
-- 作用：调用 LLMSemantics。
-- 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/semantics/provider.py`；处置：显式化；变更：保留当前签名与 IO；[源码](../hybrid_memory/semantics/provider.py#L14)。
+- 作用：调用 ', '.join, LLMSemantics, ValueError, callable, getattr。
+- 错误：异常 ValueError(f"SemanticsProvider delegate lacks MemorySemantics methods: {', '.join(missing)}")。
+- 目标：`hybrid_memory/semantics/provider.py`；处置：显式化；变更：保留当前签名与 IO；[源码](../hybrid_memory/semantics/provider.py#L17)。
 
 ### `hybrid_memory/semantics/provider.py::SemanticsProvider.health`
 
@@ -4730,7 +4730,25 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`{provider,model,calls,failures,last_error}`。
 - 作用：只读；合法 NONE 与 transport/parse 失败分开计数。
 - 错误：读取失败返回 last_error，不外抛掩盖真实任务错误。
-- 目标：`hybrid_memory/semantics/provider.py`；处置：显式化；变更：按本项目标契约实施；[源码](../hybrid_memory/semantics/provider.py#L23)。
+- 目标：`hybrid_memory/semantics/provider.py`；处置：显式化；变更：按本项目标契约实施；[源码](../hybrid_memory/semantics/provider.py#L35)。
+
+### `hybrid_memory/semantics/provider.py::SemanticsProvider.relevant_set`
+
+- 功能：实际展示记忆归因包装
+- 输入：`texts、question、answer`。
+- 输出：`bool 列表或 None`。
+- 作用：失败计数外显；退化 selected-hit 由调用方负责；委托缺失该能力返回 None 且不计失败。
+- 错误：None=失败，NONE=合法没用，两者不得混同。
+- 目标：`hybrid_memory/semantics/provider.py`；处置：显式化；变更：按本项目标契约实施；[源码](../hybrid_memory/semantics/provider.py#L45)。
+
+### `hybrid_memory/semantics/provider.py::SemanticsProvider.consolidate`
+
+- 功能：reflection 语义包装
+- 输入：`Memory 列表与 t`。
+- 输出：`Event 或 None`。
+- 作用：返回前脱敏；来源并集；委托缺失该能力返回 None 且不计失败。
+- 错误：失败与合法 NONE 分开记录。
+- 目标：`hybrid_memory/semantics/provider.py`；处置：显式化；变更：按本项目标契约实施；[源码](../hybrid_memory/semantics/provider.py#L60)。
 
 ### `hybrid_memory/semantics/provider.py::SemanticsProvider.judge`
 
@@ -4739,25 +4757,34 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`verdict 字符串（含 pending）`。
 - 作用：调用配置的 chat；锁外执行。
 - 错误：传输失败返回 pending 并计入 failures，不冒充关系。
-- 目标：`hybrid_memory/semantics/provider.py`；处置：显式化；变更：按本项目标契约实施；[源码](../hybrid_memory/semantics/provider.py#L33)。
+- 目标：`hybrid_memory/semantics/provider.py`；处置：显式化；变更：按本项目标契约实施；[源码](../hybrid_memory/semantics/provider.py#L76)。
 
-### `hybrid_memory/semantics/provider.py::SemanticsProvider.relevant_set`
+### `hybrid_memory/semantics/provider.py::SemanticsProvider.relevant`
 
-- 功能：实际展示记忆归因包装
-- 输入：`texts、question、answer`。
-- 输出：`bool 列表或 None`。
-- 作用：失败计数外显；退化 selected-hit 由调用方负责。
-- 错误：None=失败，NONE=合法没用，两者不得混同。
-- 目标：`hybrid_memory/semantics/provider.py`；处置：显式化；变更：按本项目标契约实施；[源码](../hybrid_memory/semantics/provider.py#L43)。
+- 功能：MemorySemantics 检索路径委托
+- 输入：`belief_id、value、query、t`。
+- 输出：`bool`。
+- 作用：透传 delegate。
+- 错误：构造时已验证委托具备全部方法。
+- 目标：`hybrid_memory/semantics/provider.py`；处置：显式化；变更：按本项目标契约实施；[源码](../hybrid_memory/semantics/provider.py#L86)。
 
-### `hybrid_memory/semantics/provider.py::SemanticsProvider.consolidate`
+### `hybrid_memory/semantics/provider.py::SemanticsProvider.valid`
 
-- 功能：reflection 语义包装
-- 输入：`Memory 列表与 t`。
-- 输出：`Event 或 None`。
-- 作用：返回前脱敏；来源并集。
-- 错误：失败与合法 NONE 分开记录。
-- 目标：`hybrid_memory/semantics/provider.py`；处置：显式化；变更：按本项目标契约实施；[源码](../hybrid_memory/semantics/provider.py#L54)。
+- 功能：MemorySemantics 写路径委托
+- 输入：`belief_id、value、t`。
+- 输出：`bool`。
+- 作用：透传 delegate。
+- 错误：构造时已验证委托具备全部方法。
+- 目标：`hybrid_memory/semantics/provider.py`；处置：显式化；变更：按本项目标契约实施；[源码](../hybrid_memory/semantics/provider.py#L89)。
+
+### `hybrid_memory/semantics/provider.py::SemanticsProvider.embedding_key`
+
+- 功能：MemorySemantics 写路径委托
+- 输入：`belief_id、value`。
+- 输出：`embedding key 元组`。
+- 作用：透传 delegate。
+- 错误：构造时已验证委托具备全部方法。
+- 目标：`hybrid_memory/semantics/provider.py`；处置：显式化；变更：按本项目标契约实施；[源码](../hybrid_memory/semantics/provider.py#L92)。
 
 ### `hybrid_memory/semantics/provider.py::SemanticsProvider.fingerprint`
 
@@ -4766,7 +4793,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`int；self.delegate.fingerprint(text)`。
 - 作用：调用 self.delegate.fingerprint。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/semantics/provider.py`；处置：显式化；变更：保留当前签名与 IO；[源码](../hybrid_memory/semantics/provider.py#L64)。
+- 目标：`hybrid_memory/semantics/provider.py`；处置：显式化；变更：保留当前签名与 IO；[源码](../hybrid_memory/semantics/provider.py#L95)。
 
 ### `hybrid_memory/semantics/provider.py::SemanticsProvider.scope`
 
@@ -4775,7 +4802,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；self.delegate.scope(belief_id)`。
 - 作用：调用 self.delegate.scope。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/semantics/provider.py`；处置：显式化；变更：保留当前签名与 IO；[源码](../hybrid_memory/semantics/provider.py#L67)。
+- 目标：`hybrid_memory/semantics/provider.py`；处置：显式化；变更：保留当前签名与 IO；[源码](../hybrid_memory/semantics/provider.py#L98)。
 
 ## `hybrid_memory/semantics/real.py`
 
@@ -6729,7 +6756,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/telemetry.py`（当前路径）。
 - 模块输入：service 的锁内状态与计数。
 - 模块输出：health/signals 只增字段视图、脱敏结构日志与限频告警。
-- 源校验：`3614dcaa46e1a0a4b0887bb15a6bd9850d2ae57364fd734182d2c32ea96a067c`。
+- 源校验：`7a0f1c7b813f67aa0b449f84114d1178fb93d341812b1223ddfe453fcea46b7b`。
 - 模块级常量：`_warned`（保留）；`_warned_lock`（保留）。
 
 ### `hybrid_memory/telemetry.py::Counters`
@@ -6741,6 +6768,15 @@ vendored `mvp/agent/` 完全排除。
 - 错误：见构造函数及方法。
 - 目标：`hybrid_memory/telemetry.py`；处置：接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/telemetry.py#L16)。
 
+### `hybrid_memory/telemetry.py::_provider_health`
+
+- 功能：语义 provider 降级计数段（N15/N22）；非 provider 装配返回 None。 地基层不得 import 语义层（import_boundaries），按鸭子类型探测 health()。
+- 输入：`service: object`。
+- 输出：`dict | None；None；health()`。
+- 作用：调用 callable, getattr, health。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`hybrid_memory/telemetry.py`；处置：接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/telemetry.py#L29)。
+
 ### `hybrid_memory/telemetry.py::health_view`
 
 - 功能：恢复/调度/容量/语义健康视图
@@ -6748,7 +6784,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`ok/checkpoint_fault/snapshot/corrupt_file/units_pending/validation/t/mems/tensions/signals/log_units/agent 及目标新增 paused/degraded/provider/retention/capacity`。
 - 作用：只读；字段只增不改语义。
 - 错误：读取失败不得吞掉；validation 保持 unverified。
-- 目标：`hybrid_memory/telemetry.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/telemetry.py#L29)。
+- 目标：`hybrid_memory/telemetry.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/telemetry.py#L41)。
 
 ### `hybrid_memory/telemetry.py::signals_view`
 
@@ -6757,7 +6793,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`queued/n_emitted/n_dropped/open_budgets/tasks/semantic/checkpoint_fault/missed/proposals/rejected/candgen_fail/miss_counts/log_units/units/agent/t 及目标新增 dispatch/dead/limit 计数`。
 - 作用：只读；不触发裁决。
 - 错误：不得把历史 done 行当 active 容量。
-- 目标：`hybrid_memory/telemetry.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/telemetry.py#L50)。
+- 目标：`hybrid_memory/telemetry.py`；处置：接线；变更：按本项目标契约实施；[源码](../hybrid_memory/telemetry.py#L63)。
 
 ### `hybrid_memory/telemetry.py::log_event`
 
@@ -6766,7 +6802,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 json.dumps, print, time.time。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/telemetry.py`；处置：接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/telemetry.py#L68)。
+- 目标：`hybrid_memory/telemetry.py`；处置：接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/telemetry.py#L81)。
 
 ### `hybrid_memory/telemetry.py::warn_once`
 
@@ -6775,7 +6811,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 _warned.add, print。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/telemetry.py`；处置：接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/telemetry.py#L78)。
+- 目标：`hybrid_memory/telemetry.py`；处置：接线；变更：保留当前签名与 IO；[源码](../hybrid_memory/telemetry.py#L91)。
 
 ## `hybrid_memory/transport/__init__.py`
 
@@ -6813,16 +6849,16 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`hybrid_memory/transport/bootstrap.py`（当前路径）。
 - 模块输入：argv/env、项目目录与状态目录。
 - 模块输出：组装好的 MemoryService、HTTP 进程与真停机收尾；唯一组合根。
-- 源校验：`75ebbff198580f52be216b0d370d6e7dbac1eae9eb78c4ce826a5591181de67b`。
+- 源校验：`58a511abf96371d134f2e8be48a9c7c735097361c0b1899f220bf4955b7078a4`。
 
 ### `hybrid_memory/transport/bootstrap.py::build_default_service`
 
 - 功能：默认依赖组装；目标以 Settings 唯一解析
 - 输入：`project_dir: str | Path, model: str='glm-5.3-flash', embed_log: bool=True, task_capacity: int=4096`。
 - 输出：`MemoryService；MemoryService(cfg, emb, semantics, ChatGenerator(chat_fn), state_dir=mem_dir, logstore=log, task_capacity=task_capacity)`。
-- 作用：调用 Cfg, ChatGenerator, LLMSemantics, LogStore, MemoryService, Path, SqliteEmbeddingCache, ZhipuEmbedder, gi.exists, gi.write_text, load_env_key, mem_dir.mkdir。
+- 作用：调用 Cfg, ChatGenerator, LLMSemantics, LogStore, MemoryService, Path, SemanticsProvider, SqliteEmbeddingCache, ZhipuEmbedder, gi.exists, gi.write_text, load_env_key, mem_dir.mkdir。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/transport/bootstrap.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/bootstrap.py#L24)。
+- 目标：`hybrid_memory/transport/bootstrap.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/bootstrap.py#L25)。
 
 ### `hybrid_memory/transport/bootstrap.py::build_default_service.chat_fn`
 
@@ -6831,7 +6867,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`str；chat(api_key=key, model=model, system=system, user=user, cache_dir=mem_dir / 'chat-cache')`。
 - 作用：调用 chat。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`hybrid_memory/transport/bootstrap.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/transport/bootstrap.py#L39)。
+- 目标：`hybrid_memory/transport/bootstrap.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/transport/bootstrap.py#L40)。
 
 ### `hybrid_memory/transport/bootstrap.py::main`
 
@@ -6840,7 +6876,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None`。
 - 作用：解析→组装→恢复→HTTP/worker→信号→serve→真停机。
 - 错误：非法参数拒绝；stop 未收束不得静默退出。
-- 目标：`hybrid_memory/transport/bootstrap.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/bootstrap.py#L53)。
+- 目标：`hybrid_memory/transport/bootstrap.py`；处置：保留收口；变更：按本项目标契约实施；[源码](../hybrid_memory/transport/bootstrap.py#L56)。
 
 ### `hybrid_memory/transport/bootstrap.py::main._term`
 
@@ -6849,7 +6885,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 SystemExit。
 - 错误：异常 SystemExit(0)。
-- 目标：`hybrid_memory/transport/bootstrap.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/transport/bootstrap.py#L124)。
+- 目标：`hybrid_memory/transport/bootstrap.py`；处置：保留收口；变更：保留当前签名与 IO；[源码](../hybrid_memory/transport/bootstrap.py#L127)。
 
 ## `hybrid_memory/transport/dto.py`
 
@@ -13197,7 +13233,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`tests/unit/test_defects_regression.py`（当前路径）。
 - 模块输入：被测对象与 pytest 夹具。
 - 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
-- 源校验：`42707db14d73a5eccdcebe8c99379b5d712d999a72de5a804c9ed496d1479292`。
+- 源校验：`4727e1fa0d2e50cc1ae85fc561114d6cc2152e92d161b274af131b9659a08ade`。
 
 ### `tests/unit/test_defects_regression.py::test_plan_capacity_under_limit`
 
@@ -13237,12 +13273,102 @@ vendored `mvp/agent/` 完全排除。
 
 ### `tests/unit/test_defects_regression.py::test_semantics_provider_health_and_calls`
 
-- 功能：行为断言：semantics_provider_health_and_calls；成功正常返回，违约抛 AssertionError/pytest 失败
+- 功能：Defect 3 回归：health 计数/失败/最近错误逐字段断言（原 'res is not None or failures >= 0' 恒真，重写为可失败断言）。
 - 输入：`无参数`。
 - 输出：`未注解；None`。
-- 作用：调用 SemanticsProvider, provider.health, provider.relevant_set。
+- 作用：调用 SemanticsProvider, _Bare, _Sem, p2.consolidate, p2.health, p2.relevant_set, provider.health, provider.judge, provider.relevant_set。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
 - 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L86)。
+
+### `tests/unit/test_defects_regression.py::test_semantics_provider_health_and_calls._Sem`
+
+- 功能：测试场景/夹具/假实现：test_semantics_provider_health_and_calls._Sem；输入输出见本项，生产不调用
+- 输入：`见显式或继承的 __init__；无新增字段`。
+- 输出：`类型/实例；基类 object`。
+- 作用：字段与方法契约；dataclass 自动生成的方法不另建手写符号。
+- 错误：见构造函数及方法。
+- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L89)。
+
+### `tests/unit/test_defects_regression.py::test_semantics_provider_health_and_calls._Sem.fingerprint`
+
+- 功能：测试场景/夹具/假实现：test_semantics_provider_health_and_calls._Sem.fingerprint；输入输出见本项，生产不调用
+- 输入：`self, text`。
+- 输出：`未注解；1`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L90)。
+
+### `tests/unit/test_defects_regression.py::test_semantics_provider_health_and_calls._Sem.scope`
+
+- 功能：测试场景/夹具/假实现：test_semantics_provider_health_and_calls._Sem.scope；输入输出见本项，生产不调用
+- 输入：`self, bid`。
+- 输出：`未注解；'project'`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L91)。
+
+### `tests/unit/test_defects_regression.py::test_semantics_provider_health_and_calls._Sem.judge`
+
+- 功能：测试场景/夹具/假实现：test_semantics_provider_health_and_calls._Sem.judge；输入输出见本项，生产不调用
+- 输入：`self, a, b, c, d`。
+- 输出：`未注解；'synonym'`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L92)。
+
+### `tests/unit/test_defects_regression.py::test_semantics_provider_health_and_calls._Sem.relevant`
+
+- 功能：测试场景/夹具/假实现：test_semantics_provider_health_and_calls._Sem.relevant；输入输出见本项，生产不调用
+- 输入：`self, bid, v, q, t`。
+- 输出：`未注解；True`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L93)。
+
+### `tests/unit/test_defects_regression.py::test_semantics_provider_health_and_calls._Sem.valid`
+
+- 功能：测试场景/夹具/假实现：test_semantics_provider_health_and_calls._Sem.valid；输入输出见本项，生产不调用
+- 输入：`self, bid, v, t`。
+- 输出：`未注解；True`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L94)。
+
+### `tests/unit/test_defects_regression.py::test_semantics_provider_health_and_calls._Sem.embedding_key`
+
+- 功能：测试场景/夹具/假实现：test_semantics_provider_health_and_calls._Sem.embedding_key；输入输出见本项，生产不调用
+- 输入：`self, bid, v`。
+- 输出：`未注解；(0, bid, v)`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L95)。
+
+### `tests/unit/test_defects_regression.py::test_semantics_provider_health_and_calls._Sem.relevant_set`
+
+- 功能：测试场景/夹具/假实现：test_semantics_provider_health_and_calls._Sem.relevant_set；输入输出见本项，生产不调用
+- 输入：`self, texts, q, a`。
+- 输出：`未注解；None`。
+- 作用：调用 RuntimeError。
+- 错误：异常 RuntimeError('recognizer down')。
+- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L96)。
+
+### `tests/unit/test_defects_regression.py::test_semantics_provider_health_and_calls._Sem.consolidate`
+
+- 功能：测试场景/夹具/假实现：test_semantics_provider_health_and_calls._Sem.consolidate；输入输出见本项，生产不调用
+- 输入：`self, memories, t`。
+- 输出：`未注解；None`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L97)。
+
+### `tests/unit/test_defects_regression.py::test_semantics_provider_health_and_calls._Bare`
+
+- 功能：测试场景/夹具/假实现：test_semantics_provider_health_and_calls._Bare；输入输出见本项，生产不调用
+- 输入：`见显式或继承的 __init__；无新增字段`。
+- 输出：`类型/实例；基类 _Sem`。
+- 作用：字段与方法契约；dataclass 自动生成的方法不另建手写符号。
+- 错误：见构造函数及方法。
+- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L110)。
 
 ### `tests/unit/test_defects_regression.py::test_task_store_call_context_and_fencing`
 
@@ -13251,7 +13377,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 TaskStore, pytest.raises, store.claim, store.close, store.enqueue, store.store_call_context。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L98)。
+- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L119)。
 
 ### `tests/unit/test_defects_regression.py::test_evidence_and_llm_shims`
 
@@ -13260,7 +13386,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 无外部调用。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L120)。
+- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L141)。
 
 ### `tests/unit/test_defects_regression.py::test_policy_consumers_registration`
 
@@ -13269,7 +13395,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 effects.EFFECTS.items, policy.assert_consumers。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L132)。
+- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L153)。
 
 ### `tests/unit/test_defects_regression.py::test_resolve_pipeline_matrix_behavior`
 
@@ -13278,7 +13404,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 resolve_pipeline。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L138)。
+- 目标：`tests/unit/test_defects_regression.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_defects_regression.py#L159)。
 
 ## `tests/unit/test_errors.py`
 
@@ -13578,6 +13704,240 @@ vendored `mvp/agent/` 完全排除。
 - 作用：调用 Event, _selector_row, _svc, effects.apply_selector, effects.prepare_effect, iter, next, pytest.raises, svc.engine.mems.values, svc.engine.propose, svc.log.close, svc.observe, svc.semantics.fingerprint, svc.tasks.close。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
 - 目标：`tests/unit/test_prepare_effect_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_prepare_effect_wiring.py#L235)。
+
+## `tests/unit/test_provider_wiring.py`
+
+- 模块功能：行为、恢复、权限及协议回归；不得按产品死代码删除。
+- 设计归属：验收资产；处置：保留迁移。
+- 目标路径：`tests/unit/test_provider_wiring.py`（当前路径）。
+- 模块输入：被测对象与 pytest 夹具。
+- 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
+- 源校验：`bdaf7ee3a4a373ac70bf2d2b77ee293df9fbffa6fcdf6eb2bebb7aeebe4635ff`。
+
+### `tests/unit/test_provider_wiring.py::_FakeDelegate`
+
+- 功能：实现全部能力的假语义（可注入故障）。
+- 输入：`见显式或继承的 __init__；无新增字段`。
+- 输出：`类型/实例；基类 object`。
+- 作用：字段与方法契约；dataclass 自动生成的方法不另建手写符号。
+- 错误：见构造函数及方法。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L25)。
+
+### `tests/unit/test_provider_wiring.py::_FakeDelegate.__init__`
+
+- 功能：测试场景/夹具/假实现：_FakeDelegate.__init__；输入输出见本项，生产不调用
+- 输入：`self`。
+- 输出：`未注解；None`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L28)。
+
+### `tests/unit/test_provider_wiring.py::_FakeDelegate.fingerprint`
+
+- 功能：测试场景/夹具/假实现：_FakeDelegate.fingerprint；输入输出见本项，生产不调用
+- 输入：`self, text`。
+- 输出：`未注解；hash(text) % 2 ** 31`。
+- 作用：调用 hash。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L36)。
+
+### `tests/unit/test_provider_wiring.py::_FakeDelegate.scope`
+
+- 功能：测试场景/夹具/假实现：_FakeDelegate.scope；输入输出见本项，生产不调用
+- 输入：`self, belief_id`。
+- 输出：`未注解；'project'`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L39)。
+
+### `tests/unit/test_provider_wiring.py::_FakeDelegate.judge`
+
+- 功能：测试场景/夹具/假实现：_FakeDelegate.judge；输入输出见本项，生产不调用
+- 输入：`self, a_bid, a_val, b_bid, b_val`。
+- 输出：`未注解；'synonym'`。
+- 作用：调用 RuntimeError。
+- 错误：异常 RuntimeError('judge down')。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L42)。
+
+### `tests/unit/test_provider_wiring.py::_FakeDelegate.relevant`
+
+- 功能：测试场景/夹具/假实现：_FakeDelegate.relevant；输入输出见本项，生产不调用
+- 输入：`self, belief_id, value, query, t`。
+- 输出：`未注解；True`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L48)。
+
+### `tests/unit/test_provider_wiring.py::_FakeDelegate.valid`
+
+- 功能：测试场景/夹具/假实现：_FakeDelegate.valid；输入输出见本项，生产不调用
+- 输入：`self, belief_id, value, t`。
+- 输出：`未注解；True`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L52)。
+
+### `tests/unit/test_provider_wiring.py::_FakeDelegate.embedding_key`
+
+- 功能：测试场景/夹具/假实现：_FakeDelegate.embedding_key；输入输出见本项，生产不调用
+- 输入：`self, belief_id, value`。
+- 输出：`未注解；(0, belief_id, value)`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L56)。
+
+### `tests/unit/test_provider_wiring.py::_FakeDelegate.relevant_set`
+
+- 功能：测试场景/夹具/假实现：_FakeDelegate.relevant_set；输入输出见本项，生产不调用
+- 输入：`self, texts, question, answer`。
+- 输出：`未注解；[True] + [False] * (len(texts) - 1)`。
+- 作用：调用 RuntimeError, len。
+- 错误：异常 RuntimeError('recognizer down')。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L60)。
+
+### `tests/unit/test_provider_wiring.py::_FakeDelegate.consolidate`
+
+- 功能：测试场景/夹具/假实现：_FakeDelegate.consolidate；输入输出见本项，生产不调用
+- 输入：`self, memories, t`。
+- 输出：`未注解；Event(1, 'reflection', '巩固产物', tuple((m.id for m in memories)), kind='reflection')`。
+- 作用：调用 Event, tuple。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L65)。
+
+### `tests/unit/test_provider_wiring.py::_BareDelegate`
+
+- 功能：只有 MemorySemantics 基本方法（无 relevant_set/consolidate）。
+- 输入：`见显式或继承的 __init__；无新增字段`。
+- 输出：`类型/实例；基类 object`。
+- 作用：字段与方法契约；dataclass 自动生成的方法不另建手写符号。
+- 错误：见构造函数及方法。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L70)。
+
+### `tests/unit/test_provider_wiring.py::_BareDelegate.fingerprint`
+
+- 功能：测试场景/夹具/假实现：_BareDelegate.fingerprint；输入输出见本项，生产不调用
+- 输入：`self, text`。
+- 输出：`未注解；0`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L73)。
+
+### `tests/unit/test_provider_wiring.py::_BareDelegate.scope`
+
+- 功能：测试场景/夹具/假实现：_BareDelegate.scope；输入输出见本项，生产不调用
+- 输入：`self, belief_id`。
+- 输出：`未注解；'project'`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L76)。
+
+### `tests/unit/test_provider_wiring.py::_BareDelegate.judge`
+
+- 功能：测试场景/夹具/假实现：_BareDelegate.judge；输入输出见本项，生产不调用
+- 输入：`self, a_bid, a_val, b_bid, b_val`。
+- 输出：`未注解；'pending'`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L79)。
+
+### `tests/unit/test_provider_wiring.py::_BareDelegate.relevant`
+
+- 功能：测试场景/夹具/假实现：_BareDelegate.relevant；输入输出见本项，生产不调用
+- 输入：`self, belief_id, value, query, t`。
+- 输出：`未注解；True`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L82)。
+
+### `tests/unit/test_provider_wiring.py::_BareDelegate.valid`
+
+- 功能：测试场景/夹具/假实现：_BareDelegate.valid；输入输出见本项，生产不调用
+- 输入：`self, belief_id, value, t`。
+- 输出：`未注解；True`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L85)。
+
+### `tests/unit/test_provider_wiring.py::_BareDelegate.embedding_key`
+
+- 功能：测试场景/夹具/假实现：_BareDelegate.embedding_key；输入输出见本项，生产不调用
+- 输入：`self, belief_id, value`。
+- 输出：`未注解；(0, belief_id, value)`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L88)。
+
+### `tests/unit/test_provider_wiring.py::test_provider_delegates_memory_semantics_write_path`
+
+- 功能：行为断言：provider_delegates_memory_semantics_write_path；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 SemanticsProvider, _FakeDelegate, d.fingerprint, p.embedding_key, p.fingerprint, p.relevant, p.scope, p.valid, type, type('Q', (), {'target': 1, 'text': 'q'})。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L92)。
+
+### `tests/unit/test_provider_wiring.py::test_provider_missing_capability_returns_none_without_failure`
+
+- 功能：行为断言：provider_missing_capability_returns_none_without_failure；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 SemanticsProvider, _BareDelegate, p.consolidate, p.health, p.relevant_set。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L106)。
+
+### `tests/unit/test_provider_wiring.py::test_provider_counts_judge_degradation`
+
+- 功能：行为断言：provider_counts_judge_degradation；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 SemanticsProvider, _FakeDelegate, p.health, p.judge。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L114)。
+
+### `tests/unit/test_provider_wiring.py::test_provider_rejects_delegate_without_memory_semantics`
+
+- 功能：行为断言：provider_rejects_delegate_without_memory_semantics；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 SemanticsProvider, _Broken, pytest.raises。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L125)。
+
+### `tests/unit/test_provider_wiring.py::test_provider_rejects_delegate_without_memory_semantics._Broken`
+
+- 功能：测试场景/夹具/假实现：test_provider_rejects_delegate_without_memory_semantics._Broken；输入输出见本项，生产不调用
+- 输入：`见显式或继承的 __init__；无新增字段`。
+- 输出：`类型/实例；基类 object`。
+- 作用：字段与方法契约；dataclass 自动生成的方法不另建手写符号。
+- 错误：见构造函数及方法。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L126)。
+
+### `tests/unit/test_provider_wiring.py::test_worker_unwraps_provider_for_semantic_tasks`
+
+- 功能：行为断言：worker_unwraps_provider_for_semantic_tasks；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 Memory, Retrieval, SemanticsProvider, _FakeDelegate, _sm, _svc, eng.add_tension, np.zeros, p.health, semantic_model, svc.log.close, svc.process_semantic_tasks, svc.tasks.close, svc.tasks.enqueue。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L132)。
+
+### `tests/unit/test_provider_wiring.py::test_bootstrap_builds_real_provider`
+
+- 功能：行为断言：bootstrap_builds_real_provider；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 (tmp_path / '.env').write_text, build_default_service, isinstance, os.environ.pop, svc.log.close, svc.semantics.embedding_key, svc.tasks.close。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L188)。
+
+### `tests/unit/test_provider_wiring.py::test_health_view_reports_provider_segment`
+
+- 功能：行为断言：health_view_reports_provider_segment；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 SemanticsProvider, _FakeDelegate, _svc, p.judge, svc.log.close, svc.tasks.close, telemetry.health_view。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_provider_wiring.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_provider_wiring.py#L210)。
 
 ## `tests/unit/test_store_tasks.py`
 
