@@ -2,7 +2,7 @@
 
 > 合并版，2026-10-03；代码基线 `db26787`（P6 `1552112` + 本地测试隔离修复）。
 > 本文取代原目标架构及本轮临时 `ARCHITECTURE.md`，只保留这一个规范入口。N01–N28 是本轮委托的明确设计决策；它们修订旧 H 决议的对应条款，不代表运行代码已经实现。
-> [源符号附录](../docs/architecture-inventory.md) 属于本文：逐项登记每个自有模块、类、函数、私有/嵌套 helper 的功能、输入、输出、作用、错误、目标路径、处置与变更条件；固定契约数据在 [`architecture_contract.py`](architecture_contract.py)。附录是本文的逐符号白名单：源码里出现但未登记的符号=覆盖检查失败；未登记的函数/模块在统一删除前必须先登记或列入删除项，不能静默消失。
+> [源符号附录](../docs/architecture-inventory.md) 属于本文：逐项登记每个自有模块、类、函数、私有/嵌套 helper 的功能、输入、输出、作用、错误、目标路径、处置与变更条件；固定契约数据在 [`architecture_contract.py`](architecture_contract.py)。附录是本文的逐符号白名单：源码里出现但未登记的符号=覆盖检查失败；未登记的函数/模块在统一删除前必须先登记或列入删除项，不能静默消失。产品代码的模块级常量/别名同样在 `architecture_contract.py::CONSTANTS` 逐条登记，未登记即红（测试/评测常量随所属模块，TIDE 内冻结）。
 > 旧决策依据：[H1–H42](decision-register.md)；验收：[A1–A10](acceptance-criteria.md)。`mvp/agent/` 全部排除，`hybrid_memory/agent/` 是自有兼容层，不能混淆。
 
 ## 0. 文档与清理边界
@@ -11,7 +11,7 @@
 - 处置只有保留、接线、迁移、兼容保留、历史归档、删除、迁移后删除。没有“P6 后再说”的无归属函数。
 - 不为了目录树美观创造第二套包装 API。逻辑已在合理位置就修文档；确实缺功能才补实现。
 - 源符号附录包含全部自有 Python 源文件、显式函数和类，包括测试、评测、验收及 nested helper；每个符号给出功能/输入/输出/作用/错误/目标（目标路径、处置、变更条件）。TS 可调用入口在第 7 节。匿名 lambda、映射回调、字符串嵌入的测试子进程程序归父函数，隐式 dataclass/Enum 方法归类型契约。
-- 公开产品符号的目标契约（含结构化返回字段）在 `architecture_contract.py` 逐条固定；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。计划新增与删除项同样在该文件冻结，见 §5.9 与 §9。
+- 公开产品符号的目标契约（含结构化返回字段）在 `architecture_contract.py` 逐条固定；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。计划新增与删除项同样在该文件冻结，见 §5.9 与 §9。产品代码的模块级常量/别名在 `CONSTANTS` 表逐条登记（判定范围＝顶层 Assign/AnnAssign 且全大写或 `_` 开头，dunder 除外），检查器强制未登记即红。
 - 后续清理只执行第 9 节的明确处置。漏登是覆盖检查失败，不是自动删除授权；调用方、状态/部署兼容和替代测试迁完才删。数据目录、证据、凭据、Git 历史、第三方源码未获删除授权。
 - 测试和 TIDE 是验收资产，不能按“生产没 import”判断死代码。本文与附录不得各自保存不同的目标策略；附录只自动记录现状形态，行为决策只在本文。
 
@@ -441,6 +441,8 @@ semantics.llm._one_word/_index_set关系/编号容错，合法NONE不是失败�
 - Legacy 公共 parse（`parse_ids/parse_salience`）迁 guards 供新协议严格校验；Legacy 宽容解析保留兼容。
 - `LLMSemantics` 包装为 SemanticsProvider 并接 `/health`、`/signals`；存量 judge 通路保留但显式。
 
+**同步状态（arena 01a10032，2026-10-03）**：上述模块与符号已落地；`plan_capacity`/`conflict_ledger`/`store_call_context`/`prepare_effect`/`SemanticsProvider` 目前**只被单元测试调用，尚未接入运行时**；`prepare_effect` 的 `svc.embedder` 属性不存在（服务为 `svc.emb`），向量分支恒空。逐项缺口与修复顺序见 §10.4。
+
 ## 6. 传输与部署逐函数
 
 auth.authorized(header,token)->字节常量时间bool，bearer不代capability；dto.HttpError当前status/msg兼容，目标字符串业务code区分status；opt_int严格64位排bool，req_str非空，parse_body只JSON/object/0–4MiB，capture_request_id双位一致，observe_payload/feedback_payload出规范DTO。
@@ -450,7 +452,7 @@ http.Handler.log_message故意静默非stub；_reply UTF-8/定长JSON；各handl
 - observe/feedback接受与归因回执，稳定重复code；human-reviews读台账，human-review双token决定，unknown404/changed409/能力403。
 - resolve/propose/diagnose/miss为Legacy only，Trio四入口拒绝；log-search/timeline/stats/window调用有界tools，IDs≤20；save保存回执。
 - _dispatch检查sid/pipeline/path，_run统一异常映射，do_GET/do_POST auth→方法表→DTO→dispatch；serve(service,port,host=loopback)->ThreadingHTTPServer，支持port0。
-ROUTES、方法白名单、SIGNAL_PATHS/TRIO_DISABLED正反一致，不能只加handler漏权限。
+ROUTES、GET_PATHS/POST_PATHS、SIGNAL_PATHS、TRIO_DISABLED 与 dto.MAX_BODY 正反一致，不能只加 handler 漏权限。
 
 bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService，目标Settings唯一组装、memory目录gitignore、Legacy才generator；内部chat_fn固定provider/key/cache；main解析→组装恢复→HTTP/worker→信号→serve→真stop/save/close，_term SIGTERM→SystemExit。review_cli.main入argv，规则审计本地Store、审批HTTP；内部post只有privileged加capability，skip无写。
 
@@ -520,6 +522,17 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 27. N27 TIDE冻结、harness显模式且等任务、真实provider/L3仍unverified。
 28. N28 本文唯一规范、附录覆盖+源漂移+回归删除闸、CI/包元数据实施轮落地，不另建架构副本。固定契约在 `architecture_contract.py`：未登记符号不得静默删除，先登记或列入删除项；计划新增符号在源码出现前不得被实施为另一形状。
 
+### 9.2 本轮同步（arena 01a10032）决策 N29–N34
+
+- **N29 迁移落位**：`logstore→store/evidence`、`llm→llm/client` 完成；旧路径保留同对象 shim（H23/N26）。残余：产品调用仍从 shim 导入，canonical 切换待收尾。
+- **N30 双语义通路提供者**：`SemanticsProvider` 已实现（judge/relevant_set/consolidate + health）；**未接线**——`/health`、`/signals` 未含 provider 段，`service.semantics` 未被包住。
+- **N31 冲突读模型与容量计划**：`conflict_ledger`、`plan_capacity` 已实现；**均未接线**（`/conflicts` 与效果提交仍走旧路径）；`plan_capacity` 的迁 A 顺序（新迁入被当最旧）与 `cap_context` 待修。
+- **N32 调用上下文与效果准备**：`store_call_context`、`prepare_effect` 已实现；**均未接线**；`prepare_effect` 的 `svc.embedder` 属性不存在（服务为 `svc.emb`），向量分支恒空。
+- **N33 清理收敛**：`clamp`、`cited_text`、`_has_int_gt` 删除完成，DELETIONS 已同步；不含其他行为变更。
+- **N34 模块级常量登记**：产品代码模块级常量/别名进入 `CONSTANTS` 逐条登记，检查器强制（未登记/失效/缺理由即红）；测试与评测常量随所属模块（TIDE 冻结）。本轮登记 69 条，判定范围＝顶层 Assign/AnnAssign 且全大写或 `_` 开头（dunder 除外）。
+
+未兑现契约与未接线清单见 §10.4；N29–N33 的"已完成"式表述作废，以本节如实状态为准。
+
 ### 9.1 旧目标条目的最终去向
 
 - X1–X7：保核心含义，纠正“不调LLM=无嵌入I/O”“所有磁盘有界”“effects完成=模型只一次”。
@@ -536,7 +549,7 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 
 上一轮本机证据：Python427通过/1跳过；旧A2–A10机械项/TIDE meta通过；Bun过滤超时用例25过/1过滤。完整Bun和真实provider/L3没有通过验证。本文只是设计；符号齐全不证明目标已实现，人决定验收。
 
-- `python analysis/check_architecture.py`：固定契约核对——模块 IO 齐备；每符号六字段（功能/输入/输出/作用/错误/目标）齐备；显式契约与删除项必须在源码存在；计划新增必须不存在于源码且在主文出现；迁移目标不得与现存模块冲突；附录不得含占位说明；源 hash 漂移即红（本轮已由编辑自身触发验证）。`--build-inventory` 只重建附录，不自动批准；改契约=改 `architecture_contract.py` + 本文。
+- `python analysis/check_architecture.py`：固定契约核对——模块 IO 齐备；每符号六字段（功能/输入/输出/作用/错误/目标）齐备；显式契约与删除项必须在源码存在；产品模块级常量必须在 `CONSTANTS` 逐条登记（未登记/失效/缺理由即红）；计划新增必须不存在于源码且在主文出现；迁移目标不得与现存模块冲突；附录不得含占位说明；源 hash 漂移即红（本轮已由编辑自身触发验证）。`--build-inventory` 只重建附录，不自动批准；改契约=改 `architecture_contract.py` + 本文。
 - Signal门：kind双向真实消费、payload/version封存、lost wake重启、队满L0接受、due筛选、过期5次耗尽、ready不调模型、lease/CAS/quota/真停机。
 - Agent门：bool ID/'false'proof/非对象/超窗/不在供给source/target/规则引用/批内漂移、人审freeze、输出effect一致；不能fuzz只测json.loads。
 - Pool门：C/M/A/context组合、全pin背压、A保护/戳/引用、CREATE/EXIST/复活/聚合/reflection/审批同commit收口、截对手仍警告、一次衰减/迟信用/registry硬界。
@@ -547,3 +560,23 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 收尾顺序：先失败回归和关键漏洞→接Settings/schema/policy/provider/ledger/telemetry及统一effects/dispatch/context→plan_capacity与公共parse去Legacy→迁evidence/client/harness/测试夹具修CLI与preview→更新登记、README、doc地图、CI，只执行N25明确代码清理。数据删除另行确认。
 
 本轮没有改运行代码或删源文件。`mvp/agent/`是之后改造，不进入本轮白名单/清理判断。
+
+### 10.4 本轮同步状态（arena 01a10032）：已落地、未接线、未兑现
+
+**已读码确认的修复**：Selector 严格类型（`verified_correction is True`、`type(index) is int`）、A 池淘汰过滤 pinned、退役补 `archived_at`、任务 due 前置筛选、WF 过期判死、Trio `/miss` 403、`Rejected`→HTTP 映射、人审 capability 403、contested 省略对手标注、preview 导入修复、四个空壳删除。
+
+**未接线（函数已存在，生产零调用，仅单元测试覆盖）**：
+
+| 符号 | 应接入点 | 现状 |
+|---|---|---|
+| `plan_capacity` | 效果提交前容量收口 | `apply_selector` 仍用 `overflow_policy`，无背压路径；全 pin 静默超限 |
+| `conflict_ledger` | `/conflicts` 与 `tools.conflicts` | 未接；`aggregates` 误用 reflection、`truncated` 硬编码 False |
+| `store_call_context` | worker 模型调用前封存 | 未接 |
+| `prepare_effect` | worker/效果事务 | 未接；`svc.embedder` 不存在、`embed(str)` 形状错误 |
+| `SemanticsProvider` | `service.semantics` + `/health` | 未接；其单测断言恒真 |
+
+**未兑现契约**：N01（未知 `MEMORY_PIPELINE` 应拒绝；当前放行且被测试固化）、N06（SEM 模型上限与 dead 未实现）、OpenCode 文件通道形状（指令应为位置参数，当前全塞进文件且未验证 CLI 行为）、`store/schema.py` 未接入 Store（H10 版本保护未生效）、HTTP 稳定 `code` 覆盖不全、`assert_consumers` 对 legacy 类 applier 无 callable 校验。
+
+**声明与事实不符已修正**：N29–N33 由 decision-register 移入本文 §9.2 并改为如实状态；附录计数以重新生成为准（145 模块 / 1360 符号 / 69 常量）。
+
+**收尾建议顺序**：先接线五处并修 `prepare_effect` → 修 N01/N06/文件通道/schema 接入 → 修 `plan_capacity` 语义与容量背压 → 重跑三门并核实测试数字（arena 声称 437，按基线+新增应为 436+1，未复现）。

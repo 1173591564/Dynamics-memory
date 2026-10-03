@@ -420,26 +420,7 @@
 
 ---
 
-## H. 收尾与迁移定案（N29–N33）
+## H. 收尾与迁移定案（N29+）
 
-### N29 证据与大模型客户端模块迁移（已决：完成）
-- `hybrid_memory/logstore.py` 迁移为 `hybrid_memory/store/evidence.py`。
-- `hybrid_memory/llm.py` 迁移为 `hybrid_memory/llm/client.py`，保留内部磁盘缓存 `_cache_lookup` / `_cache_store`。
-- `hybrid_memory/logstore.py`、`hybrid_memory/llm.py`、`hybrid_memory/llm/__init__.py` 保留为 100% 向后兼容的 re-export shims。
-
-### N30 双语义通路显式提供者（已决：完成）
-- `hybrid_memory/semantics/provider.py` 实现 `SemanticsProvider`，统一封装 `judge`、`relevant_set`、`consolidate`，并提供 `health()` 观测字典（calls, failures, last_error）。
-- 运行时与配置解除硬耦合，支持 provider 隔离与状态可观测性。
-
-### N31 冲突台账只读视图与统一容量计划（已决：完成）
-- `hybrid_memory/service/review.py` 实现 `conflict_ledger(svc, before)`，提供张力、人审、聚合、pin roots 的统一只读聚合模型。
-- `hybrid_memory/core/dynamics.py` 实现纯函数 `plan_capacity(mems, cfg, pinned)`，在无 I/O 前提下模拟 C/M/A 容量收口，全 pin 时提供 backpressure (`accepted=False`)。
-
-### N32 任务调用上下文封存与效果准备编排（已决：完成）
-- `hybrid_memory/store/tasks.py` 实现 `TaskStore.store_call_context`，在任务执行事务中原子封存调用上下文与快照版本。
-- `hybrid_memory/dispatch/effects.py` 实现 `prepare_effect(svc, row)`，在锁外完成静态校验与向量化，保障事务临界区零外部 I/O。
-
-### N33 显式符号契约与清理收敛（已决：完成）
-- 清理 N25 指定的废弃符号（`bounds.py::clamp`、`grounding.py::cited_text`、`acceptance_check.py::_has_int_gt`）。
-- 架构契约 `analysis/architecture_contract.py` 与符号清单 `docs/architecture-inventory.md` 完整对齐 144 个模块与 1358 个符号。
+N29 及之后的收尾决策与**如实状态**统一登记在 [target-architecture.md](target-architecture.md) §9.2 / §10.4；本表保持 H1–H42 历史基线，不再承载新增决策，也不得再出现"已决：完成"式自宣布。
 

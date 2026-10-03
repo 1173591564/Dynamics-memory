@@ -5,10 +5,11 @@
 > 未在本页出现的函数/模块在下一轮统一删除前，必须先在此登记或列入删除项。
 > 生成命令：`python analysis/check_architecture.py --build-inventory`；核对：同命令不带参数。
 > 固定契约数据（目标路径、显式契约、计划新增、删除条件、模块备注）在 `analysis/architecture_contract.py`。
-> 当前登记 140 个 Python 模块、5 个 TS/角色定义模块、1359 个显式类/函数/具名回调（含私有、嵌套、测试、评测），0 个计划新增模块、0 个计划新增符号、3 个删除项。
+> 当前登记 140 个 Python 模块、5 个 TS/角色定义模块、1360 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、134 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
 
 每符号给出：功能、输入、输出、作用、错误、目标（目标路径/处置/变更）。
 公开产品符号在固定契约里逐条定义目标；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。
+产品代码的模块级常量/别名在 `architecture_contract.py::CONSTANTS` 逐条登记，未登记即检查失败；测试/评测常量随所属模块。
 匿名 lambda/回调属于其具名父函数；dataclass/Enum/TypedDict 隐式方法由类型契约覆盖，不单独删除。
 TS 的具名 arrow、hook、tool 与测试回调及三份角色定义也登记；TS 识别是当前语法的有限静态扫描，不冒充完整 TypeScript 解析器。
 vendored `mvp/agent/` 完全排除。
@@ -21,6 +22,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：源文件与设计契约数据。
 - 模块输出：符号覆盖、验收与目标契约结论。
 - 源校验：`15b32935e9c01d584d30a5a0549b2b53c1e805cc1ca2865a736425b7bb69bce7`。
+- 模块级常量：`ROOT`（未登记）；`SNAP_DIR`（未登记）；`SNAP_FILES`（未登记）；`PENDING`（未登记）；`A2_ROWS`（未登记）。
 
 ### `analysis/acceptance_check.py::report`
 
@@ -227,7 +229,8 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`analysis/architecture_contract.py`（当前路径）。
 - 模块输入：源码语法树与人工冻结的契约数据。
 - 模块输出：无运行逻辑；供检查器渲染逐符号目标与执行覆盖校验。
-- 源校验：`7640fcf4bf450995971f463d9f999446ba994a54909b17e2e967eef85dce7e11`。
+- 源校验：`23a1a333bec483ea594a498928115472b7d0fc9d4a508f303edc1b4db184c6ca`。
+- 模块级常量：`TARGET_PATHS`（未登记）；`MODULE_IO`（未登记）；`SYMBOL_OVERRIDES`（未登记）；`PLANNED_MODULES`（未登记）；`PLANNED_SYMBOLS`（未登记）；`DELETIONS`（未登记）；`CONSTANTS`（未登记）；`MODULE_NOTES`（未登记）。
 - 输入/输出：本模块只有常量/数据契约，无独立函数；语义见模块输入/输出与备注。
 - 导出/输入依赖：annotations ← __future__.annotations
 
@@ -238,7 +241,8 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`analysis/check_architecture.py`（当前路径）。
 - 模块输入：源文件与设计契约数据。
 - 模块输出：符号覆盖、验收与目标契约结论。
-- 源校验：`1ae6fb6ea0d16fb041c0012501406bfc36685ebdba203a942e8b0abde5efb633`。
+- 源校验：`6a6ae372edfd7e4d4c4261f8aed25e84bd29c8756ef893aca299963a82447148`。
+- 模块级常量：`ROOT`（未登记）；`INDEX`（未登记）；`DESIGN`（未登记）；`MODULES`（未登记）。
 
 ### `analysis/check_architecture.py::source_paths`
 
@@ -312,14 +316,23 @@ vendored `mvp/agent/` 完全排除。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
 - 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L165)。
 
+### `analysis/check_architecture.py::constants`
+
+- 功能：模块顶层常量/别名：Assign/AnnAssign 且名字全大写或以 _ 开头（dunder 除外）。
+- 输入：`tree: ast.Module`。
+- 输出：`list[str]；names`。
+- 作用：调用 isinstance, name.endswith, name.isupper, name.startswith, names.append。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L177)。
+
 ### `analysis/check_architecture.py::inventory`
 
 - 功能：为每个源码模块构造责任、源 hash 和符号输入输出记录
 - 输入：`root: Path=ROOT`。
 - 输出：`list[dict]；modules + auxiliary_inventory(root)`。
-- 作用：调用 ast.parse, auxiliary_inventory, definitions, exports, hashlib.sha256, hashlib.sha256(text.encode('utf-8')).hexdigest, module_policy, modules.append, path.read_text, path.relative_to, path.relative_to(root).as_posix, source_paths, text.encode。
+- 作用：调用 ast.parse, auxiliary_inventory, constants, definitions, exports, hashlib.sha256, hashlib.sha256(text.encode('utf-8')).hexdigest, module_policy, modules.append, path.read_text, path.relative_to, path.relative_to(root).as_posix, source_paths, text.encode。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L177)。
+- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L194)。
 
 ### `analysis/check_architecture.py::parameter_end`
 
@@ -328,7 +341,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`int | None；None；pos`。
 - 作用：调用 len, range。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L190)。
+- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L208)。
 
 ### `analysis/check_architecture.py::ts_definitions`
 
@@ -337,7 +350,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`list[dict]；rows`。
 - 作用：调用 clean, match.end, match.group, match.start, outputs.get, parameter_end, path.startswith, pattern.finditer, re.compile, re.finditer, re.match, re.search, rows.append, text.count, text.index。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L212)。
+- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L230)。
 
 ### `analysis/check_architecture.py::auxiliary_inventory`
 
@@ -346,7 +359,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`list[dict]；modules`。
 - 作用：调用 (root / path).read_text, hashlib.sha256, hashlib.sha256(text.encode('utf-8')).hexdigest, modules.append, path.endswith, path.startswith, text.encode, ts_definitions。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L308)。
+- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L326)。
 
 ### `analysis/check_architecture.py::symbol_purpose`
 
@@ -355,7 +368,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`str；'委托 '' + row['delegate'] + '' 执行；边界与失败由被调用方契约承担'；'定义 ' + row['name'] + ' 的数据或接口类型，承载' + module['purpose'] + '；构造字段及继承输出在本项完整登记'；'服务门面的 ' + name + ' 入口；转发/状态边界为 ' + row['effects']；'测试场景/夹具/假实现：' + row['name'] + '；输入输出见本项，生产不调用'；'用给定参数与依赖初始化 ' + row['name'].removesuffix('.__init__') + '，建立其对象状态；业务归属为' + module['purpose']；'行为断言：' + name.removeprefix('test_') + '；成功正常返回，违约抛 AssertionError/pytest 失败'；module['purpose'] + ' 的具名操作；流程见作用行，输入输出见本项签名与返回'；row['doc']；summaries[module['path']][row['name']]`。
 - 作用：调用 module['path'].startswith, name.removeprefix, name.startswith, row.get, row['name'].removesuffix, row['name'].split, summaries.get。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L325)。
+- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L343)。
 
 ### `analysis/check_architecture.py::module_io`
 
@@ -364,7 +377,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；MODULE_IO[path]；MODULE_IO[prefix]；None`。
 - 作用：调用 k.endswith, path.startswith, sorted。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L459)。
+- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L477)。
 
 ### `analysis/check_architecture.py::target_path_for`
 
@@ -373,7 +386,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`str；TARGET_PATHS.get(path, path)`。
 - 作用：调用 TARGET_PATHS.get。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L468)。
+- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L486)。
 
 ### `analysis/check_architecture.py::symbol_contract`
 
@@ -382,25 +395,25 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`tuple[str, str, str, str, str]；(parts[0], pick(1, row['input']), pick(2, row['output']), pick(3, row['effects']), pick(4, row['errors'].lstrip('；')))；(symbol_purpose(row, module), row['input'], row['output'], row['effects'], row['errors'].lstrip('；'))`。
 - 作用：调用 SYMBOL_OVERRIDES.get, pick, row['errors'].lstrip, symbol_purpose。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L472)。
+- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L490)。
 
 ### `analysis/check_architecture.py::render`
 
 - 功能：生成唯一目标文档的源符号附录，不自动批准新增函数保留
 - 输入：`modules: list[dict]`。
 - 输出：`str；'\n'.join(lines)`。
-- 作用：调用 '\n'.join, '；'.join, clean, len, lines.append, m['path'].endswith, module['path'].endswith, module['path'].startswith, module_io, sum, symbol_contract, target_path_for。
+- 作用：调用 '\n'.join, '；'.join, CONSTANTS.get, clean, len, lines.append, m.get, m['path'].endswith, module.get, module['path'].endswith, module['path'].startswith, module_io, sum, symbol_contract, target_path_for。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L483)。
+- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L501)。
 
 ### `analysis/check_architecture.py::check`
 
 - 功能：校验模块/符号覆盖、重复、输入输出字段、源漂移和文档链接
 - 输入：`modules: list[dict], root: Path=ROOT`。
 - 输出：`list[str]；['analysis/target-architecture.md 或 docs/architecture-inventory.md 缺失']；problems`。
-- 作用：调用 (file.parent / target).exists, DELETIONS.items, DESIGN.is_file, DESIGN.read_text, INDEX.is_file, INDEX.read_text, Path, TARGET_PATHS.items, all, ascii_name.group, ascii_name.group(0).split, block.splitlines, file.read_text, file.relative_to, len, link.split, link.startswith, module['path'].startswith, module_io, name.startswith, problems.append, re.findall, re.match, re.search, re.split, row.get, row['name'].split, set, sorted。
+- 作用：调用 (file.parent / target).exists, CONSTANTS.items, DELETIONS.items, DESIGN.is_file, DESIGN.read_text, INDEX.is_file, INDEX.read_text, Path, TARGET_PATHS.items, all, ascii_name.group, ascii_name.group(0).split, block.splitlines, file.read_text, file.relative_to, k.startswith, len, link.split, link.startswith, m.get, module['path'].startswith, module_io, name.startswith, problems.append, re.findall, re.match, re.search, re.split, row.get, row['name'].split, set, sorted。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L548)。
+- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L574)。
 
 ### `analysis/check_architecture.py::main`
 
@@ -409,7 +422,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`int；0；int(bool(problems))`。
 - 作用：调用 INDEX.write_text, ap.add_argument, ap.parse_args, argparse.ArgumentParser, bool, check, int, inventory, json.dumps, len, print, render, sum。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L636)。
+- 目标：`analysis/check_architecture.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/check_architecture.py#L672)。
 
 ## `eval/checks/aggcheck_conflict.py`
 
@@ -494,6 +507,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：端口、项目目录、mock 端点与模式参数。
 - 模块输出：离线驱动/预览/harness 诊断输出；不修改判分真值。
 - 源校验：`a620c9e92461205b508ee172691bfc6967c32ee9ef5ffea476b8fccfd10f897c`。
+- 模块级常量：`PORT`（未登记）；`PROJ`（未登记）；`PHASE`（未登记）；`BASE`（未登记）；`TOKEN`（未登记）；`TURNS`（未登记）。
 
 ### `eval/drive.py::call`
 
@@ -548,6 +562,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：端口、项目目录、mock 端点与模式参数。
 - 模块输出：离线驱动/预览/harness 诊断输出；不修改判分真值。
 - 源校验：`7acaeec67a90053a51a961e9dc34a62132370dfd043ffdd51d563b752df4ba12`。
+- 模块级常量：`DIM`（未登记）；`STATS`（未登记）；`_LOCK`（未登记）；`_BGE`（未登记）；`_KEY`（未登记）。
 
 ### `eval/mock_llm.py::_toks`
 
@@ -701,6 +716,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：端口、项目目录、mock 端点与模式参数。
 - 模块输出：离线驱动/预览/harness 诊断输出；不修改判分真值。
 - 源校验：`8b941d1a98241a900c1711d9a001bf26c0718ca0a89151fb50ff3ff31368d935`。
+- 模块级常量：`PAGE`（未登记）。
 
 ### `eval/preview_sidecar.py::_mem_rows`
 
@@ -773,6 +789,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：端口、项目目录、mock 端点与模式参数。
 - 模块输出：离线驱动/预览/harness 诊断输出；不修改判分真值。
 - 源校验：`73cb005c0b062f5e955d308b65c428222c9a7f7ae54fecda0138cc74c1a84793`。
+- 模块级常量：`MOCK`（未登记）；`REAL`（未登记）；`_OrigRequest`（未登记）。
 
 ### `eval/run_sidecar_offline.py::_Request`
 
@@ -1090,6 +1107,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：账本、流与系统接口。
 - 模块输出：判分、元评测与可比报告；算法冻结，不为引擎放水。
 - 源校验：`6da2b3d12d1c4c6effba7fafaa8ae21ec3a77fb5978cb9907ec92046a0545993`。
+- 模块级常量：`HEADS`（未登记）；`SUFFIXES`（未登记）；`SCOPES`（未登记）；`_CONS`（未登记）；`_VOW`（未登记）；`LEVELS`（未登记）；`PER_LEVEL`（未登记）；`LENGTH`（未登记）。
 
 ### `eval/tide/gen_l1.py::_Builder`
 
@@ -1261,6 +1279,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：账本、流与系统接口。
 - 模块输出：判分、元评测与可比报告；算法冻结，不为引擎放水。
 - 源校验：`af8853630b9be8827633c1980ae99ca54576dd3cbfdd6e1fc0dca3e4233b9dd0`。
+- 模块级常量：`DIMENSIONS`（未登记）；`DIM_NAMES`（未登记）；`KNOB_NAMES`（未登记）。
 
 ### `eval/tide/ledger.py::Fact`
 
@@ -1342,6 +1361,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：账本、流与系统接口。
 - 模块输出：判分、元评测与可比报告；算法冻结，不为引擎放水。
 - 源校验：`506af778e2c363c93e5d21069a3ee9270ea9bebe7c2fa36f70fc5a712ab6adb3`。
+- 模块级常量：`EXPECT`（未登记）；`ANY`（未登记）；`DOSE`（未登记）。
 
 ### `eval/tide/meta.py::run_meta`
 
@@ -1495,6 +1515,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：账本、流与系统接口。
 - 模块输出：判分、元评测与可比报告；算法冻结，不为引擎放水。
 - 源校验：`a1b0b23a35bf528209fca5ef15a9932dbbae5567194b35571865e4ea8165edac`。
+- 模块级常量：`LAMBDA_H`（未登记）。
 
 ### `eval/tide/score.py::score_context`
 
@@ -1569,6 +1590,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：账本、流与系统接口。
 - 模块输出：判分、元评测与可比报告；算法冻结，不为引擎放水。
 - 源校验：`350aab7bcc8eacb0784ce6f24f5883627d538712a61a8615d20df64a40db2a81`。
+- 模块级常量：`DEFECTS`（未登记）。
 
 ### `eval/tide/systems/reference.py::_line`
 
@@ -1848,6 +1870,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：账本、流与系统接口。
 - 模块输出：判分、元评测与可比报告；算法冻结，不为引擎放水。
 - 源校验：`911031c42b5fd6a6b04f766bb41fceafe049f0bab072796b239424fbd75f33e9`。
+- 模块级常量：`_TOKEN_RE`（未登记）；`RE_SET`（未登记）；`RE_UPDATE`（未登记）；`RE_RETRACT`（未登记）；`RE_DERIVE`（未登记）；`RE_ASK`（未登记）；`FILLER`（未登记）。
 
 ### `eval/tide/text.py::approx_tokens`
 
@@ -2160,6 +2183,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输出：已解析 dict 或 AgentProtocolError/AgentTimeout；不得猜测修复。
 - 源校验：`b3e392e6c743065650c8467d848dc6eee85ecaa383c29b410bcea251ac31c57b`。
 - 模块备注：MAX_ATTEMPTS 常量迁移后删除：唯一上限真源在 dispatch.policy（WF/SEM=5、INV=2/3）。
+- 模块级常量：`MAX_ATTEMPTS`（迁移后删除）。
 
 ### `hybrid_memory/agents/protocol.py::AgentProtocolError`
 
@@ -2783,6 +2807,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：引擎状态与逻辑时间。
 - 模块输出：一次维护的效果：衰减/滞回/容量/归档/张力发射/巩固；不额外重放。
 - 源校验：`452fed7cf593b6044301de03316bb97fb35c3539500dcc801da63352cc2c20de`。
+- 模块级常量：`_warned_promote_reject`（迁移后删除）。
 
 ### `hybrid_memory/core/maintenance.py::_retention_scale`
 
@@ -2855,6 +2880,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：查询向量、Query、逻辑时间与引擎状态。
 - 模块输出：Retrieval：入选、压制、shadow、provisional、contested 与 thin 遥测。
 - 源校验：`7208aa48c7db9ce576e9bab184ac62c8b9b227aca9533d4c220bd5730d23299f`。
+- 模块级常量：`_ASCII_TOK`（保留）；`_CJK_RUN`（保留）。
 
 ### `hybrid_memory/core/retrieval.py::_lex_tokens`
 
@@ -2999,6 +3025,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：用户文本、助手文本与首次实体列表。
 - 模块输出：correction/decision/quant/new_entity/long_turn 调度理由；永不作为事实证据。
 - 源校验：`5648482a7e6ad8846722c126268caf3b8e9191aa06f93ee814feae6104772e7e`。
+- 模块级常量：`CORRECTION_RE`（保留）；`DECISION_RE`（保留）；`QUANT_RE`（保留）；`LONG_TURN_CHARS`（保留）；`DISSATISFACTION_RE`（保留）。
 
 ### `hybrid_memory/core/triggers.py::is_dissatisfaction`
 
@@ -3244,6 +3271,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：任务行、模型产物、连接与回执上下文。
 - 模块输出：唯一效果编排与九类 applier 的结构化结果；整批原子、容量复核。
 - 源校验：`ab8a6aeb166e61f937f439daf6d6b58dd2a0220d391b0c373693a612ad133b0a`。
+- 模块级常量：`EFFECTS`（保留）。
 
 ### `hybrid_memory/dispatch/effects.py::Applier`
 
@@ -3389,6 +3417,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输出：不可变 KindPolicy、唯一 policy_for 与启动消费者自检；未知 kind Fatal。
 - 源校验：`f465922bb4af5766c66510edbb240dd12699800ae69480e65f13a0fc5695eeac`。
 - 模块备注：目标：KindPolicy 增 max_apply_attempts（WF/SEM=5、INV=3）；与模型上限分别计入。
+- 模块级常量：`_INVESTIGATION`（保留）；`_SEMANTIC`（保留）；`_WORKFLOW`（保留）；`POLICIES`（保留）。
 
 ### `hybrid_memory/dispatch/policy.py::KindPolicy`
 
@@ -3583,6 +3612,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：cache_key 与 float32 向量。
 - 模块输出：维度校验后的向量副本或 None；不存正文/密钥。
 - 源校验：`cb33a6b0d1528cc114a14595ac410696b71ce22a8787022191df916f0da64677`。
+- 模块级常量：`_SCHEMA`（保留）。
 
 ### `hybrid_memory/embed/cache.py::SqliteEmbeddingCache`
 
@@ -3718,6 +3748,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：错误码、文案与 detail；不含业务数据。
 - 模块输出：Rejected/Degraded/Fatal/ProposalRejected 异常与唯一状态码映射；未知码 KeyError。
 - 源校验：`1da1312841f10fe0fec87d0c82204d020908690aebbf07bd823f7e04656a958a`。
+- 模块级常量：`_STATUS`（保留）。
 
 ### `hybrid_memory/errors.py::MemoryError`
 
@@ -3802,6 +3833,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输出：规范 id/指纹或拒绝；批量上限整批无效果。
 - 源校验：`380ee7156eaf8620b3017db2fdbada9eda209514de483442b1bbdb60d70772de`。
 - 模块备注：MAX_PROPOSE_BATCH/MAX_BODY_BYTES 目标接唯一真源；与 dto.MAX_BODY 不得两份并存。
+- 模块级常量：`MAX_PROPOSE_BATCH`（接线）；`MAX_BODY_BYTES`（接线）；`_REQUEST_ID_RE`（保留）。
 
 ### `hybrid_memory/guards/bounds.py::validate_request_id`
 
@@ -3893,6 +3925,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：待展示/入库的文本视图。
 - 模块输出：凭据模式替换后的文本；原始 L0 证据不改。
 - 源校验：`cf868411917a77243b8501ef4c4984a43c3d063b977d67c9b0f755445e2bb8d1`。
+- 模块级常量：`_SECRET_RE`（保留）。
 
 ### `hybrid_memory/guards/redact.py::redact_secrets`
 
@@ -3933,6 +3966,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：兼容启动。
 - 模块输出：DEPRECATED 标记与一次启动告警。
 - 源校验：`f0721c68fb78a35eac4998a06d920bbb5fdf38a5ae716ffc80919708189942e5`。
+- 模块级常量：`DEPRECATED`（兼容保留）；`_warned`（兼容保留）。
 
 ### `hybrid_memory/legacy/__init__.py::warn_once`
 
@@ -3987,6 +4021,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：信号 payload 与注入 chat。
 - 模块输出：Investigation 或 None；只读工具、预算与因果由服务端闸。
 - 源校验：`1ba3858411c6828915404b021adc1eeb34ef75bddefefee79580eb3358f8aba9`。
+- 模块级常量：`TOOLS`（兼容保留）。
 
 ### `hybrid_memory/legacy/inline.py::_fn`
 
@@ -4068,6 +4103,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：信号与预算。
 - 模块输出：调查附件与 Investigation 或 None；旧宽容解析。
 - 源校验：`086d3d84f7d5f73505713de023be8f74a1b31c445b163a539fc1c3c222fb5495`。
+- 模块级常量：`MISS_TYPES`（兼容保留）；`KINDS`（兼容保留）；`VERDICTS`（兼容保留）；`INVESTIGATOR_SYS`（兼容保留）；`_CLI_INSTRUCTION`（兼容保留）。
 
 ### `hybrid_memory/legacy/investigator.py::Budget`
 
@@ -4122,6 +4158,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：调查任务、预算与限额。
 - 模块输出：阶段统计与任务状态；目标委托统一 dispatch，不再独立线程。
 - 源校验：`fd29452755be144af8652c3e7cced5e5bd87b16f4993c4869b42e627dfab13bf`。
+- 模块级常量：`ORIGIN_BY_KIND`（兼容保留）。
 
 ### `hybrid_memory/legacy/loop.py::AgentWorker`
 
@@ -4231,6 +4268,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输出：候选/情境结构或宽容解析结果；公共 parse 目标迁 guards。
 - 源校验：`d547519c1f797820f5eb85707046295a3b01419d6b0bb349ed3c818820193bf7`。
 - 模块备注：parse_ids/parse_salience 目标迁 guards 供新协议严格校验；Legacy 宽容解析保留兼容。
+- 模块级常量：`INSTRUCTION`（兼容保留）。
 
 ### `hybrid_memory/legacy/prompt.py::MemoryCandidate`
 
@@ -4330,6 +4368,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：裸引擎信号与语义实现。
 - 模块输出：阶段统计；锁外模型、锁内提交，易失队列语义保留。
 - 源校验：`48f6e00de316d67cfbcdeee5af5fd484edfbc1a1a0fdf0e04b18edcc03a116c2`。
+- 模块级常量：`KINDS`（兼容保留）。
 
 ### `hybrid_memory/legacy/worker.py::_requeue_merge`
 
@@ -4424,6 +4463,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：OpenAI 兼容 chat 请求、凭据、模型与磁盘缓存目录。
 - 模块输出：message/文本结果或 ZhipuChatError；缓存命中不证明新推理。
 - 源校验：`f0082d60beb44df85d4e9287db833cd8ca88861a4deb8effc19b320fe9bdc3a1`。
+- 模块级常量：`BASE_URL`（保留）。
 
 ### `hybrid_memory/llm/client.py::ZhipuChatError`
 
@@ -4536,6 +4576,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：判定输入、注入 chat 或客户端与缓存。
 - 模块输出：verdict、used 列表或 None、reflection Event 或 None；失败必须外显。
 - 源校验：`8f0f29b7358bf35c3eb981b1a44fc93ffddabc6e7728d65441cd6bea55b846a7`。
+- 模块级常量：`_JUDGE_SYS`（保留）；`_RECOG_SYS`（保留）；`_CONSOLIDATE_SYS`（保留）。
 
 ### `hybrid_memory/semantics/llm.py::_one_word`
 
@@ -4698,6 +4739,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：文本或标注文件。
 - 模块输出：规范文本、指纹与本地判定；relevant/valid 恒真仅为无真值兼容。
 - 源校验：`e7d0b09dae520663425b52057a869afd9dd223b88110c3328f51df4161141ccf`。
+- 模块级常量：`_WS`（保留）；`_PUNCT`（保留）；`VERDICTS`（保留）。
 
 ### `hybrid_memory/semantics/real.py::normalize`
 
@@ -4810,6 +4852,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：signal 与 tool/window/before 限额。
 - 模块输出：调查上下文、预算使用与回展预留；超限区分 403/429。
 - 源校验：`0b58df211abfe1befa52885d2dd697f935da4247317d53e9e7a4213f1e2dd90c`。
+- 模块级常量：`MAIN_WINDOW_CAP`（保留）。
 
 ### `hybrid_memory/service/budgets.py::open_budget`
 
@@ -4846,6 +4889,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：signal_id/before/origin/task/lease 与错误原因。
 - 模块输出：不可变调查上下文与权限/因果异常；HTTP 不能伪造。
 - 源校验：`8a0774448cbe8c81bf03d22043c510910f7dc6ff933724e12ece0548f0d6f1a7`。
+- 模块级常量：`_ORIGINS`（保留）。
 
 ### `hybrid_memory/service/context.py::InvestigationContext`
 
@@ -5044,6 +5088,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：Legacy 提议/裁决/诊断/缺失与可信 context。
 - 模块输出：逐条回执、裁决计数与诊断统计；公开直写 Trio 拒绝、Legacy 立即 checkpoint。
 - 源校验：`09122eb0c9b69cbb71f9e06f4210b1d534e376dc67bc291e9ce1400c902b674a`。
+- 模块级常量：`_SELF_REF_RE`（保留）；`_MAX_PROPOSAL_CHARS`（保留）；`VERDICTS`（保留）；`_MISS_SOURCES`（保留）。
 
 ### `hybrid_memory/service/operate.py::_cited_text`
 
@@ -5134,6 +5179,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：query/k/signal/budget/passive 与引擎状态。
 - 模块输出：RecallResult、因果集与统一冲突视图；副本读取无副作用。
 - 源校验：`3db5decaeb0f311f5366fa3c08668a1ce7de1d0cdbc4ecd08f2023e240aa5cb5`。
+- 模块级常量：`_RETRIEVAL_KEEP`（保留）；`CONTESTED_K`（保留）；`_MEM_TAG_RE`（保留）；`_TOKEN_RE`（保留）。
 
 ### `hybrid_memory/service/recall.py::_safe_mem_text`
 
@@ -5775,6 +5821,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：L0 单元原文、请求绑定、逐单元工作与查询。
 - 模块输出：不可覆盖证据、FTS/mentions/向量索引、片段/统计/受限窗口与恢复回执。
 - 源校验：`3f5321dd964d5f0fb6476ca571589ed0b1de4ece42c5014290f2193325f598e6`。
+- 模块级常量：`_ENTITY_PATTERNS`（保留）；`_STOP_IDENT`（保留）；`_SCHEMA`（保留）；`_TOKEN_RE`（保留）；`_MAX_EMBED_CHARS`（保留）。
 
 ### `hybrid_memory/store/evidence.py::entities_in`
 
@@ -6063,6 +6110,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：库路径与库身份 log/tasks/cache。
 - 模块输出：经 WAL/FULL/FK/busy_timeout 配置的连接、幂等建表与版本迁移；高版本 Fatal 且先于 DDL。
 - 源校验：`89a52a7e25bbf643529ca0f8bb457582cb7df24fbee917f51c417c0e4b771e13`。
+- 模块级常量：`SCHEMA_VERSION`（接线）。
 
 ### `hybrid_memory/store/schema.py::open_db`
 
@@ -6099,6 +6147,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：引擎/服务快照与 checkpoint bytes。
 - 模块输出：受限反序列化、校验后一次发布的状态或明确损坏错误；不半恢复。
 - 源校验：`e864c3049b8106a1e44cfa5149889507596689eb6c1070b38caa33178b580119`。
+- 模块级常量：`_COUNTERS`（保留）；`_SERVICE_COUNTERS`（保留）；`STATE_KEYS`（保留）；`MEMORY_FIELD_DEFAULTS`（保留）；`_PICKLE_SAFE`（保留）。
 
 ### `hybrid_memory/store/state.py::_legacy_pool_member`
 
@@ -6190,6 +6239,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输出：任务行、状态迁移、原子效果回执与查询统计；不承诺模型只执行一次。
 - 源校验：`b5586ab3f28600e3c859087496f83c9c3b4a5a18387dcaa5a5d151d2ceff2eef`。
 - 模块备注：旧 claim_semantic/complete_semantic 等 API 已删除，不得复活；目标新增 store_call_context。
+- 模块级常量：`SEMANTIC_KINDS`（保留）；`WORKFLOW_KINDS`（保留）；`_SCHEMA`（保留）。
 
 ### `hybrid_memory/store/tasks.py::TaskLeaseLost`
 
@@ -6624,6 +6674,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：service 的锁内状态与计数。
 - 模块输出：health/signals 只增字段视图、脱敏结构日志与限频告警。
 - 源校验：`3614dcaa46e1a0a4b0887bb15a6bd9850d2ae57364fd734182d2c32ea96a067c`。
+- 模块级常量：`_warned`（保留）；`_warned_lock`（保留）。
 
 ### `hybrid_memory/telemetry.py::Counters`
 
@@ -6753,6 +6804,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输出：规范 DTO 或 HttpError；严格 64 位 int、媒体与 4MiB 限制。
 - 源校验：`0e05a2957654ab29032b893e21623b2127e86c5e4b3e06de83ab99661ee1e6e4`。
 - 模块备注：目标：observe/feedback DTO 增可选 session_id/turn_id 并纳入指纹；缺失标 unknown，不得跨会话归因。
+- 模块级常量：`SIGNAL_PATHS`（保留）；`MAX_BODY`（保留）；`GET_PATHS`（保留）；`POST_PATHS`（保留）。
 
 ### `hybrid_memory/transport/dto.py::HttpError`
 
@@ -6834,6 +6886,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：HTTP 请求与 service。
 - 模块输出：JSON 响应与统一错误码；trio 禁直写、方法白名单、loopback 绑定。
 - 源校验：`3993b81d10af583a681fc02dfbda7ce75bbb16452c4523c08bb2e0c7d741d4f2`。
+- 模块级常量：`TRIO_DISABLED`（保留）；`ROUTES`（保留）。
 
 ### `hybrid_memory/transport/http.py::Handler`
 
@@ -7126,6 +7179,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：被测对象与 pytest 夹具。
 - 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
 - 源校验：`e1fe9bc700f8db39b77f8e01d20a5f2ecd8c4d8f88c6f452363671ee35e6fcaf`。
+- 模块级常量：`SNAP_DIR`（未登记）；`FREEZE`（未登记）。
 
 ### `tests/characterization/test_task_machines.py::Clock`
 
@@ -7686,6 +7740,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：被测对象与 pytest 夹具。
 - 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
 - 源校验：`72b0dc45a57da6da7a1982580e3a2d61c3711af8fe3c28f6429864addf553672`。
+- 模块级常量：`RID`（未登记）；`FID`（未登记）。
 
 ### `tests/integration/test_service_observe.py::Generator`
 
@@ -8433,6 +8488,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输入：被测对象与 pytest 夹具。
 - 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
 - 源校验：`f0c773dcdb14498d997ced807aa2390f3b95711d799c9fa45548e40e8467364b`。
+- 模块级常量：`PROPOSAL`（未登记）。
 
 ### `tests/test_durable_tasks.py::_queued`
 
@@ -12889,6 +12945,7 @@ vendored `mvp/agent/` 完全排除。
 - 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
 - 源校验：`31fed82e0c93fc32098866a03b3b84fbbc84b43fe4be7a10b103f36898caabdf`。
 - 模块备注：NUMPY_OK_IN 死常量删除；保留 import 边界断言。
+- 模块级常量：`PKG`（未登记）；`ALWAYS_OK`（未登记）；`NEW_SHELLS`（未登记）；`_CORE_FORBIDDEN`（未登记）。
 
 ### `tests/unit/test_import_boundaries.py::_dotted`
 

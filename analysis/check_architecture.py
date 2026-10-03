@@ -9,11 +9,11 @@ import subprocess
 from pathlib import Path
 
 try:  # 脚本方式运行（python analysis/check_architecture.py）
-    from architecture_contract import (DELETIONS, MODULE_IO, MODULE_NOTES,
+    from architecture_contract import (CONSTANTS, DELETIONS, MODULE_IO, MODULE_NOTES,
                                        PLANNED_MODULES, PLANNED_SYMBOLS,
                                        SYMBOL_OVERRIDES, TARGET_PATHS)
 except ImportError:  # 作为 analysis.check_architecture 导入时
-    from analysis.architecture_contract import (DELETIONS, MODULE_IO, MODULE_NOTES,
+    from analysis.architecture_contract import (CONSTANTS, DELETIONS, MODULE_IO, MODULE_NOTES,
                                                 PLANNED_MODULES, PLANNED_SYMBOLS,
                                                 SYMBOL_OVERRIDES, TARGET_PATHS)
 
@@ -174,6 +174,23 @@ def exports(tree: ast.Module) -> list[str]:
     return values
 
 
+def constants(tree: ast.Module) -> list[str]:
+    """模块顶层常量/别名：Assign/AnnAssign 且名字全大写或以 _ 开头（dunder 除外）。"""
+    names = []
+    for node in tree.body:
+        targets = []
+        if isinstance(node, ast.Assign):
+            targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            targets = [node.target.id]
+        for name in targets:
+            if name.startswith("__") and name.endswith("__"):
+                continue
+            if name.isupper() or name.startswith("_"):
+                names.append(name)
+    return names
+
+
 def inventory(root: Path = ROOT) -> list[dict]:
     modules = []
     for path in source_paths(root):
@@ -183,7 +200,8 @@ def inventory(root: Path = ROOT) -> list[dict]:
         disposition, purpose, owner = module_policy(relative)
         modules.append({"path": relative, "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
                         "disposition": disposition, "purpose": purpose, "owner": owner,
-                        "symbols": definitions(tree), "exports": exports(tree)})
+                        "symbols": definitions(tree), "constants": constants(tree),
+                        "exports": exports(tree)})
     return modules + auxiliary_inventory(root)
 
 
@@ -490,11 +508,13 @@ def render(modules: list[dict]) -> str:
              "> 固定契约数据（目标路径、显式契约、计划新增、删除条件、模块备注）在 `analysis/architecture_contract.py`。",
              f"> 当前登记 {sum(m['path'].endswith('.py') for m in modules)} 个 Python 模块、"
              f"{sum(not m['path'].endswith('.py') for m in modules)} 个 TS/角色定义模块、"
-             f"{count} 个显式类/函数/具名回调（含私有、嵌套、测试、评测），"
+             f"{count} 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、"
+             f"{sum(len(m.get('constants', [])) for m in modules)} 个模块级常量、"
              f"{len(PLANNED_MODULES)} 个计划新增模块、{len(PLANNED_SYMBOLS)} 个计划新增符号、{len(DELETIONS)} 个删除项。",
              "",
              "每符号给出：功能、输入、输出、作用、错误、目标（目标路径/处置/变更）。",
              "公开产品符号在固定契约里逐条定义目标；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。",
+             "产品代码的模块级常量/别名在 `architecture_contract.py::CONSTANTS` 逐条登记，未登记即检查失败；测试/评测常量随所属模块。",
              "匿名 lambda/回调属于其具名父函数；dataclass/Enum/TypedDict 隐式方法由类型契约覆盖，不单独删除。",
              "TS 的具名 arrow、hook、tool 与测试回调及三份角色定义也登记；TS 识别是当前语法的有限静态扫描，不冒充完整 TypeScript 解析器。",
              "vendored `mvp/agent/` 完全排除。", ""]
@@ -510,6 +530,12 @@ def render(modules: list[dict]) -> str:
                   f"- 源校验：`{module['sha256']}`。"]
         if module["path"] in MODULE_NOTES:
             lines.append("- 模块备注：" + MODULE_NOTES[module["path"]])
+        consts = module.get("constants") or []
+        if consts:
+            described = "；".join(
+                f"`{name}`（{CONSTANTS.get(module['path'] + '::' + name, ('未登记', '检查失败'))[0]}）"
+                for name in consts)
+            lines.append("- 模块级常量：" + described + "。")
         if not module["symbols"] and not module["path"].endswith(".py"):
             lines.append("- 输入/输出：角色模块接收封存 JSON 并规定 role 输出；无源码函数。")
         elif not module["symbols"]:
@@ -600,6 +626,16 @@ def check(modules: list[dict], root: Path = ROOT) -> list[str]:
     for key in MODULE_NOTES:
         if key not in wanted_modules:
             problems.append("模块备注指向不存在模块: " + key)
+    source_constants = {m["path"] + "::" + n for m in modules for n in m.get("constants", [])}
+    product_constants = {k for k in source_constants if k.startswith("hybrid_memory/")}
+    for key in sorted(product_constants):
+        if key not in CONSTANTS:
+            problems.append("产品常量未登记: " + key)
+    for key, value in CONSTANTS.items():
+        if key not in source_constants:
+            problems.append("常量登记失效（源码不存在）: " + key)
+        elif len(value) < 2 or not value[1]:
+            problems.append("常量登记缺少理由: " + key)
     design_text = DESIGN.read_text(encoding="utf-8")
     for path, _note in PLANNED_MODULES:
         if path in wanted_modules:
