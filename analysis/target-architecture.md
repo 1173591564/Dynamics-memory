@@ -205,7 +205,7 @@ Trio主会话与外部公开门面禁propose/resolve/diagnose/miss；内部appli
 
 run(name,payload)->dict唯一调用面，__call__兼容；UTF-8、300s超时。available只表示CLI存在，不证明provider可用。不得log原始prompt/凭据/响应全文。
 
-本机`opencode run --help`确认--pure/--agent/--format/--file；目标短指令+私有UTF-8 JSON临时文件附件，命令形状为`opencode run --pure --agent <role> --format json '<短协议指令>' --file <payload.json>`。输入附件由CLI加载，不开放read工具。需真实CLI+mock端到端验证附件解析、权限和清理；帮助信息不等于模型质量证据。不支持该通道的版本拒绝启动，不回退超长argv。当前整个payload放argv已在Windows40k字符复现206，待修。
+本机`opencode run --help`确认--pure/--agent/--format/--file；目标短指令+私有UTF-8 JSON临时文件附件，命令形状为`opencode run --pure --agent <role> --format json '<短协议指令>' --file <payload.json>`。**N48 修正：每次调用改为薄客户端 `run --attach <url> --dir <agent_root> --pure --agent <role> --format json '<指令>' --file <payload.json>`，挂到 runner 惰性拉起的常驻 `opencode serve --pure` 上**——真实 CLI 自举临时 server 的路径在 Windows 非 POSIX 父进程（CreateProcess）下必在 `createUserMessage` 抛 UnknownError（Bun 运行时怪癖：bash 直跑正常、CreateProcess 稳定复现、stdin/creationflags 无关），serve+attach 全平台一致且省每次 bootstrap。输入附件由CLI加载，不开放read工具。需真实CLI+mock端到端验证附件解析、权限和清理；帮助信息不等于模型质量证据。不支持该通道的版本拒绝启动，不回退超长argv。当前整个payload放argv已在Windows40k字符复现206，待修。
 
 ## 4. 三池与领域
 
@@ -437,7 +437,7 @@ semantics.llm._one_word/_index_set关系/编号容错，合法NONE不是失败�
 - `guards/provenance.py` 三函数由 stub 实现：注入本地 lookup 的纯校验；`guards/bounds.require_batch_size` 实现接线，`MAX_PROPOSE_BATCH/MAX_BODY_BYTES` 接唯一真源。
 - `KindPolicy.max_apply_attempts`：WF/SEM=5、INV=3，与模型上限分别计入。
 - DTO 会话身份：observe/feedback 增可选 `session_id/turn_id` 并纳入指纹，缺失标 unknown。
-- `OpenCodeRunner.run` 文件通道：payload 经私有 UTF-8 临时文件以 `--file` 传递，不支持则拒绝启动。
+- `OpenCodeRunner.run` 文件通道：payload 经私有 UTF-8 临时文件以 `--file` 传递，不支持则拒绝启动；N48 起经长驻 serve + `run --attach` 薄调用（Windows 自举服务缺陷绕行）。
 - 统一调度：`run_semantic_tasks` 与 `Legacy.process_once` 降为无独立线程 adapter，统一 due 筛选/额度/策略。
 - Legacy 公共 parse（`parse_ids/parse_salience`）迁 guards 供新协议严格校验；Legacy 宽容解析保留兼容。
 - `LLMSemantics` 包装为 SemanticsProvider 并接 `/health`、`/signals`；存量 judge 通路保留但显式。
@@ -782,6 +782,31 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
   原子性）；两处旧测试更新（durable_tasks 编号预留、server 部分加载
   隔离——断言/构造编码"直写不落盘"过时语义，核心意图保留）；全量
   504 passed。
+- **N48 OpenCode spawn 模型改 serve+attach（Windows 自举服务缺陷绕行 +
+  真实 CLI 首验）**：
+  决定：runner 惰性拉起常驻 `opencode serve --pure --hostname 127.0.0.1
+  --port <free>`（TCP 可连即探活通过，输出落 `dynmem-serve-*.log`），
+  每次调用 `run --pure --attach <url> --dir <agent_root> --agent <role>
+  --format json '<指令>' --file <payload>` 薄客户端；`--pure` 语义落在
+  serve 侧（插件装载在 serve 启动时）。§3.7 的 --file 文件通道与位置
+  指令契约不变。
+  理由：实测 `opencode run` 每次自举临时 server 的路径在 Windows 非
+  POSIX 父进程（CreateProcess）下必在 `createUserMessage` 抛
+  UnknownError（bash→exe 3/3 正常，CreateProcess→exe 6/6 稳定复现，
+  与 stdin/creationflags/env 无关；`--print-logs` 定为服务端内部错误）。
+  serve+attach 是 Windows 唯一能跑通的调用形态，且省每次 bootstrap。
+  同时修 `_spawn_argv` PATH 解析：裸名经 `shutil.which` 解析（Windows
+  CreateProcess 不做 PATHEXT，裸名找不到 npm .cmd 垫片）。
+  影响符号：`agents/opencode.py::OpenCodeRunner`（+`_ensure_server`/
+  `_child_env`/`close`/`__del__`）；`verify_channel` 深探改为"help 含
+  --file + serve 实拉起可连"；契约 run/verify_channel 条目更新，close
+  新登记；fake CLI 测试补 `serve` 监听分支；`test_trio_protocol` 的
+  argv 断言更新为 attach 形状。
+  验证（PENDING-08 的真实 CLI 部分，本机 Windows + 智谱 glm-5.3-flash
+  实测）：observe→hauler_due→真 CLI→selector_due→真 CLI→CREATE→记忆
+  落 C 池（`src` 引用真实 L0 unit）；第二条 hauler 候选被 grounding 守
+  卫按 `ungrounded_content` 拒收（守卫如实生效）；任务链 done、封存
+  上下文随调用记录。**剩余**：L3 人工抽检与长期质量待用户验收。
 
 ### 9.1 旧目标条目的最终去向
 

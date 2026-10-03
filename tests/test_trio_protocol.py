@@ -93,8 +93,15 @@ def test_opencode_runner_parses_json_stream_and_rejects_missing_cli(tmp_path, mo
         stderr = ""
         stdout = json.dumps({"type": "text", "part": {"text": '{"candidates":[]}'}}) + "\n"
     monkeypatch.setattr("hybrid_memory.agents.opencode.shutil.which", lambda x: x)
+    # N48 serve+attach：跳过真实 serve 拉起，直接挂到既定 url
+    monkeypatch.setattr(runner, "_ensure_server", lambda: None)
+    runner._server_url = "http://127.0.0.1:1"
+
     def run(cmd, **kwargs):
-        assert cmd[0:5] == ["definitely-not-installed-opencode", "run", "--pure", "--agent", "hauler"]
+        assert cmd[0] == "definitely-not-installed-opencode"
+        assert cmd[1:3] == ["run", "--pure"]
+        assert cmd[cmd.index("--attach") + 1] == "http://127.0.0.1:1"
+        assert cmd[cmd.index("--agent") + 1] == "hauler"
         assert kwargs["env"]["DYNAMICS_MEMORY_INTERNAL_AGENT"] == "1"
         return Result()
     monkeypatch.setattr("hybrid_memory.agents.opencode.subprocess.run", run)

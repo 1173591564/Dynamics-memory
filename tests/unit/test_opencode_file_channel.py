@@ -25,6 +25,18 @@ from hybrid_memory.errors import Fatal
 # 并输出 opencode 风格的 JSON 事件行。
 FAKE_CLI = "#!/usr/bin/env python3\n" + r'''
 import json, os, stat, sys
+if sys.argv[1:2] == ["serve"]:
+    # serve+attach 模式（N48）：runner 惰性拉起长驻 serve 并做 TCP 探活；
+    # 假 serve 只需监听端口，不实现 HTTP。
+    import socket
+    port = int(sys.argv[sys.argv.index("--port") + 1])
+    s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(("127.0.0.1", port)); s.listen(4)
+    while True:
+        try:
+            c, _ = s.accept(); c.close()
+        except OSError:
+            break
 out = os.environ["FAKE_OC_OUT"]
 obs = {"argv": sys.argv[1:], "env": {
     "PYTHONPATH": os.environ.get("PYTHONPATH", ""),

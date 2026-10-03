@@ -34,6 +34,17 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FAKE_CLI = """#!/usr/bin/env python3
 import json, os, sys
 argv = sys.argv[1:]
+if argv[:1] == ["serve"]:
+    # serve+attach 模式（N48）：假 serve 只需监听端口供 TCP 探活。
+    import socket
+    port = int(argv[argv.index("--port") + 1])
+    s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(("127.0.0.1", port)); s.listen(4)
+    while True:
+        try:
+            c, _ = s.accept(); c.close()
+        except OSError:
+            break
 if argv[:2] == ["run", "--help"]:
     print("Usage: opencode run [options] [message..]")
     print("  --file <path>   attach file")
