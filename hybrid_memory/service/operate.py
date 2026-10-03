@@ -194,6 +194,11 @@ def propose(svc, proposals: list, *, origin: str = "agent",
             origin = "agent"
 
         t = svc._t
+        # §5.2/N46：Legacy 直写也立即 checkpoint。先整批静态校验，合法项在
+        # effect_transaction 内原子应用（checkpoint + 深回滚 + 信号收口），
+        # 与 resolve/feedback 同一提交语义；§4.2 直写新增同样 commit 前
+        # plan_capacity 收口，全 pin 无法收口整批拒收回滚。
+        batch: list[tuple] = []
         for i, p in enumerate(proposals):
             if not isinstance(p, dict):
                 rejected.append({"index": i, "reason": "not_an_object"})
@@ -208,17 +213,54 @@ def propose(svc, proposals: list, *, origin: str = "agent",
                 rejected.append({"index": i, "reason": str(exc)})
                 svc.n_rejected += 1
                 continue
-            ev.origin = origin
-            ids = svc.engine.propose([ev], t)
-            accepted += 1
-            svc.n_proposals += 1
-            new_ids.extend(ids)
-            if ids and sup:
-                new = ids[-1]
-                for old in sup:
-                    if old in svc.engine.mems and old != new:
-                        svc.engine.add_tension(new, old, t)
-                        svc.engine.submit_verdicts([(new, old, "update")], t)
+            batch.append((ev, sup))
+
+        if getattr(svc, "_effect_depth", 0):
+            # 任务操作/外层效果事务的内层直写（durable_propose→_task_once 的
+            # 内腿）：外层 apply_operation/apply_effect 已把回执与 checkpoint
+            # 放进同一事务，这里再开嵌套效果事务必然撞修订号——只按原语义
+            # 改内存，提交权归外层。
+            for ev, sup in batch:
+                ev.origin = origin
+                ids = svc.engine.propose([ev], t)
+                accepted += 1
+                svc.n_proposals += 1
+                new_ids.extend(ids)
+                if ids and sup:
+                    new = ids[-1]
+                    for old in sup:
+                        if old in svc.engine.mems and old != new:
+                            svc.engine.add_tension(new, old, t)
+                            svc.engine.submit_verdicts([(new, old, "update")], t)
+            pool = svc.engine.pool_sizes()
+            return {"accepted": accepted, "new_ids": new_ids,
+                    "merged": accepted - len(new_ids), "rejected": rejected,
+                    "origin": origin, "pool": pool, "t": t}
+
+        def mutate():
+            """effect_transaction 内腿：整批原子应用+commit 前容量收口。
+
+            提交权归 effect_transaction（checkpoint 与回滚同事务，I5 唯一
+            入口）；此处只改内存，不自行落盘（N46）。
+            """
+            from ..dispatch.effects import enforce_capacity
+            n_accepted, n_ids = 0, []
+            for ev, sup in batch:
+                ev.origin = origin
+                ids = svc.engine.propose([ev], t)
+                n_accepted += 1
+                svc.n_proposals += 1
+                n_ids.extend(ids)
+                if ids and sup:
+                    new = ids[-1]
+                    for old in sup:
+                        if old in svc.engine.mems and old != new:
+                            svc.engine.add_tension(new, old, t)
+                            svc.engine.submit_verdicts([(new, old, "update")], t)
+            enforce_capacity(svc)
+            return n_accepted, n_ids
+
+        accepted, new_ids = effects.effect_transaction(svc, mutate)
         pool = svc.engine.pool_sizes()
         return {"accepted": accepted, "new_ids": new_ids,
                 "merged": accepted - len(new_ids), "rejected": rejected,

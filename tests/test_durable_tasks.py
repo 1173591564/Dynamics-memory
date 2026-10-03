@@ -522,7 +522,9 @@ def test_pending_task_reserves_referenced_memory_ids_before_any_checkpoint(tmp_p
     _close(svc)  # 从未 save，也没有 worker 领取
     restored = _svc(tmp_path)
     try:
-        assert not restored.engine.mems
+        # §5.2（N46）：直写 propose 当场 durable checkpoint，重启后效果存活；
+        # 旧断言 not restored.engine.mems 编码的是"直写不落盘"的过时语义。
+        assert len(restored.engine.mems) == 1
         new = restored.propose([{"text": "port 8080", "source_unit_ids": [0]}])["new_ids"][0]
         assert new > old  # 持久任务的旧引用不能指到重用编号后的另一个事实
     finally:

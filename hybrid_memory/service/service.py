@@ -141,24 +141,31 @@ class MemoryService:
                   q.n_emitted, q.n_dropped,
                   [(sig, sig.payload, sig.t) for sig in q._items])
         revision = self._checkpoint_revision
+        # 效果深度：>0 表示外层效果上下文（任务操作/apply_effect）已拥有
+        # checkpoint 与回滚，内层直写只改内存、不再开嵌套事务（N46）。
+        depth = getattr(self, "_effect_depth", 0) + 1
+        self._effect_depth = depth
         try:
-            yield
-        except BaseException:
-            for mid, original in original_mems.items():
-                original.__dict__.clear()
-                original.__dict__.update(backup["mems"][mid].__dict__)
-            backup["mems"] = original_mems
-            for k, v in backup.items():
-                setattr(eng, k, v)
-            for k, v in counters.items():
-                setattr(self, k, v)
-            self._t, self._unit_id, self._scene, self._scene_t, self._last_turn, self.miss_counts = service
-            q._items, q._by_key, q._next_id, q.n_emitted, q.n_dropped, old = queued
-            for sig, payload, t in old:
-                sig.payload, sig.t = payload, t
-            # 若提交成功但确认丢失，绝不能用回滚后的内存覆盖 DB checkpoint。
-            self._check_checkpoint_error(revision)
-            raise
+            try:
+                yield
+            except BaseException:
+                for mid, original in original_mems.items():
+                    original.__dict__.clear()
+                    original.__dict__.update(backup["mems"][mid].__dict__)
+                backup["mems"] = original_mems
+                for k, v in backup.items():
+                    setattr(eng, k, v)
+                for k, v in counters.items():
+                    setattr(self, k, v)
+                self._t, self._unit_id, self._scene, self._scene_t, self._last_turn, self.miss_counts = service
+                q._items, q._by_key, q._next_id, q.n_emitted, q.n_dropped, old = queued
+                for sig, payload, t in old:
+                    sig.payload, sig.t = payload, t
+                # 若提交成功但确认丢失，绝不能用回滚后的内存覆盖 DB checkpoint。
+                self._check_checkpoint_error(revision)
+                raise
+        finally:
+            self._effect_depth = depth - 1
 
     # 供 AgentWorker 使用的最小接口
     @property

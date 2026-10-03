@@ -619,10 +619,20 @@ def test_invalid_snapshot_does_not_publish_partially_loaded_memory(tmp_path):
     import pickle
 
     # 构造升级前的旧库：有快照与 L0，但没有新单元回执/checkpoint。
+    from hybrid_memory.core.types import Event
+    from hybrid_memory.semantics import normalize
+
     svc = _service(tmp_path, texts=())
     svc.log.add_unit(0, 0, user_text="old_module.py", assistant_text="evidence 部署在 B 服务器")
-    svc.propose([{"text": "部署在 B 服务器", "source_unit_ids": [0]}])
-    svc._unit_id, svc._t = 1, 1
+    # N46 后 service.propose 当场 durable checkpoint，重启时优先于 state.pkl；
+    # 本测试验证 state.pkl 的部分加载隔离，故用引擎级写入模拟
+    # "只有旧快照、没有 durable checkpoint"的历史库。
+    with svc._lock:
+        n = normalize("部署在 B 服务器")
+        svc.engine.propose(
+            [Event(svc.semantics.fingerprint(n), n, "部署在 B 服务器", (0,),
+                  origin="agent")], 0)
+        svc._unit_id, svc._t = 1, 1
     svc.save()
     svc.log.close()
     path = tmp_path / "state.pkl"
