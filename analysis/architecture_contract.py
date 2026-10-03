@@ -587,6 +587,12 @@ SYMBOL_OVERRIDES = {
         "MemorySemantics 检索路径委托", "belief_id、value、query、t", "bool", "透传 delegate", "构造时已验证委托具备全部方法"),
     "hybrid_memory/semantics/provider.py::SemanticsProvider.embedding_key": (
         "MemorySemantics 写路径委托", "belief_id、value", "embedding key 元组", "透传 delegate", "构造时已验证委托具备全部方法"),
+    "hybrid_memory/store/tasks.py::TaskStore.durable_revision": (
+        "durable checkpoint revision 裸读",
+        "无",
+        "int 或 None（无 durable 行）",
+        "运行时提交确认丢失检测专用；不做启动一致性校验",
+        "缺失≠fault：干净回滚遇 durable 缺失不误判（N43）"),
     "hybrid_memory/store/tasks.py::TaskStore.call_context": (
         "封存上下文读取器",
         "task_id",
@@ -653,8 +659,8 @@ CONSTANTS = {
     "hybrid_memory/core/triggers.py::LONG_TURN_CHARS": ("保留", "长轮阈值"),
     "hybrid_memory/core/triggers.py::DISSATISFACTION_RE": ("保留", "不满正则；只调度不授权"),
     "hybrid_memory/dispatch/effects.py::EFFECTS": ("保留", "9 种 kind 的 applier 注册表；启动自检依据"),
-    "hybrid_memory/dispatch/policy.py::_INVESTIGATION": ("保留", "调查类策略实例"),
-    "hybrid_memory/dispatch/policy.py::_SEMANTIC": ("保留", "语义类策略实例；SEM 上限未完成见 §10.4"),
+    "hybrid_memory/dispatch/policy.py::_INVESTIGATION": ("保留", "调查类策略实例；N06 定案：模型 2/应用 3"),
+    "hybrid_memory/dispatch/policy.py::_SEMANTIC": ("保留", "语义类策略实例；N06 定案：模型 5/应用 5/耗尽 dead/lease 360"),
     "hybrid_memory/dispatch/policy.py::_WORKFLOW": ("保留", "工作流类策略实例"),
     "hybrid_memory/dispatch/policy.py::POLICIES": ("保留", "kind→策略唯一表"),
     "hybrid_memory/embed/cache.py::_SCHEMA": ("保留", "向量缓存建表 DDL"),

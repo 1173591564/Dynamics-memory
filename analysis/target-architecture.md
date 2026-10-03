@@ -689,6 +689,30 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
   `dispatch/policy.py::assert_consumers`。
   验证：`tests/unit/test_http_codes.py` 6 条（先红后绿，含扫描器负向探针）；
   全量 480 passed。
+- **N43 语义任务上限定案 + 回滚误判 fault 修复（P0-2，修 N06/§10.4）**：
+  决定：_SEMANTIC 定案——max_attempts 5（不再 None）、max_apply_attempts 5、
+  on_exhausted dead（耗尽 dead 且保留产物；瞬时错误由退避吸收，requeue 无上限
+  是无限循环）、lease_s 120→360（llm.chat 最坏 300s，120 会把慢模型误判成租约
+  丢失）；_INVESTIGATION 定案 INV=2/3（模型 2：证据/输入问题重试不改变输入）。
+  连带缺陷修复：`_rollback_effect` 的提交确认丢失检测原调启动校验器
+  `TaskStore.checkpoint()`，在"durable checkpoint 缺失但存在已领取任务"时抛错
+  → 任何干净回滚（含容量背压、首次提交前的失败、无 durable 的测试库）都被
+  误置 checkpoint_fault 把服务砖死。新增 `TaskStore.durable_revision()` 裸读，
+  `_check_checkpoint_error` 只比较 durable revision 是否越过回滚前值（缺失且
+  内存 revision 0 = 不可能丢提交，回滚安全）。
+  理由：SEM 无上限 requeue 与背压组合 = 永久重试占死语义循环；误判 fault 违背
+  "回滚必须完整恢复可重试状态"。该缺陷由 apply 耗尽回归测试暴露（首轮回滚后
+  服务即 CheckpointConflict 砖死，后续重试全部跳过）。
+  被否决备选：保留 requeue + 靠人工清理（无静默失败哲学下无限循环不可接受）；
+  lease 维持 120（慢模型 300s 超时后租约被 recover_expired 重发，双跑模型）；
+  _check_checkpoint_error 吞掉"缺失"异常（掩盖 durable 真丢失——改为裸读 +
+  显式比较，语义清晰）。
+  影响符号：`dispatch/policy.py::_SEMANTIC/_INVESTIGATION`（快照重冻
+  b_lifecycle/b_retry_model/b_recover 三件）、`store/tasks.py::TaskStore.
+  durable_revision`（新）、`service/service.py::_check_checkpoint_error`。
+  验证：`tests/unit/test_sem_exhaustion.py` 5 条（先红后绿：模型 5 次耗尽 dead、
+  应用 5 次耗尽 dead 保留产物、租约过期 5 轮计数不重置最终 dead、INV=2/3、
+  退避有界）；characterization 快照 FREEZE_CHAR=1 重冻；全量 485 passed。
 
 ### 9.1 旧目标条目的最终去向
 

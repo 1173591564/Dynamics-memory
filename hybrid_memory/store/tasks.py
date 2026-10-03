@@ -210,6 +210,17 @@ class TaskStore:
             row = self._conn.execute("SELECT value FROM metadata WHERE key='memory_next_id'").fetchone()
             return row[0] if row else 0
 
+    def durable_revision(self):
+        """读 durable checkpoint revision（无则 None）。
+
+        运行时提交确认丢失检测用（N43）：不做启动一致性校验——干净回滚
+        遇上"durable 缺失但存在已领取任务"不得误判 fault。
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT revision FROM checkpoint WHERE id=1").fetchone()
+            return row[0] if row else None
+
     def checkpoint(self):
         with self._lock:
             row = self._conn.execute("SELECT revision,state FROM checkpoint WHERE id=1").fetchone()

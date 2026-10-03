@@ -56,12 +56,10 @@
    "checkpoint": null,
    "checkpoint_error": "CheckpointConflict: durable checkpoint 缺失，但存在已领取任务/操作回执",
    "counts": {
-    "operations": 0,
-    "pending": 1
+    "dead": 1,
+    "operations": 0
    },
-   "queued": {
-    "feedback_pending": 1
-   },
+   "queued": {},
    "revision": null,
    "tasks": [
     {
@@ -80,7 +78,7 @@
       "r": 1
      },
      "result": null,
-     "state": "pending",
+     "state": "dead",
      "t": 0,
      "task_key": "",
      "token": null,
