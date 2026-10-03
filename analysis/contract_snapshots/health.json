@@ -15,7 +15,8 @@
   "t": "int",
   "tensions": "int",
   "units_pending": "int",
-  "validation": "str"
+  "validation": "str",
+  "semantic_provider": "NoneType"
  },
  "literals": {
   "validation": "unverified"

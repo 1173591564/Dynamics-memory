@@ -636,7 +636,8 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
   验证：`tests/unit/test_provider_wiring.py` 7 条（先红后绿）；
   `tests/unit/test_defects_regression.py::test_semantics_provider_health_and_calls`
   空洞断言（`res is not None or failures >= 0` 恒真）重写为逐字段可失败断言；
-  全量 472 passed。
+  A7 health.json 快照按"字段只增"规则补 semantic_provider（无 provider 装配时
+  None/NoneType，装配后为 health() dict）；全量 472 passed。
 
 ### 9.1 旧目标条目的最终去向
 
