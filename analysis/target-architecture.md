@@ -577,7 +577,7 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 | `prepare_effect` | worker/效果事务 | 未接；`svc.embedder` 不存在、`embed(str)` 形状错误 |
 | `SemanticsProvider` | `service.semantics` + `/health` | 未接；其单测断言恒真 |
 
-**未兑现契约**：N01（未知 `MEMORY_PIPELINE` 应拒绝；当前放行且被测试固化）、N06（SEM 模型上限与 dead 未实现）、OpenCode 文件通道形状（指令应为位置参数，当前全塞进文件且未验证 CLI 行为）、`store/schema.py` 未接入 Store（H10 版本保护未生效）、HTTP 稳定 `code` 覆盖不全、`assert_consumers` 对 legacy 类 applier 无 callable 校验。
+**未兑现契约**：N01（未知 `MEMORY_PIPELINE` 应拒绝；当前放行且被测试固化）、N06（SEM 模型上限与 dead 未实现）、OpenCode 文件通道形状（指令应为位置参数，当前全塞进文件且未验证 CLI 行为）、`store/schema.py` 未接入 Store（H10 版本保护未生效）、HTTP 稳定 `code` 覆盖不全、`assert_consumers` 对 legacy 类 applier 无 callable 校验、产品代码仍从 shim 导入（canonical 切换未做：`effects.py`/`observe.py`/`operate.py`/`service.py`/`bootstrap.py`×2/`semantics/llm.py`/`legacy/inline.py` 共 8 处；shim 保留给外部与旧测试，章程第 3 条要求生产核心路径不得依赖 shim）。
 
 **声明与事实不符已修正**：N29–N33 由 decision-register 移入本文 §9.2 并改为如实状态；附录计数以重新生成为准（145 模块 / 1360 符号 / 69 常量）。
 
