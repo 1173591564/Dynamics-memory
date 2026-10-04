@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 from ..errors import Fatal
 from .protocol import AgentProtocolError, AgentTimeout
@@ -23,12 +24,24 @@ PROTOCOL_INSTRUCTION = (
 class OpenCodeRunner:
     """Run real OpenCode agents, not a local imitation of their reasoning loop."""
 
-    def __init__(self, project: Path, executable: str | None = None, timeout: int = 300):
+    def __init__(self, project: Path, executable: str | None = None, timeout: int = 300,
+                 mode: str | None = None):
         self.project = Path(project)
         self.executable = executable or os.environ.get("MEMORY_OPENCODE_BIN", "opencode")
         self.timeout = timeout
         self.agent_root = Path(__file__).resolve().parents[2]
-        self._server = None       # 长驻 `opencode serve` 子进程（N48）
+        # N50 spawn 模式：win32→serve+attach（N48，自举在 CreateProcess 下
+        # 必炸）；其余平台→bootstrap 自举薄调用（常驻 serve 在小内存 Linux
+        # 实测被 OOM 无声杀、attach 会话不稳；自举单进程用完即退，N44 起
+        # 即为该平台验证形态）。环境变量覆盖平台默认，显式参数最高。
+        if mode is None:
+            mode = os.environ.get("OPENCODE_SPAWN_MODE") or (
+                "serve+attach" if sys.platform == "win32" else "bootstrap")
+        if mode not in ("serve+attach", "bootstrap"):
+            raise Fatal(f"OPENCODE_SPAWN_MODE must be 'serve+attach' or "
+                        f"'bootstrap', got {mode!r}")
+        self.mode = mode
+        self._server = None       # 长驻 `opencode serve` 子进程（serve+attach 模式）
         self._server_url = None
         self._serve_log = None    # serve stdout/stderr 落盘日志（诊断用）
 
@@ -136,7 +149,10 @@ class OpenCodeRunner:
                 f"OpenCode CLI {self.executable!r} lacks the --file attachment "
                 "channel required by \u00a73.7; refusing to start (no long-argv "
                 "fallback)")
-        self._ensure_server()   # 深探：serve 能拉起且端口可连才算通道可用
+        if self.mode == "serve+attach":
+            # 深探（N48）：serve 能拉起且端口可连才算通道可用。bootstrap
+            # 模式无常驻 serve，--help 探测即通道证明。
+            self._ensure_server()
         return True
 
     def __call__(self, name: str, payload: dict) -> dict:
@@ -151,19 +167,25 @@ class OpenCodeRunner:
         # internal env guard is defence in depth against capturing worker text.
         # 短指令是位置参数；payload 经 --file 私有 0600 UTF-8 JSON 临时文件
         # 传递（不进 argv——Windows argv 上限 40k 字符会崩）。
-        self._ensure_server()
+        if self.mode == "serve+attach":
+            self._ensure_server()
         import tempfile
         fd, tmp_path = tempfile.mkstemp(prefix="dynmem-payload-", suffix=".json")
         try:
             os.fchmod(fd, 0o600)              # 私有：payload 只许本进程与 CLI 读
             with os.fdopen(fd, "w", encoding="utf-8") as tmp:
                 tmp.write(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+            if self.mode == "serve+attach":
+                run_argv = ["run", "--pure", "--attach", self._server_url,
+                            "--dir", str(self.agent_root), "--agent", name,
+                            "--format", "json", PROTOCOL_INSTRUCTION,
+                            "--file", tmp_path]
+            else:   # N50 bootstrap：自举薄调用（无 serve、无 attach/dir）
+                run_argv = ["run", "--pure", "--agent", name,
+                            "--format", "json", PROTOCOL_INSTRUCTION,
+                            "--file", tmp_path]
             done = subprocess.run(
-                self._spawn_argv(["run", "--pure", "--attach", self._server_url,
-                                  "--dir", str(self.agent_root),
-                                  "--agent", name,
-                                  "--format", "json", PROTOCOL_INSTRUCTION,
-                                  "--file", tmp_path]),
+                self._spawn_argv(run_argv),
                 cwd=self.agent_root, env=self._child_env(),
                 capture_output=True, text=True,
                 stdin=subprocess.DEVNULL,

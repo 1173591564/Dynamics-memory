@@ -316,9 +316,9 @@ SYMBOL_OVERRIDES = {
     "hybrid_memory/dispatch/worker.py::run_semantic_tasks": (
         "语义任务阶段适配", "svc 与 limit", "judged/resolved/credited/reflected/thin/recog_fail/errors", "目标无独立线程，统一 due/quota/policy", "单任务失败不影响整批；fault 即停"),
     "hybrid_memory/agents/opencode.py::OpenCodeRunner.run": (
-        "真实角色调用（文件通道，serve+attach）", "name、封存 payload",
+        "真实角色调用（文件通道；N50 双模式）", "name、封存 payload",
         "已解析 JSON 对象",
-        "run --attach 薄调用挂长驻 serve（N48）；短协议指令为位置参数；payload 经 --file 私有 0600 UTF-8 JSON 临时文件（用后删除，不进 argv）；PYTHONPATH 用 os.pathsep 且继承父环境",
+        "serve+attach 模式（win32 默认）：run --attach 薄调用挂长驻 serve（N48）；bootstrap 模式（其余平台默认）：自举薄调用无 --attach/--dir（N44 形态，N50）；两模式短协议指令均为位置参数；payload 经 --file 私有 0600 UTF-8 JSON 临时文件（用后删除，不进 argv）；PYTHONPATH 用 os.pathsep 且继承父环境",
         "CLI/超时/协议错误显式；不得 log 原文与凭据；不回退超长 argv"),
     "hybrid_memory/agents/opencode.py::OpenCodeRunner.verify_channel": (
         "文件通道能力探测（§3.7/N48）", "无",

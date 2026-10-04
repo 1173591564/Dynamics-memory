@@ -808,6 +808,28 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
   卫按 `ungrounded_content` 拒收（守卫如实生效）；任务链 done、封存
   上下文随调用记录。**剩余**：L3 人工抽检与长期质量待用户验收。
 
+- **N50 OpenCode spawn 模式平台自适应（修 N48 的 Linux 回归 / §3.7）**：
+  决定：OpenCodeRunner 增加模式参数——win32 默认 serve+attach（N48 不变：
+  Windows 自举在 CreateProcess 下必炸）；其余平台默认 bootstrap 自举薄
+  调用（N44 形态：无 --attach/--dir，单进程用完即退）。OPENCODE_SPAWN_MODE
+  环境变量覆盖平台默认，显式 mode= 参数最高，非法值 Fatal。verify_channel
+  深探仅在 serve+attach 模式拉起 serve；bootstrap 模式 --help 探测即通道
+  证明。
+  理由：L2/L3 真实跑链（dev/l2l3-audit）在 Linux 沙箱实测 N48 形态不可用
+  ——常驻 serve 在 attach 会话期间被 OOM 无声 SIGKILL（日志无栈）、CLI
+  1.18.34 attach 间歇 Session not found/socket closed，重试耗尽成批 dead；
+  自举模式在同一环境稳定（N44 起即为 Linux 验证形态），且无常驻内存。
+  N48 的"全平台 serve+attach"是对 Windows 缺陷的过度泛化。
+  被否决备选：维持全平台 attach（Linux 不可用，真实跑链阻塞）；全平台
+  bootstrap（Windows 崩溃回归）；评测侧组装变体绕过（不走真实 bootstrap，
+  产品路径声明降级）。
+  影响符号：`agents/opencode.py::OpenCodeRunner.__init__/run/verify_channel`
+  （模式分支）；`tests/unit/test_opencode_spawn_mode.py`（5 条）；
+  `tests/test_trio_protocol.py`（attach 形状断言显式 mode）。
+  验证：spawn 模式 5 条先红后绿（平台默认/env 覆盖/显式最高+非法 Fatal/
+  bootstrap argv 无 attach+dir+指令位置不变/verify 不拉 serve/attach 形状
+  保持）；全量 509 passed（分支基线 504+5）。
+
 ### 9.1 旧目标条目的最终去向
 
 - X1–X7：保核心含义，纠正“不调LLM=无嵌入I/O”“所有磁盘有界”“effects完成=模型只一次”。

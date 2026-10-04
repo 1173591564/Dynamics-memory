@@ -93,7 +93,9 @@ def test_opencode_runner_parses_json_stream_and_rejects_missing_cli(tmp_path, mo
         stderr = ""
         stdout = json.dumps({"type": "text", "part": {"text": '{"candidates":[]}'}}) + "\n"
     monkeypatch.setattr("hybrid_memory.agents.opencode.shutil.which", lambda x: x)
-    # N48 serve+attach：跳过真实 serve 拉起，直接挂到既定 url
+    # N48 serve+attach（显式模式，N50 后非 Windows 默认 bootstrap）：
+    # 跳过真实 serve 拉起，直接挂到既定 url
+    runner.mode = "serve+attach"
     monkeypatch.setattr(runner, "_ensure_server", lambda: None)
     runner._server_url = "http://127.0.0.1:1"
 
