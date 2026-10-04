@@ -12,8 +12,10 @@ import secrets
 import threading
 from pathlib import Path
 
+from ..errors import Degraded
 from ..legacy.candgen import CandidateGenerator
 from .. import telemetry
+from . import observability
 from ..config import Cfg
 from ..core.engine import MemoryEngine
 from ..core.types import Event, Retrieval
@@ -48,6 +50,7 @@ class MemoryService:
         self.tasks = TaskStore(Path(state_dir) / "tasks.sqlite" if state_dir else None,
                                capacity=task_capacity)
         self._checkpoint_revision = 0
+        self._state_bytes = 0       # 最近一次引擎状态序列化字节数（N49 预算闸/水位）
         self._checkpoint_fault = False
         self._snapshot_status = "absent"
         self._snapshot_quarantined = False
@@ -93,8 +96,12 @@ class MemoryService:
 
         `ok` 只表示没有 checkpoint fault，插件据此复用进程。
         `validation` 固定为 unverified：本进程不能自称远程或 L3 已验证。
+        N49：telemetry 基础字段之外，并入 observability.capacity_status
+        水位（pin 占用+checkpoint 预算，A7 只许加字段）。
         """
-        return telemetry.health_view(self)
+        out = telemetry.health_view(self)
+        out.update(observability.capacity_status(self))
+        return out
 
     def _ensure_healthy(self):
         lifecycle.ensure_healthy(self)
@@ -128,6 +135,16 @@ class MemoryService:
     def _rollback_effect(self):
         """任务操作与单元效果共用的内存回滚；原 Memory/队列对象身份不变。"""
         self._ensure_healthy()
+        # N49（PENDING-09）checkpoint 预算闸：最近一次已提交的引擎状态序列化
+        # 超预算线时拒收新的效果提交（Degraded→503）。全量 pickle 的 O(N)
+        # 写放大越过设计包线必须吵闹失败；闸门读已记账水位，零额外序列化。
+        # save/恢复不受闸（持久化与读取不是写放大）；置闸于备份之前，无残局。
+        if self._state_bytes > observability.CHECKPOINT_BUDGET_BYTES:
+            raise Degraded(
+                "checkpoint_over_budget",
+                "engine state serialization exceeds budget; effect rejected",
+                f"{self._state_bytes} > {observability.CHECKPOINT_BUDGET_BYTES} bytes "
+                "(PENDING-09: segmented-pickle ADR required)")
         eng = self.engine
         fields = ("mems", "tensions", "_next_id", "_consolidation_pending",
                   "_consolidation_deferred", "_shadow_pending") + _COUNTERS
@@ -141,6 +158,7 @@ class MemoryService:
                   q.n_emitted, q.n_dropped,
                   [(sig, sig.payload, sig.t) for sig in q._items])
         revision = self._checkpoint_revision
+        state_bytes = self._state_bytes
         # 效果深度：>0 表示外层效果上下文（任务操作/apply_effect）已拥有
         # checkpoint 与回滚，内层直写只改内存、不再开嵌套事务（N47）。
         depth = getattr(self, "_effect_depth", 0) + 1
@@ -163,6 +181,8 @@ class MemoryService:
                     sig.payload, sig.t = payload, t
                 # 若提交成功但确认丢失，绝不能用回滚后的内存覆盖 DB checkpoint。
                 self._check_checkpoint_error(revision)
+                if not self._checkpoint_fault:
+                    self._state_bytes = state_bytes
                 raise
         finally:
             self._effect_depth = depth - 1

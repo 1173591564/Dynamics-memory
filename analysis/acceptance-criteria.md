@@ -1,4 +1,4 @@
-# 验收标准（Acceptance Criteria · A1–A10）
+# 验收标准（Acceptance Criteria · A1–A12）
 
 > 状态：机械验收基线（2026-10-02）。现有 A1–A10 保留；本轮目标的新闸门见唯一 [target-architecture.md](target-architecture.md) §10，尚待接入代码与 CI。旧门通过不等于新目标已经实现；验收变更需同步检查器及对应回归。
 
@@ -81,6 +81,16 @@
 
 ---
 
+## A11 可观测性与预算闸
+
+- **断言**：pin 水位同容量保护集，0.7 边界告警；预算闸在重启后生效；失败 checkpoint 不污染预算水位；save 不受闸。
+- **检查**：`tests/unit/test_observability.py`；`acceptance_check.py::check_a11`。
+
+## A12 L2/L3 审计完整性
+
+- **断言**：裁决不跨 run、不从 dead 归因；结算拒绝漏填/重复/未知 ID，保全各流和 first-pass；撤回改写禁旧值；导出离线只读；启动等待有界。
+- **检查**：`tests/unit/test_l2l3_audit.py`；mock 全链自检命令见 `eval/README.md`。本门不代表模型质量或人工验收。
+
 ## PENDING 白名单（H42：可见但不阻塞）
 
 | ID | 事项 | 现状证据 | 解冻条件 |
@@ -92,8 +102,11 @@
 | PENDING-05 | `legacy/` 删除 | H23：条件是裸引擎退役 | 另开删除 ADR |
 | PENDING-06 | 第二项目端口冲突（固定 17872） | BASELINE #5 | 端口分配方案 ADR |
 | PENDING-07 | L0 未脱敏进 LLM（log_search snippet 含原文） | BASELINE #2 | 脱敏层设计（注意：修了会影响调查员能力，需评测） |
-| PENDING-08 | L3 真实验证未做 | `validation=unverified`（H34） | 真实 provider + 人工抽检 |
-| PENDING-09 | checkpoint 全量 pickle O(N)（500 条≈301 KB/次） | design-debts.md §2 实测 | 触发线到 → 分段 pickle |
-| PENDING-10 | pin 占用无指标/告警（503 刹车不可预期） | design-debts.md §3.2 因果链 | health/stats 暴露 pin 占用 + 告警 |
+| PENDING-08 | 真实会话 L3 与独立人工复核未闭合 | N48 CLI 首验；N51 inline + 85 条开发日志引述 + Agent 单评；原始 99.8% 不作人工验收 | 真实 provider + 真实会话证据 + 人工抽检 |
+| PENDING-09 | checkpoint 全量 pickle O(N)（500 条≈301 KB/次） | design-debts.md §2 实测；2MB 预算闸已接线（N49） | 分段 pickle ADR（I5 单点接入） |
+
+> 消项记录：PENDING-10（pin 占用指标+告警）已于 N49 兑现——/health 暴露
+> pin_roots/pinned_context/pin_occupancy/alerts，≥0.7 外显告警；回归
+> tests/unit/test_observability.py + 验收门 A11。
 
 > `acceptance_check.py` 每次运行必须打印本表（H42）。消项走正常 PR，更新本表。

@@ -103,6 +103,8 @@ MODULE_IO = {
                                            "恢复/健康/保存/单元补确认；坏 checkpoint 拒绝、坏 pkl 隔离"),
     "hybrid_memory/service/service.py": ("cfg/embed/semantics/generator/stores 与业务请求",
                                          "单项目门面回执与锁内状态；不放业务算法、不 import transport"),
+    "hybrid_memory/service/observability.py": ("pin 占用与 checkpoint 预算水位（N49）",
+                                                "只读水位与预算常量；不 import transport、不放业务算法"),
     "hybrid_memory/service/tools.py": ("查询/实体/分组/IDs、before 与预算",
                                        "有界片段/时间线/统计/受限原文；不返回超因果界正文"),
     "hybrid_memory/transport/__init__.py": ("包 import", "无业务符号；子模块由各自契约承担"),
@@ -203,7 +205,7 @@ SYMBOL_OVERRIDES = {
     "hybrid_memory/telemetry.py::health_view": (
         "恢复/调度/容量/语义健康视图",
         "service（持锁读取）",
-        "ok/checkpoint_fault/snapshot/corrupt_file/units_pending/validation/t/mems/tensions/signals/log_units/agent 及目标新增 paused/degraded/provider/retention/capacity",
+        "ok/checkpoint_fault/snapshot/corrupt_file/units_pending/validation/t/mems/tensions/signals/log_units/agent 及目标新增 paused/degraded/provider/retention/capacity；/health 实际输出另含 service.health_view 并入的 pin_roots/pinned_context/cap_context/pin_occupancy/checkpoint_bytes/checkpoint_budget/capacity_on/alerts（N49）",
         "只读；字段只增不改语义",
         "读取失败不得吞掉；validation 保持 unverified"),
     "hybrid_memory/telemetry.py::signals_view": (
@@ -323,9 +325,25 @@ SYMBOL_OVERRIDES = {
     "hybrid_memory/agents/opencode.py::OpenCodeRunner.verify_channel": (
         "文件通道能力探测（§3.7/N48）", "无",
         "True 或抛 Fatal",
-        "opencode run --help 输出含 --file 才算有通道；随后实拉起 serve 探活（TCP 可连才算通道可用）；bootstrap 在 serve 前调用",
+        "opencode run --help 必须含 --file；serve+attach 模式额外拉起 serve 做 TCP 探活，bootstrap 模式不拉常驻进程；探测在 HTTP 启动前执行",
         "缺失即拒绝启动，不回退超长 argv；探测不证明 provider/模型质量"),
-    "hybrid_memory/agents/opencode.py::OpenCodeRunner.close": ("终止长驻 serve 子进程（幂等，atexit 兜底）",),
+    "hybrid_memory/agents/opencode.py::OpenCodeRunner.close": ("终止本 runner 长驻 serve（Windows 清理自身 PID 子树，POSIX terminate/wait；幂等，atexit 兜底）",),
+    "hybrid_memory/service/service.py::MemoryService._rollback_effect": (
+        "效果原子回滚与预算闸", "无", "context manager",
+        "备份引擎、计数器和预算水位；干净回滚恢复 _state_bytes；提交确认丢失仍保留 fault 安全停机",
+        "超预算 Degraded；不能用失败序列化水位误拒后续效果"),
+    "eval/l2l3/export.py::export_run": (
+        "离线只读审计导出", "repo/project/out_path", "L0、记忆、任务及提交回执",
+        "只读已停止 sidecar 的 SQLite；有 WAL 时复制 DB+WAL 到临时目录读取；受限快照校验；不启动服务、不调用模型、不创建鉴权文件",
+        "缺失 durable checkpoint 显式拒绝，原库和 WAL 不得改写"),
+    "eval/l2l3/audit.py::_decision_map": (
+        "裁决与记忆绑定", "run/export 集合", "(run 绝对路径, memory_id)→裁决",
+        "只取 done；优先提交回执 new_ids；旧导出仅本 run 唯一文本匹配，多义不猜",
+        "未提交产物不得冒充记忆创建裁决"),
+    "eval/l2l3/audit.py::aggregate": (
+        "原评分严格结算", "filled/key/run_paths/out_path", "rows/defects/stats/auto",
+        "ID 完整唯一、适用题全填；跨 run 累计并读 first-pass；自动指标不冒称检索能力",
+        "空表、漏填、重复、未知 ID 拒绝；原评分文件不修改"),
     "hybrid_memory/agents/payload.py::seal_context": (
         "封存一次模型调用的输入上下文",
         "kind、build_payload 产物、快照 revision",
@@ -361,7 +379,13 @@ SYMBOL_OVERRIDES = {
     "hybrid_memory/service/review.py::decide_human_review": (
         "人审决定", "review_id、decision、capability", "{'review_id','decision','new_ids','replayed'}", "双权校验、版本复核、原子 checkpoint、其他审批 stale", "capability 错 403；目标变化 stale"),
     "hybrid_memory/service/lifecycle.py::recover_or_init": (
-        "启动恢复", "svc", "None", "checkpoint→pkl→空；对齐游标；挂信号出口", "坏 checkpoint 拒绝启动；坏 pkl 隔离空启"),
+        "启动恢复", "svc", "None", "checkpoint→pkl→空；对齐游标；挂信号出口；恢复 _state_bytes 水位（N49 预算闸重启即生效）", "坏 checkpoint 拒绝启动；坏 pkl 隔离空启"),
+    "hybrid_memory/service/observability.py::capacity_status": (
+        "pin 占用与 checkpoint 预算水位（N49；PENDING-09/10）",
+        "service（持锁只读；service.health_view 并入 /health）",
+        "pin_roots/pinned_context/cap_context/pin_occupancy/checkpoint_bytes/checkpoint_budget/capacity_on/alerts",
+        "只读；pin 口径=enforce_capacity 同源（pinned_ids ∩ 非退役），不造第二套计算；不触发裁决/收口",
+        "超线只外显 alerts；拒收在 _rollback_effect 预算闸（不在本函数）"),
     "hybrid_memory/service/lifecycle.py::save": (
         "权威保存", "svc", "{'saved':bool,'mems'|'reason'}", "先 checkpoint 再原子导出 pkl", "不得洗掉 quarantined"),
     "hybrid_memory/transport/http.py::Handler._run": (
@@ -529,7 +553,7 @@ SYMBOL_OVERRIDES = {
     "hybrid_memory/service/tools.py::conflicts": ("统一冲突读模型入口：conflict_ledger 唯一数据源；旧字段保持、新增 ledger 字段、正文有界",),
     "hybrid_memory/store/state.py::RestrictedUnpickler": ("白名单反序列化（RCE 防线）",),
     "hybrid_memory/store/state.py::RestrictedUnpickler.find_class": ("只允许白名单 global",),
-    "hybrid_memory/store/state.py::dump_state": ("健康门+pickle4 快照",),
+    "hybrid_memory/store/state.py::dump_state": ("健康门+pickle4 快照；顺带记账 _state_bytes（N49 预算水位真源）",),
     "hybrid_memory/store/state.py::load_state": ("校验后一次发布；不半恢复",),
     "hybrid_memory/store/state.py::load_state.nonnegative_int": ("严格非负 int 判定（排 bool）",),
     "hybrid_memory/store/tasks.py::TaskLeaseLost": ("租约失效异常",),
@@ -737,6 +761,8 @@ CONSTANTS = {
     "hybrid_memory/agents/payload.py::PROTOCOL_VERSION": ("保留", "模型调用 payload 形状版本（N38 封存上下文随附）"),
     "hybrid_memory/agents/opencode.py::PROTOCOL_INSTRUCTION": ("保留", "OpenCode 短协议指令常量（位置参数，§3.7/N44）"),
     "hybrid_memory/telemetry.py::_warned": ("保留", "限频告警键集"),
+    "hybrid_memory/service/observability.py::CHECKPOINT_BUDGET_BYTES": ("保留", "PENDING-09 预算线：引擎状态序列化超 2MB 拒收新效果（N49），解冻=分段 pickle ADR"),
+    "hybrid_memory/service/observability.py::PIN_OCCUPANCY_ALERT": ("保留", "PENDING-10 告警阈值：pin 占 context 比 ≥0.7 外显告警（N49）"),
     "hybrid_memory/telemetry.py::_warned_lock": ("保留", "限频告警锁"),
     "hybrid_memory/transport/dto.py::SIGNAL_PATHS": ("保留", "信号路径白名单"),
     "hybrid_memory/transport/dto.py::MAX_BODY": ("保留", "请求体 4MiB 上限"),

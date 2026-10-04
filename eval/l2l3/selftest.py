@@ -47,6 +47,8 @@ if role == "hauler":
     win = payload.get("window") or []
     text = ""
     for u in win:
+        if u.get("unit_id") != payload["unit_id"]:
+            continue
         t = (u.get("user_text") or u.get("assistant_text") or "")
         if t:
             text = t[:80]
@@ -85,9 +87,12 @@ def main() -> None:
     tmp = Path(tempfile.mkdtemp(prefix="l2l3-selftest-"))
     cli_dir = tmp / "bin"
     cli_dir.mkdir()
-    cli = cli_dir / "opencode"
+    cli = cli_dir / ("opencode.py" if os.name == "nt" else "opencode")
     cli.write_text(FAKE_CLI, encoding="utf-8")
     cli.chmod(cli.stat().st_mode | stat.S_IEXEC)
+    if os.name == "nt":
+        (cli_dir / "opencode.cmd").write_text(
+            f'@echo off\r\n"{sys.executable}" "{cli}" %*\r\n', encoding="utf-8")
 
     mock_port = _free_port()
     mock = subprocess.Popen(
@@ -108,7 +113,7 @@ def main() -> None:
         print(f"[selftest] 语料装配 {len(corpus['streams'])} 流 / {n_turns} 轮")
 
         from eval.l2l3.run_audit_chain import run_chain
-        env = {"PATH": f"{cli_dir}:{os.environ.get('PATH', '')}",
+        env = {"PATH": f"{cli_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                "ZAI_API_KEY": "mock",
                "ZAI_BASE_URL": f"http://127.0.0.1:{mock_port}"}
         run = run_chain(corpus, str(tmp / "proj"), str(tmp / "runs" / "l2"),

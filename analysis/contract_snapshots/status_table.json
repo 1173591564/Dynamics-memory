@@ -7,6 +7,7 @@
  "miss_503": 503,
  "observe_413": 413,
  "observe_badjson": 400,
+ "propose_overbudget_503": 503,
  "recall_missing_q": 400,
  "resolve_badverdict": 400,
  "save_401": 401,

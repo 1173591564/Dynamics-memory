@@ -261,7 +261,7 @@ trio 队列、结果及 Reviewer 规则保存在 `tasks.sqlite`。</sub>
 
 ## 验证状态
 
-Python 与 Bun 测试覆盖服务端、插件和 mock HTTP 不变量；手工 smoke 用真实 OpenCode CLI + 本地假模型完成三 Agent 任务交接；端到端穿透回归覆盖"observe→Hauler→Selector→效果落库→recall→feedback→信用结清"、"CONFLICT→人审双分支"与"kill -9 两库崩溃恢复"三条链。尚未验证真实模型语义质量或接入生产 provider，也未做 L3。`GET /health` 的 `validation` 固定为 `unverified`：进程在听，不等于已经验证。
+Python 与 Bun 测试覆盖服务端、插件和 mock HTTP 不变量；手工 smoke 用真实 OpenCode CLI + 本地假模型完成三 Agent 任务交接；端到端穿透回归覆盖"observe→Hauler→Selector→效果落库→recall→feedback→信用结清"、"CONFLICT→人审双分支"与"kill -9 两库崩溃恢复"三条链。N48 已用真实 OpenCode CLI + 智谱 glm-5.3-flash 验证小样本 Hauler→Selector→落库。N51 五链实际走 inline runner；L3 全为开发日志引述，100 行评分是 Agent 单评，不能等同于真实会话与人工验收；[抽检报告](eval/l2l3/REPORT.md)记载证据与限制；独立人工的真实会话 L3 验收尚未做，PENDING-08 仍保留。`GET /health` 的 `validation` 固定为 `unverified`：进程在听，不等于已经验证。
 
 `ok: true` 只表示没有 checkpoint fault，插件可以复用这个进程。它不表示快照干净，也不表示逐单元效果已经补齐。看 `snapshot` 和 `units_pending`。`snapshot=quarantined` 表示坏快照已被隔离成 `state.corrupt`，服务空启动，记忆没有从那份快照恢复。
 

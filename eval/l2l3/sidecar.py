@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from urllib.error import HTTPError
@@ -34,10 +36,23 @@ class Sidecar:
         self.base: str | None = None
         self.token = ""
         self._tail: list[str] = []
+        self._lines = queue.Queue(maxsize=200)
+        self._reader = None
+
+    def _read_output(self, stream) -> None:
+        """持续排空子进程输出，启动线程仅以有界队列等端口声明。"""
+        for line in stream:
+            self._tail.append(line[-400:])
+            self._tail = self._tail[-60:]
+            try:
+                self._lines.put_nowait(line)
+            except queue.Full:
+                pass
 
     # ---- 生命周期 ----
     def start(self) -> "Sidecar":
         env = {**os.environ, **self.extra_env}
+        env["PYTHONUNBUFFERED"], env["PYTHONIOENCODING"] = "1", "utf-8"
         env["PYTHONPATH"] = self.repo + os.pathsep + env.get("PYTHONPATH", "")
         argv = [sys.executable, "-m", self.module,
                 "--port", "0", "--project", self.project]
@@ -45,20 +60,24 @@ class Sidecar:
             argv.append("--no-agent")
         self.proc = subprocess.Popen(argv, cwd=self.repo, env=env,
                                      stdout=subprocess.PIPE,
-                                     stderr=subprocess.STDOUT, text=True)
-        deadline = time.time() + self.boot_timeout
-        while time.time() < deadline:
-            line = self.proc.stdout.readline() if self.proc.stdout else ""
-            if line:
-                self._tail.append(line[-400:])
-                self._tail = self._tail[-50:]
-                if m := re.search(r"http://127\.0\.0\.1:(\d+)", line):
-                    self.base = f"http://127.0.0.1:{m.group(1)}"
-                    break
-            if self.proc.poll() is not None:
-                raise RuntimeError(
-                    f"sidecar exited rc={self.proc.returncode}; tail=\n"
-                    + "".join(self._tail))
+                                     stderr=subprocess.STDOUT, text=True,
+                                     encoding="utf-8", errors="replace")
+        self._reader = threading.Thread(target=self._read_output,
+                                        args=(self.proc.stdout,), daemon=True)
+        self._reader.start()
+        deadline = time.monotonic() + self.boot_timeout
+        while time.monotonic() < deadline:
+            try:
+                line = self._lines.get(timeout=min(0.1, max(0.001, deadline - time.monotonic())))
+            except queue.Empty:
+                line = ""
+            if m := re.search(r"http://127\.0\.0\.1:(\d+)", line):
+                self.base = f"http://127.0.0.1:{m.group(1)}"
+                break
+            if self.proc is None or self.proc.poll() is not None:
+                code = self.proc.returncode if self.proc else None
+                self.close()
+                raise RuntimeError(f"sidecar exited rc={code}; tail=\n" + "".join(self._tail))
         if self.base is None:
             self.close()
             raise RuntimeError("sidecar did not announce a port; tail=\n"
@@ -89,18 +108,24 @@ class Sidecar:
     def close(self) -> str:
         proc, self.proc = self.proc, None
         if proc is not None and proc.poll() is None:
-            proc.terminate()
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=10, check=False)
+            else:
+                proc.terminate()
             try:
                 proc.wait(15)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait(10)
-        if proc is not None and proc.stdout:
+        if self._reader is not None:
             try:
-                rest = proc.stdout.read()[-4000:]
-                self._tail.append(rest)
+                self._reader.join(2)
             except Exception:  # noqa: BLE001  诊断读取尽力而为
                 pass
+        if proc is not None and proc.stdout:
+            proc.stdout.close()
         return "".join(self._tail[-60:])
 
     # ---- HTTP ----

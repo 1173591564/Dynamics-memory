@@ -164,3 +164,23 @@ def test_bootstrap_refuses_startup_without_channel(tmp_path):
         capture_output=True, text=True, timeout=120)
     assert out.returncode != 0, "缺通道必须拒绝启动"
     assert "--file" in out.stderr and "Fatal" in out.stderr
+
+
+def test_close_releases_server_and_launcher_descendants(tmp_path, monkeypatch):
+    import socket
+    from urllib.parse import urlparse
+
+    cli = _make_cli(tmp_path, FAKE_CLI, "close_oc.py")
+    monkeypatch.setenv("FAKE_OC_OUT", str(tmp_path / "obs.json"))
+    runner = OpenCodeRunner(tmp_path, executable=str(cli), mode="serve+attach")
+    try:
+        runner.verify_channel()
+        port = urlparse(runner._server_url).port
+        with socket.create_connection(("127.0.0.1", port), timeout=1):
+            pass
+        runner.close()
+        with pytest.raises(OSError):
+            socket.create_connection(("127.0.0.1", port), timeout=1)
+        runner.close()
+    finally:
+        runner.close()

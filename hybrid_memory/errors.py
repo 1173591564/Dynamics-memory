@@ -54,6 +54,7 @@ _STATUS: dict[str, int] = {
     "queue_full": 503,              # 任务队满（H9）
     "checkpoint_conflict": 503,     # checkpoint CAS 失败（N42）
     "capacity_backpressure": 503,   # 容量全 pin 无法收口（N17 整批拒收）
+    "checkpoint_over_budget": 503,  # 引擎状态序列化超预算线（N49/PENDING-09）
     "internal": 500,
 }
 

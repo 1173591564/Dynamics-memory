@@ -35,6 +35,7 @@ class _HelpResult:
 
 
 def test_default_mode_follows_platform(monkeypatch, tmp_path):
+    monkeypatch.delenv("OPENCODE_SPAWN_MODE", raising=False)
     monkeypatch.setattr(sys, "platform", "linux")
     assert OpenCodeRunner(tmp_path).mode == "bootstrap"
     monkeypatch.setattr(sys, "platform", "win32")

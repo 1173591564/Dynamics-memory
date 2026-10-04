@@ -54,13 +54,21 @@ def run_chain(corpus: dict, project: str, out_dir: str, *,
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    module = ("eval.l2l3.serve_inline" if (env_extra or {}).pop(
+    env_extra = dict(env_extra or {})
+    module = ("eval.l2l3.serve_inline" if env_extra.pop(
         "_use_inline", False) else "hybrid_memory.server")
     t0 = time.time()
     sc = Sidecar(_REPO, str(project_p), env=env_extra,
                  module=module).start()
     boot_s = round(time.time() - t0, 1)
     probe_records: list[dict] = []
+    if resume:
+        for name in ("run.json", "run.json.first-pass"):
+            previous = out / name
+            if previous.exists():
+                probe_records = json.loads(previous.read_text(encoding="utf-8")).get("probe_records") or []
+                if probe_records:
+                    break
     try:
         n_fed = 0
         if resume:
@@ -110,6 +118,8 @@ def run_chain(corpus: dict, project: str, out_dir: str, *,
                 os.environ.pop(k, None)
     run = {"corpus_kind": corpus.get("kind"), "project": str(project_p),
            "fed_turns": n_fed, "boot_s": boot_s,
+           "runner": "inline" if module.endswith("serve_inline") else "opencode",
+           "probe_validity": "pre-drain-unverified",
            "drain": drain, "probe_records": probe_records,
            "mems": len(export["mems"]), "units": len(export["units"]),
            "selector_done": sum(1 for t in export["tasks"]

@@ -64,7 +64,10 @@ def _rewrite_turn(llm, api_key, turn, facts_by_id, attempt=0) -> dict:
         f = facts_by_id.get(fid)
         if f is None:
             continue
-        vals.append(f.value)
+        if turn.op == "retract":
+            banned.append(f.value)
+        else:
+            vals.append(f.value)
         if f.supersedes and f.supersedes in facts_by_id:
             banned.append(facts_by_id[f.supersedes].value)
     hint = (f"操作类型：{turn.op}；必须保留的值 token：{vals or '无'}；"

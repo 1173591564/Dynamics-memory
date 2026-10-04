@@ -84,6 +84,7 @@ class OpenCodeRunner:
         except OSError as exc:
             raise Fatal(f"OpenCode serve spawn failed: {exc}") from exc
         self._serve_log = log_path
+        self._server = proc
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             if proc.poll() is not None:
@@ -96,7 +97,7 @@ class OpenCodeRunner:
             except OSError:
                 time.sleep(0.25)
         else:
-            proc.terminate()
+            self.close()
             raise Fatal(f"OpenCode serve not listening after 30s (log: {log_path})")
         self._server = proc
         self._server_url = f"http://127.0.0.1:{port}"
@@ -105,13 +106,20 @@ class OpenCodeRunner:
     def close(self) -> None:
         """终止长驻 serve 进程（atexit 兜底；幂等）。"""
         proc, self._server = self._server, None
+        self._server_url = None
         if proc is None or proc.poll() is not None:
             return
-        proc.terminate()
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=10, check=False)
+        else:
+            proc.terminate()
         try:
             proc.wait(10)
         except subprocess.TimeoutExpired:
             proc.kill()
+            proc.wait(10)
 
     def __del__(self):
         try:

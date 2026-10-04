@@ -1,6 +1,6 @@
 # TIDE — 评测平台
 
-**T**emporal **I**ntegrity & **D**ynamics **E**valuation。与被测记忆引擎**分离**：平台持有时钟、
+**T**emporal **I**ntegrity & **D**emand-aware **E**valuation。与被测记忆引擎**分离**：平台持有时钟、
 账本与判分；被测系统只通过 `reset / ingest / serve(query, budget, passive)` 协议交互，真值永不越界。
 设计全文见 `../docs/benchmark-design.md`（本目录实现其中的 L1 层 + T1 检索层判分 + 元评测）。
 
@@ -92,7 +92,15 @@ python -m eval.drive 17872 /tmp/proj full
 
 ## 局限（v0.1）
 
-- 只有 L1（模板话术）。模板让判分无歧义，但也让"理想抽取"变得容易；L2（LLM 改写话术 + 人工抽检）
-  与 L3（真实轨迹标注）按设计文档路线补。
+- L1 元评测与判分保留冻结；L2/L3 工具链见 [l2l3/REPORT.md](l2l3/REPORT.md)。本轮是 inline 模型跑链、开发日志引述与 Agent 单评，真实会话及独立人工复核仍待验收。
+
 - 只有检索层判分；T1 固定读者回答层、T2/T3 待接。
 - 预算用近似 token 计数，不对齐任何具体 tokenizer（对所有系统同一把尺子）。
+
+## L2/L3 本地复核
+
+- 自检：仓库根执行 `python -m eval.l2l3.selftest`，使用本地 mock，无需真实 API key；Windows 的测试启动器与 PATH 已分别兼容。
+- 新包资料原样保留于 `.opencode/tmp/workspace-20261004/l2l3-data/`（相对仓库根，Git 忽略）；重导出、原评分重算、待复核工作表在同级 `rechecked/`。运行凭据不复制。
+- `export_run` 是离线只读导出：sidecar 必须停止；若 Windows 强制结束后仍有已提交 WAL，只在临时 DB+WAL 副本读取，原库不动；不启动服务，不自动迁移或修复原库。
+- `audit.aggregate` 拒绝漏填、未知或重复 ID；读回 `.first-pass` 并合并各 run。57 条历史探针仅作运行证据，不用于能力结论。
+- 原版 99.8% 来自 Agent 单评；重绑定后的待复核表不自动沿用 disposition。原始评分和语料不重写。

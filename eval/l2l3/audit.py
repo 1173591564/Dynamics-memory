@@ -32,33 +32,39 @@ def _load_export(run_path: str) -> dict:
     return {"run": run, "export": export, "dir": rp}
 
 
-def _decision_map(exps: list[dict]) -> dict[str, dict]:
-    """candidate_text → selector 裁决。
+def _decision_map(exps: list[dict]) -> dict[tuple, dict]:
+    """(run 绝对路径, memory_id) → 已提交 Selector 裁决。
 
-    decisions 按 candidate_index 引用本任务候选（export 的
-    payload_candidates）；键同时收录 redact 后的变体——应用层
-    redact_secrets 会改写入库正文，记忆文本与候选原文可能不同
-    （2026-10-04：原"最近 hauler"启发式对齐在实跑中全部失配）。
+    优先沿提交回执的 new_ids 定位创建任务；旧导出只允许本 run 唯一文本
+    匹配。dead/未提交产物和多重匹配不冒充记忆的创建裁决。
     """
     from hybrid_memory.service.operate import redact_secrets
-    out: dict[str, dict] = {}
+    out = {}
     for e in exps:
-        for sel in (t for t in e["export"]["tasks"]
-                    if t["kind"] == "selector_due"):
-            decisions = (sel.get("result") or {}).get("decisions") or []
-            cands = sel.get("payload_candidates") or []
-            if not decisions:
+        run = str(e["dir"].resolve())
+        texts = {}
+        for sel in e["export"]["tasks"]:
+            if sel["kind"] != "selector_due" or sel.get("state") != "done":
                 continue
-            for d in decisions:
+            cands = sel.get("payload_candidates") or []
+            outcomes = {o["index"]: o for o in (sel.get("committed_effect") or {}).get("outcomes", [])}
+            for d in (sel.get("result") or {}).get("decisions", []):
                 idx = d.get("candidate_index")
-                if isinstance(idx, int) and 0 <= idx < len(cands) and cands[idx]:
-                    info = {"action": d.get("action"),
-                            "target_id": d.get("target_id"),
-                            "reason": (d.get("reason") or "")[:200]}
-                    out.setdefault(cands[idx], info)
-                    red = redact_secrets(cands[idx])
-                    if red != cands[idx]:
-                        out.setdefault(red, info)
+                if type(idx) is not int or not 0 <= idx < len(cands) or not cands[idx]:
+                    continue
+                effect = outcomes.get(idx, {})
+                info = {"action": d.get("action"), "target_id": d.get("target_id"),
+                        "reason": (d.get("reason") or "")[:200],
+                        "task_id": sel["id"], "candidate_index": idx,
+                        "applied_action": effect.get("action")}
+                for mid in effect.get("new_ids", []):
+                    out.setdefault((run, mid), info)
+                for text in {cands[idx], redact_secrets(cands[idx])}:
+                    texts.setdefault(text, []).append(info)
+        for m in e["export"]["mems"]:
+            candidates = texts.get(m["text"], [])
+            if len(candidates) == 1:
+                out.setdefault((run, m["id"]), candidates[0])
     return out
 
 
@@ -67,6 +73,8 @@ def build_worksheet(run_paths: list[str], out: str, key_out: str, *,
     """按链路预算抽样：同链路（corpus_kind）的多个 run 目录合并记忆池后
     抽 n 条——L2 四流并行时各目录是同一链路的分片，不是独立链路。"""
     exps = [_load_export(p) for p in run_paths]
+    if n < 1 or not exps or len({e["dir"].name for e in exps}) != len(exps):
+        raise ValueError("positive sample budget and unique run names required")
     dmap = _decision_map(exps)
     units_by_id = {e["dir"].name: {u["unit_id"]: u for u in e["export"]["units"]}
                    for e in exps}
@@ -96,7 +104,7 @@ def build_worksheet(run_paths: list[str], out: str, key_out: str, *,
                 "audit_id": aid,
                 "memory_text": m["text"], "memory_kind": m["kind"],
                 "memory_pool": m["pool"], "memory_v": m["v"],
-                "selector_decision": dmap.get(m["text"]),
+                "selector_decision": dmap.get((str(e["dir"].resolve()), m["id"])),
                 "src_unit_ids": m["src"],
                 "src_texts": "\n---\n".join(srcs)[:1200] or "（无引用）",
                 "has_reflection": m["kind"] == "reflection",
@@ -119,12 +127,17 @@ def aggregate(filled_path: str, key_path: str, run_paths: list[str],
     key = json.loads(Path(key_path).read_text(encoding="utf-8"))
     rows = [json.loads(l) for l in
             Path(filled_path).read_text(encoding="utf-8").splitlines() if l.strip()]
+    ids = [r.get("audit_id") for r in rows]
+    if not rows or len(set(ids)) != len(ids) or set(ids) != set(key):
+        raise ValueError("scores must cover each audit_id exactly once")
+    for r in rows:
+        applicable = QUESTIONS if r.get("has_reflection") else QUESTIONS[:-1]
+        if any((r.get("verdicts") or {}).get(q) not in ("pass", "fail") for q in applicable):
+            raise ValueError(f"incomplete or invalid verdicts: {r['audit_id']}")
     stats: dict = {}
     defects = []
     for r in rows:
-        meta = key.get(r["audit_id"])
-        if meta is None:
-            continue
+        meta = key[r["audit_id"]]
         chain = meta["chain"]
         st = stats.setdefault(chain, {"n": 0, **{q: [0, 0] for q in QUESTIONS}})
         st["n"] += 1
@@ -140,17 +153,24 @@ def aggregate(filled_path: str, key_path: str, run_paths: list[str],
                                     "q": q, "memory": r["memory_text"][:120],
                                     "note": (r.get("note") or "")[:200]})
     # L2 自动指标（探针判分均值）
-    auto = {}
+    auto, grouped = {}, {}
     for p in run_paths:
         rp = Path(p)
         run = json.loads((rp / "run.json").read_text(encoding="utf-8"))
         recs = run.get("probe_records") or []
-        if recs:
-            k = "S" if "S" in recs[0] else None
-            auto[run["corpus_kind"]] = {
-                "probes": len(recs),
-                **{f: round(sum(r.get(f, 0) for r in recs) / len(recs), 4)
-                   for f in (("S", "H", "u") if k else ())}}
+        first_pass = rp / "run.json.first-pass"
+        if not recs and first_pass.exists():
+            recs = json.loads(first_pass.read_text(encoding="utf-8")).get("probe_records") or []
+        grouped.setdefault(run["corpus_kind"], []).extend(recs)
+    for chain, recs in grouped.items():
+        if not recs:
+            continue
+        dims = {}
+        for dim in {r.get("dimension", "unknown") for r in recs}:
+            subset = [r for r in recs if r.get("dimension", "unknown") == dim]
+            dims[dim] = _probe_summary(subset)
+        auto[chain] = {**_probe_summary(recs), "dimensions": dims,
+                       "validity": "pre-drain-unverified"}
 
     def rate(st, q):
         p, t = st[q]
@@ -183,7 +203,14 @@ def aggregate(filled_path: str, key_path: str, run_paths: list[str],
             lines.append(f"| {d['chain']} | {d['audit_id']} | {d['q']} |"
                          f" {d['memory']} | {d['note']} |")
     Path(out_path).write_text("\n".join(lines), encoding="utf-8")
-    return {"rows": len(rows), "defects": len(defects)}
+    return {"rows": len(rows), "defects": len(defects), "stats": stats, "auto": auto}
+
+
+def _probe_summary(records: list[dict]) -> dict:
+    """同一来源集合的探针计数及原始均值；不推断能力有效性。"""
+    return {"probes": len(records),
+            **{f: round(sum(r[f] for r in records) / len(records), 4)
+               for f in ("S", "H", "u") if all(f in r for r in records)}}
 
 
 def main() -> None:
