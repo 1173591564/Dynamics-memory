@@ -2,7 +2,7 @@
 
 > 状态：现行 · OpenCode 三 Agent 记忆协议；关键断言由 A2 验到测试。
 
-本版默认启用 `MEMORY_PIPELINE=opencode`。旧的被动 candgen + 进程内调查员可通过 `MEMORY_PIPELINE=legacy` 显式启用；**不要把旧的单轮抽取结果当作三 Agent 验证结果**。OpenCode Hauler、Selector、Reviewer 的定义在 `.opencode/agent/`，sidecar 通过真正的 `opencode run --pure --agent <name> --format json` 调用它们，不在 Python 中仿造语义判断。
+本版默认启用 `MEMORY_PIPELINE=opencode`。旧的被动 candgen + 进程内调查员是**待退役的兼容路径**（仅 `MEMORY_PIPELINE=legacy` 显式启用；删除条件见 PENDING-05）；**不要把旧的单轮抽取结果当作三 Agent 验证结果**。OpenCode Hauler、Selector、Reviewer 的定义在 `.opencode/agent/`，sidecar 通过真正的 OpenCode CLI 调用它们（短协议指令为位置参数，payload 经私有 `--file` 附件传递；Windows 默认常驻 `opencode serve --pure` + `run --attach`，其余平台默认 `run --pure` 自举，`OPENCODE_SPAWN_MODE` 可覆盖），不在 Python 中仿造语义判断。
 
 ## 安装与运行
 
@@ -26,7 +26,7 @@ python -m hybrid_memory.transport.review_cli --project /path/to/project --port 1
 
 - 升级前备份 **整个** `/path/to/project/.opencode/memory/`，尤其 `log.sqlite`、`tasks.sqlite`、`state.pkl`、向量缓存和两份 token；不要只回滚其中一个库。新增表用 `CREATE TABLE IF NOT EXISTS` 自动建立，不迁移既有历史候选为新的 trio 任务。回滚到旧代码应恢复配套备份；仅切换 `MEMORY_PIPELINE=legacy` 不会自动消费尚未完成的 trio 任务。
 - 调度不满事件使用宽松的文本触发器，是否真有记忆问题仍由 Reviewer 判断；通用的情绪／隐晦表达可能漏触发，需人工复核。Hauler/Reviewer 窗口超过 12000 字符、Selector 未退役记忆超过 500 条时显式失败；当前没有分页/增量索引。来源检查验证引用的 L0 单元与浅层文本一致性，**不保证语义蕴含或事实正确**。归档记忆会进入 Selector 快照，已退役版本不会；当前同义判定仍取决于模型质量，不能保证误判时不产生语义重复。历史 L0 及任务完成记录无自动清理。
-- Python 测试以假模型边界覆盖协议、持久 SQLite、HTTP、重启和人审；Bun 测试覆盖插件、内部会话隔离以及默认模式隐藏旧的绕行写入工具。OpenCode CLI 1.18.11 的 `agent list --pure` 已实际确认三份定义为 primary 且最终通配工具权限为 deny；没有配置真实模型凭据，已用 `tests/manual_opencode_smoke.py` 让真实 CLI 1.18.11 依次调用三份 agent 定义，并通过**本地假 OpenAI 接口**完成 SQLite 任务交接；这证明 CLI 启动与协议接线，**不证明真实模型的推理质量或生产凭据／provider 接入**。本环境尝试过公开免费模型，但 OpenCode 的出站请求报 TLS 证书验证错误；没有禁用证书检查或声称真实模型通过。在自己的 provider 环境端到端运行 `opencode run --pure --agent hauler --format json ...` 等命令并审核输出后再上线。
+- Python 测试以假模型边界覆盖协议、持久 SQLite、HTTP、重启和人审；Bun 测试覆盖插件、内部会话隔离以及默认模式隐藏旧的绕行写入工具。`tests/manual_opencode_smoke.py` 让真实 CLI 依次调用三份 agent 定义，并通过**本地假 OpenAI 接口**完成 SQLite 任务交接；真实 CLI 通道已在 Windows 用 OpenCode CLI 1.18.30 + 智谱 glm-5.3-flash 完成小样本端到端（observe→Hauler→Selector→落库，含 grounding 守卫真实拒收，N48）。五链质量抽检走协议等价的进程内 runner（N51，见 [eval/l2l3/REPORT.md](../eval/l2l3/REPORT.md)）。这些证明 CLI 启动、附件解析与协议接线，**不证明真实模型的推理质量、长期质量或生产凭据接入**；独立人工的真实会话 L3 验收仍未做（PENDING-08）。在自己的 provider 环境端到端运行并审核输出后再上线。
 - Trio 模式下，主会话不提供原 `memory_propose`、`memory_resolve`、`memory_diagnose` 工具，HTTP 也拒绝这些旧直写入口；`/miss` 不再制造无人消费的旧调查任务。切换到 `MEMORY_PIPELINE=legacy` 后仍可按旧模式使用它们。
 
 健康接口的 `agent: true` 表示有工作线程挂载，**不**代表模型账号可用、任务成功或审核完成；实际任务错误请看 `tasks.sqlite` 的 `state`、`last_error`，留意 `dead`。

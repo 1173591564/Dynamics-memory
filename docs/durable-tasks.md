@@ -1,10 +1,13 @@
 # 调查任务持久化、重试与幂等写回
 
-> 状态：现行 · 调查任务持久化、重试与幂等写回的行为契约。
+> 状态：现行（任务机通用契约）· 第三批调查任务持久化、重试与幂等写回。
 
-第三批覆盖 **AgentWorker 调查任务**，默认种类为 `recall_miss`、`extract_due`。
-默认执行器为 `agent/inline.py` 的进程内只读工具循环，不再依赖 OpenCode 子进程。
-这是本地服务/SQLite 的正确性修复，不是“模型恰好执行一次”，也不是 L3 真实 agent 验证。
+第三批覆盖 **AgentWorker 调查任务**（`MEMORY_PIPELINE=legacy`），默认种类为
+`recall_miss`、`extract_due`，执行器为 `legacy/inline.py` 的进程内只读工具循环。
+**默认管线（opencode）不使用该执行器**：三 Agent 任务（`hauler_due`/`selector_due`/
+`reviewer_due`）与语义任务共用同一 `tasks.sqlite` 状态机，本页的状态、租约与幂等
+契约对两条管线同样适用。这是本地服务/SQLite 的正确性修复，不是“模型恰好执行一次”，
+也不是 L3 真实 agent 验证。
 
 ## 状态与落盘时点
 
@@ -126,7 +129,7 @@ python -m pytest -q tests/test_durable_tasks.py tests/test_taskstore.py
 python -m pytest tests/ -q
 ```
 
-Python 3.11.2 下，NumPy 1.26.4 / 2.4.6 两套环境全套各 **302 passed**（合并当前主线后的服务/引擎套件）。覆盖未保存就重启、调查任务不挤占内存队列、部分应用失败、
+第三批时点（历史数字）：Python 3.11.2 下，NumPy 1.26.4 / 2.4.6 两套环境全套各 **302 passed**；当前门禁数字见 README 验证状态与 acceptance 输出。覆盖未保存就重启、调查任务不挤占内存队列、部分应用失败、
 每日限额/去重/次数恢复、同任务工具与最终产物去重、租约过期/迟到 token、并发领取、
 回执写入失败的内存回滚、checkpoint 冲突/损坏、退避、关闭线程、容量 503 和编号高水位。
 

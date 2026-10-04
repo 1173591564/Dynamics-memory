@@ -24,8 +24,8 @@
 | [README](../README.md) | 现行 | 项目入口与行为摘要（A2 锚定） |
 | [opencode-trio](opencode-trio.md) | 现行 | 三 Agent 协议（A2 锚定） |
 | [benchmark-design](benchmark-design.md) | 现行 | TIDE 评测框架设计 |
-| [durable-tasks](durable-tasks.md) | 现行 | 调查任务持久化/重试/幂等写回 |
-| [investigation-context](investigation-context.md) | 现行 | 调查员因果上下文与预算 |
+| [durable-tasks](durable-tasks.md) | 现行 | 任务机持久化/重试/幂等写回（trio 与 legacy 共用状态机） |
+| [investigation-context](investigation-context.md) | 现行 | 因果上下文与预算（工具循环仅 legacy） |
 | [persistence](persistence.md) | 现行 | L0 持久化与快照恢复 |
 | [observe-recovery](observe-recovery.md) | 已实现·归档 | 第 1 批：L0 逐单元恢复 |
 | [semantic-worker-recovery-plan](semantic-worker-recovery-plan.md) | 已实现·归档 | 第 2 批：语义任务持久交接 |
@@ -33,7 +33,7 @@
 | [late-credit](late-credit.md) | 已实现·归档 | 第 4 批：退役/迟到反馈/shadow 信用 |
 | [source-authenticity](source-authenticity.md) | 已实现·归档 | 第 5 批：来源正文一致性 |
 | [launch-closeout](launch-closeout.md) | 已实现·归档 | 第 6 批：启动声明收口 |
-| [ouroboros](ouroboros.md) | 草稿 | 下一阶段方向，非承诺 |
+| [ouroboros](ouroboros.md) | 历史设计稿 | pre-trio 提取流水线设计（仅沿革记录） |
 | [cleanup-review](cleanup-review.md) | 归档 | 历史清理审查记录 |
 | [opencode-learning](opencode-learning/README.md) | 参考 | 源码阅读笔记 |
 | [analysis/target-architecture](../analysis/target-architecture.md) | 目标·待实施 | 唯一架构规范；N01–N52 收口决策及 H 条款修订 |

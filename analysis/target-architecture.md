@@ -876,7 +876,7 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 
 ## 10. 验收与下一轮
 
-上一轮本机证据：Python427通过/1跳过；旧A2–A10机械项/TIDE meta通过；Bun过滤超时用例25过/1过滤。完整Bun和真实provider/L3没有通过验证。本文只是设计；符号齐全不证明目标已实现，人决定验收。
+当前本机证据见 §9.3 N52 核验段（pytest 534/1skip、checker 170/1602/0、acceptance --full 25 PASS/0 SKIP/0 FAIL、Bun 26 pass）；历史各轮数字保留在 §9.3 追记中，不代替当前状态。本文只是设计；符号齐全不证明目标已实现，人决定验收。
 
 - `python analysis/check_architecture.py`：固定契约核对——模块 IO 齐备；每符号六字段（功能/输入/输出/作用/错误/目标）齐备；显式契约与删除项必须在源码存在；产品模块级常量必须在 `CONSTANTS` 逐条登记（未登记/失效/缺理由即红）；计划新增必须不存在于源码且在主文出现；迁移目标不得与现存模块冲突；附录不得含占位说明；源 hash 漂移即红（本轮已由编辑自身触发验证）。`--build-inventory` 只重建附录，不自动批准；改契约=改 `architecture_contract.py` + 本文。
 - Signal门：kind双向真实消费、payload/version封存、lost wake重启、队满L0接受、due筛选、过期5次耗尽、ready不调模型、lease/CAS/quota/真停机。

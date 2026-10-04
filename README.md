@@ -2,7 +2,7 @@
 
 # Dynamics-memory
 
-> 状态：现行 · 收尾轮已完成（决策登记见 [analysis/target-architecture.md §9.3](analysis/target-architecture.md)）。
+> 状态：现行 · N48–N52 已汇合（真实 CLI 首验、可观测性、L2/L3 抽检工具链与审计修正）；决策登记见 [analysis/target-architecture.md §9.3](analysis/target-architecture.md)；PENDING-08 待人工验收。
 > 本页是行为摘要；机械验证入口在 [analysis/acceptance_check.py](analysis/acceptance_check.py)。
 
 **LLM agent 的有界长期记忆层**
@@ -88,7 +88,8 @@ flowchart LR
 ```
 
 七步读法：① 每轮对话先落 L0（幂等回执，`request_id` 重放不重复入库）；
-② 证据到位才发 `hauler_due` 任务；③ Hauler 在**真 OpenCode 进程**里跑，输入经
+② 证据到位才发 `hauler_due` 任务；③ Hauler 在**真 OpenCode 进程**里跑（Windows 默认常驻
+`serve` + `run --attach`，其余平台默认 `run` 自举；`OPENCODE_SPAWN_MODE` 可覆盖），输入经
 `--file` 私有附件传递、调用前封存上下文；④ 候选必须引用它见过的窗口内证据，
 Selector 逐条裁决；⑤ 检索时相似度 + 压制 + 因果界过滤；⑥ 命中记忆按 token 预算
 注入；⑦ 反馈经 recognizer 归因，只有**真被答案用上**的记忆拿到 useful-hit。
@@ -98,8 +99,9 @@ Selector 逐条裁决；⑤ 检索时相似度 + 压制 + 因果界过滤；⑥ 
 不能绕过 Selector 直接调用 `/propose` 或 `/resolve`。
 完整协议、审核入口、恢复及已知边界见 [OpenCode 三 Agent 文档](docs/opencode-trio.md)。
 
-旧的单轮 candgen 和 sidecar 内调查员仅在 `MEMORY_PIPELINE=legacy` 时使用；
-其设计记录见[衔尾蛇说明](docs/ouroboros.md)，不能把旧记录当作默认模式的验证。
+旧的单轮 candgen 和 sidecar 内调查员是**待退役的兼容路径**（仅 `MEMORY_PIPELINE=legacy`
+显式启用；删除条件见 PENDING-05），其设计记录见[衔尾蛇说明](docs/ouroboros.md)，
+不能把旧记录当作默认模式的验证。
 
 ## 架构分层
 
@@ -252,6 +254,7 @@ sidecar 为评测提供的两个能力：
 | `MEMORY_AGENT_DAILY_CAP` | 200 | 仅 legacy 调查员的日调用上限 |
 | `MEMORY_AGENT_MODEL` | glm-5.3-flash | 仅 legacy 调查员模型 |
 | `MEMORY_OPENCODE_BIN` | opencode | OpenCode CLI 路径（需配置自己的模型 provider） |
+| `OPENCODE_SPAWN_MODE` | 按平台 | OpenCode 调用模式：Windows 默认 `serve+attach`（常驻 serve + `run --attach`），其余平台默认 `bootstrap`（`run` 自举）；非法值拒绝启动 |
 | `MEMORY_BRIDGE_PORT` | 17872 | sidecar 端口 |
 | `ZAI_API_KEY` | — | 原引擎向量编码等依赖；三 Agent 使用 OpenCode 自身 provider 配置 |
 | `ZAI_BASE_URL` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI 兼容端点（chat / embeddings），可换代理或本地 mock |
@@ -262,6 +265,8 @@ trio 队列、结果及 Reviewer 规则保存在 `tasks.sqlite`。</sub>
 ## 验证状态
 
 Python 与 Bun 测试覆盖服务端、插件和 mock HTTP 不变量；手工 smoke 用真实 OpenCode CLI + 本地假模型完成三 Agent 任务交接；端到端穿透回归覆盖"observe→Hauler→Selector→效果落库→recall→feedback→信用结清"、"CONFLICT→人审双分支"与"kill -9 两库崩溃恢复"三条链。N48 已用真实 OpenCode CLI + 智谱 glm-5.3-flash 验证小样本 Hauler→Selector→落库。N51 五链实际走 inline runner；L3 全为开发日志引述，100 行评分是 Agent 单评，不能等同于真实会话与人工验收；[抽检报告](eval/l2l3/REPORT.md)记载证据与限制；独立人工的真实会话 L3 验收尚未做，PENDING-08 仍保留。`GET /health` 的 `validation` 固定为 `unverified`：进程在听，不等于已经验证。
+
+当前本机门禁：pytest **534 passed / 1 skipped**（平台条件用例）；checker **170 模块 / 1602 符号 / 0 failures**；acceptance `--full` **25 PASS / 0 SKIP / 0 FAIL**；Bun **26 pass**；L2/L3 mock 全链自检贯通（194 轮喂入 → 导出 → 抽样 → 结算）。
 
 `ok: true` 只表示没有 checkpoint fault，插件可以复用这个进程。它不表示快照干净，也不表示逐单元效果已经补齐。看 `snapshot` 和 `units_pending`。`snapshot=quarantined` 表示坏快照已被隔离成 `state.corrupt`，服务空启动，记忆没有从那份快照恢复。
 
@@ -289,7 +294,7 @@ hybrid_memory/
 │                  review · tools · budgets · lifecycle · telemetry · context
 ├── transport/     传输：http · auth · dto · bootstrap · review_cli
 ├── embed/         向量：cache(SQLite) · zhipu
-├── legacy/        旧调查员回路（仅 MEMORY_PIPELINE=legacy）
+├── legacy/        旧调查员回路（兼容路径，仅 MEMORY_PIPELINE=legacy；待退役）
 ├── config.py      Cfg / Settings / resolve_pipeline（未知值拒绝启动）
 ├── errors.py      错误域：Rejected / Degraded / Fatal + HTTP 码表
 └── telemetry.py   健康与信号观测（地基层）
@@ -298,6 +303,7 @@ analysis/          target-architecture.md（唯一设计）· architecture_contr
                    · check_architecture.py · acceptance_check.py · docs/
 docs/              opencode-trio.md · ouroboros.md · benchmark-design.md · architecture-inventory.md
 eval/tide/         TIDE 评测（与引擎经 HTTP 分离）
+eval/l2l3/         L2/L3 抽检工具链（跑链·导出·盲序·结算；报告见 REPORT.md）
 tests/             pytest 回归：unit / integration / characterization / …
 ```
 </details>

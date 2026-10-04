@@ -2,7 +2,9 @@
 
 > 状态：现行 · 调查员因果上下文与预算的基础契约（第二批）。
 
-第二批正确性修复的实现契约。配套测试：`tests/test_investigation_scope.py`。
+工具循环与调查员仅在 `MEMORY_PIPELINE=legacy` 下运行；默认三 Agent 管线不使用
+`open_budget` 工具预算，但 `InvestigationContext` 因果上下文类型为两条管线共用
+（recall/feedback 的准入同源）。配套测试：`tests/test_investigation_scope.py`。
 本页记录第二批边界契约。后续 [第三批](durable-tasks.md) 已实现调查任务、产物、
 回执和每日次数持久化，以及同任务规范化操作的幂等重放；未关联持久任务的调用仍按本页
 基础契约运行。工具预算按每次调查尝试开关，不是跨尝试累计。仍未进行 L3 验证。
