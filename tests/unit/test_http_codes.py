@@ -120,3 +120,9 @@ def test_assert_consumers_callable_and_ownership():
     notcall["hauler_due"] = object()
     with pytest.raises(Fatal):
         policy.assert_consumers(notcall)
+
+
+def test_checkpoint_over_budget_code_registered():
+    """N49/PENDING-09：预算闸 code 必须有 _STATUS 映射（章程 N46 规则）。"""
+    from hybrid_memory.errors import http_status
+    assert http_status("checkpoint_over_budget") == 503

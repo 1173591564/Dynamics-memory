@@ -104,7 +104,10 @@ def _state(svc):
 
 def dump_state(svc):
     svc._ensure_healthy()
-    return pickle.dumps(_state(svc), protocol=4)
+    data = pickle.dumps(_state(svc), protocol=4)
+    # N49：预算闸与 health 水位的真源（最近一次序列化大小，顺带记账零开销）。
+    svc._state_bytes = len(data)
+    return data
 
 
 def load_state(svc, checkpoint: bytes | None = None) -> None:

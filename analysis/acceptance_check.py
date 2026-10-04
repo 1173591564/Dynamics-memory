@@ -39,8 +39,8 @@ PENDING = [
     ("PENDING-06", "第二项目端口冲突（固定 17872）", "端口分配方案 ADR"),
     ("PENDING-07", "L0 未脱敏进 LLM", "脱敏层设计 + 能力评测"),
     ("PENDING-08", "L3 真实验证未做", "真实 provider + 人工抽检"),
-    ("PENDING-09", "checkpoint 全量 pickle O(N)", "dump_state>2MB 或持续>10效果/s → 分段 pickle（I5 单点接入）"),
-    ("PENDING-10", "pin 占用无指标/告警（503 刹车不可预期）", "health/stats 暴露 pin 占用 + 阈值告警"),
+    ("PENDING-09", "checkpoint 全量 pickle O(N)（预算闸已接线 N49，分段仍待）",
+     "分段 pickle ADR（I5 单点接入；超线拒收与水位可观测已先行）"),
 ]
 
 results: list[tuple[str, str, str]] = []  # (id, VERDICT, detail)
@@ -293,6 +293,10 @@ def capture_contracts() -> dict:
             conn.close()
             table["save_415"] = post(
                 "/save", {}, {"Content-Type": "application/x-www-form-urlencoded"})[0]
+            # N49：checkpoint 预算闸探针（超线拒收→503，PENDING-09）
+            svc._state_bytes = 3 * 1024 * 1024
+            table["propose_overbudget_503"] = post("/propose", {"proposals": []})[0]
+            svc._state_bytes = 0
             svc.tasks.capacity = 1
             svc.report_miss("occupy")
             table["miss_503"] = post("/miss", {"query": "another"})[0]
@@ -478,6 +482,16 @@ def check_a10() -> None:
         report("A10", "FAIL", out.stdout[-800:])
 
 
+# ---------------------------------------------------------------- A11
+def check_a11() -> None:
+    """N49 可观测性回归：pin 占用水位/阈值告警 + checkpoint 预算闸。"""
+    out = pytest_run(["tests/unit/test_observability.py"], timeout=300)
+    if out.returncode == 0:
+        report("A11", "PASS", "pin 占用+checkpoint 预算闸回归全绿")
+    else:
+        report("A11", "FAIL", out.stdout[-800:])
+
+
 # ---------------------------------------------------------------- PENDING
 def check_pending() -> None:
     text = (ROOT / "analysis" / "acceptance-criteria.md").read_text(encoding="utf-8")
@@ -506,6 +520,7 @@ def main() -> int:
     check_a8()
     check_a9(phase)
     check_a10()
+    check_a11()
     check_pending()
     fails = [r for r in results if r[1] == "FAIL"]
     print(f"=== {len(results)} 项："

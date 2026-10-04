@@ -26,6 +26,7 @@ def recover_or_init(svc) -> None:
             svc._load(checkpoint)
             svc._checkpoint_revision = revision
             svc._snapshot_status = "loaded"
+            svc._state_bytes = len(checkpoint)   # N49：预算闸重启即生效
         except Exception as exc:
             svc.tasks.close()
             svc.log.close()
@@ -34,6 +35,7 @@ def recover_or_init(svc) -> None:
         try:
             svc._load()
             svc._snapshot_status = "loaded"
+            svc._state_bytes = svc.state_path.stat().st_size  # N49：近似水位
         except Exception as exc:  # noqa: BLE001
             # 损坏/恶意 state 不能让 sidecar 启动即死（桥会整体瘫痪）：
             # 隔离坏文件后空启动，损失状态好过丢记忆服务。

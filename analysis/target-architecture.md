@@ -808,6 +808,34 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
   卫按 `ungrounded_content` 拒收（守卫如实生效）；任务链 done、封存
   上下文随调用记录。**剩余**：L3 人工抽检与长期质量待用户验收。
 
+- **N49 可观测性与 checkpoint 预算闸（PENDING-10 兑现 + PENDING-09 预算线接线）**：
+  决定：/health 新增 observability.capacity_status 水位（pin_roots/
+  pinned_context/cap_context/pin_occupancy/checkpoint_bytes/checkpoint_budget/
+  capacity_on/alerts），由 service.health_view 并入（telemetry 属地基层不得
+  import core，计算回落 service 层新模块 observability.py）。pin 口径与容量
+  收口同源：pinned_ids（enforce_capacity 实际保护集）∩ 非退役——退役 pin
+  不占 context 槽；占用率 ≥0.7 外显 pin_occupancy_high。checkpoint 预算线
+  2MB：dump_state 顺带记账 _state_bytes（零额外序列化），_rollback_effect
+  顶部闸门读最近已提交水位，超线拒收新效果 Degraded(checkpoint_over_budget)
+  →503（errors._STATUS 登记）；恢复期从 durable checkpoint/pkl 重建水位，
+  闸门重启即生效；save/读取不受闸（持久化与读取不是写放大）。
+  理由：503 是刹车但刹车必须可预期（design-debts §3.2 因果链：CONFLICT
+  累积→pin 常驻→容量收不了口→503）；O(N) 写放大越包线要吵闹失败不静默
+  变慢（design-debts §2.4 D 项）。频率维（持续>10效果/s）不在本闸：窗口
+  定义随分段 pickle ADR 一并定案，如实登记。
+  被否决备选：telemetry 内联算 pin（地基层不得 import core，边界测试强制）；
+  health 另起第二套 pin 计算（与 enforce_capacity 口径分叉）；提交前预演
+  dump 大小（每次效果多一次全量序列化，恰好放大被防的成本）；超线仅告警
+  不拒收（静默变慢违背吵闹失败）；闸置 _dump_state 内（误伤 save/恢复）。
+  影响符号：`service/observability.py`（新模块：常量×2+capacity_status）、
+  `service/service.py`（health_view 并入、_rollback_effect 闸、_state_bytes）、
+  `store/state.py::dump_state`（记账）、`service/lifecycle.py::recover_or_init`
+  （水位恢复）、`errors._STATUS`（checkpoint_over_budget:503）。
+  验证：tests/unit/test_observability.py 5 条先红后绿（字段/0.7 边界/退役
+  pin 不计/超线拒收无残留+observe 同闸+save 豁免+503/重启即闸）；
+  test_http_codes 增映射断言；A11 进验收门；A7 快照 --freeze 再生成
+  （health 新字段+状态表 propose_overbudget_503 探针）。
+
 ### 9.1 旧目标条目的最终去向
 
 - X1–X7：保核心含义，纠正“不调LLM=无嵌入I/O”“所有磁盘有界”“effects完成=模型只一次”。
@@ -850,9 +878,10 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 | `prepare_effect` | worker 两路径锁外预计算，计划穿进事务 | 三硬伤修复+向量只 embed 一次+目标邮戳复核（N36/N08） |
 | `SemanticsProvider` | `build_default_service` 真实装配 + `health_view` | 写路径委托+缺失语义兼容+worker 解包+降级可观测（N39） |
 | `propose` 直写路径 | `effects.effect_transaction`（Legacy 直写原子提交） | 立即 checkpoint+深回滚+§4.2 收口，全 pin 背压；任务内腿按效果深度分流（N47） |
+| `capacity_status` | `service.health_view` 并入 /health；`_rollback_effect` 预算闸 | pin 占用+阈值告警（PENDING-10 兑现）+ checkpoint 2MB 预算线超线 503（N49/PENDING-09 先行） |
 
 **未兑现契约（收尾轮已清，见 §9.3）**：N01 未知 `MEMORY_PIPELINE` 拒绝启动（N40）；N06 SEM 模型上限与耗尽 dead（N43）；OpenCode 文件通道形状与缺通道拒绝启动（N44，真实 CLI 行为未验证）；`store/schema.py` 接入三 Store（N45）；HTTP 稳定 `code` 全覆盖（N42）；`assert_consumers` 真 callable 检查与显式外部循环所有权（N42）。五处孤岛符号接线（plan_capacity 背压 N35、conflict_ledger N37、store_call_context N38、prepare_effect N36、SemanticsProvider N39）与 canonical 导入切换（N41）同轮完成。
 
 **声明与事实不符已修正**：N29–N33 由 decision-register 移入本文 §9.2 并改为如实状态；附录计数以重新生成为准（N47 后：156 模块 / 1500 符号）。
 
-**收尾轮执行记录**：五处接线（N35–N39）→ N01/N06/文件通道/schema/HTTP code/消费者自检（N40–N45）→ canonical 导入（N41）→ 三门重跑。测试数字：基线 pytest 437 passed（Linux 实测，非任务书所写 427+1）；收尾轮后 500 passed（437 基线 + 63 新增回归）；checker 0 failures；acceptance 21 PASS/2 SKIP/0 FAIL（bun 与真实 opencode CLI 沙箱未装，记未验证）。**Windows 本机复测（合并后）**：pytest 499 passed/1 skipped（Linux 500/0 与 Windows 499/1 差同一平台条件用例）；checker 155 模块/1494 符号/0 failures；acceptance 22 PASS/1 SKIP/0 FAIL（A1-bun 由 SKIP 转 PASS：26 例全过）；bun 超时用例在 Windows 修复——mock fetch 挂起时 `AbortSignal.timeout` 定时器不触发属 Bun-Windows 运行时怪癖（真实 fetch 对本地静默服务器验证正常），mock 改为直接抛 `TimeoutError`；真实 opencode CLI 与 bench smoke（`--full`）仍未验证。 **追记（N47，Linux，合并 9205601 后复跑）**：直写 propose 效果事务化后 504 passed（500 + 4 新增回归）、checker 156 模块/1500 符号 0 failures、acceptance --full 22 PASS/1 SKIP/0 FAIL——A3-bench-smoke 由 SKIP 转 PASS（mock LLM 下 bench 跑通）；A2-bun 沙箱无 bun（Windows 侧 26 例已全过）。
+**收尾轮执行记录**：五处接线（N35–N39）→ N01/N06/文件通道/schema/HTTP code/消费者自检（N40–N45）→ canonical 导入（N41）→ 三门重跑。测试数字：基线 pytest 437 passed（Linux 实测，非任务书所写 427+1）；收尾轮后 500 passed（437 基线 + 63 新增回归）；checker 0 failures；acceptance 21 PASS/2 SKIP/0 FAIL（bun 与真实 opencode CLI 沙箱未装，记未验证）。**Windows 本机复测（合并后）**：pytest 499 passed/1 skipped（Linux 500/0 与 Windows 499/1 差同一平台条件用例）；checker 155 模块/1494 符号/0 failures；acceptance 22 PASS/1 SKIP/0 FAIL（A1-bun 由 SKIP 转 PASS：26 例全过）；bun 超时用例在 Windows 修复——mock fetch 挂起时 `AbortSignal.timeout` 定时器不触发属 Bun-Windows 运行时怪癖（真实 fetch 对本地静默服务器验证正常），mock 改为直接抛 `TimeoutError`；真实 opencode CLI 与 bench smoke（`--full`）仍未验证。 **追记（N47，Linux，合并 9205601 后复跑）**：直写 propose 效果事务化后 504 passed（500 + 4 新增回归）、checker 156 模块/1500 符号 0 failures、acceptance --full 22 PASS/1 SKIP/0 FAIL——A3-bench-smoke 由 SKIP 转 PASS（mock LLM 下 bench 跑通）；A2-bun 沙箱无 bun（Windows 侧 26 例已全过）。 **追记（N49，Linux，dev/n49-observability 分支）**：可观测性轮（PENDING-10 兑现 + PENDING-09 预算闸先行）——pytest 510 passed（504+6：observability 5 + http_codes 1）、checker 158 模块/1513 符号 0 failures、acceptance --full 24 项 23 PASS/1 SKIP（A2-bun 沙箱无 bun）/0 FAIL（A11 新增通过；PENDING-10 消项）；A7 快照 --freeze 再生成（health 新字段 + 状态表 propose_overbudget_503 探针，理由=N49 只许加字段）。

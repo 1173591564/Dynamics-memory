@@ -1,6 +1,11 @@
 {
  "fields": {
   "agent": "bool",
+  "alerts": [],
+  "cap_context": "int",
+  "capacity_on": "bool",
+  "checkpoint_budget": "int",
+  "checkpoint_bytes": "int",
   "checkpoint_fault": "bool",
   "corrupt_file": "bool",
   "log_units": "int",
@@ -10,13 +15,16 @@
    "M": "int"
   },
   "ok": "bool",
+  "pin_occupancy": "float",
+  "pin_roots": "int",
+  "pinned_context": "int",
+  "semantic_provider": "NoneType",
   "signals": "int",
   "snapshot": "str",
   "t": "int",
   "tensions": "int",
   "units_pending": "int",
-  "validation": "str",
-  "semantic_provider": "NoneType"
+  "validation": "str"
  },
  "literals": {
   "validation": "unverified"
