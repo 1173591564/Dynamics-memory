@@ -104,6 +104,8 @@
 | PENDING-07 | L0 未脱敏进 LLM（log_search snippet 含原文） | BASELINE #2 | 脱敏层设计（注意：修了会影响调查员能力，需评测） |
 | PENDING-08 | 真实会话 L3 与独立人工复核未闭合 | N48 CLI 首验；N51 inline + 85 条开发日志引述 + Agent 单评；原始 99.8% 不作人工验收 | 真实 provider + 真实会话证据 + 人工抽检 |
 | PENDING-09 | checkpoint 全量 pickle O(N)（500 条≈301 KB/次） | design-debts.md §2 实测；2MB 预算闸已接线（N49） | 分段 pickle ADR（I5 单点接入） |
+| PENDING-11 | 值链收敛触发盲区：纯观察流量张力不触发，旧代以"当前值"口吻驻留 | N51 实跑：V 链 43/57 过期代入池、21 条当前口吻；端口链 6 条并存；人审 50 条悬置 | 值变更后主动张力检查 或 检索期多代"当前值"消解（设计+回归） |
+| PENDING-12 | 值变更判罚口径不统一（同值变更 CREATE/CONFLICT 并存） | N51 实跑 + N52 修正：docs 鉴权链 CONFLICT×3 与 CREATE 并存（人审待决期间同义新记忆可检索） | 口径 ADR（与 PENDING-11 协同） |
 
 > 消项记录：PENDING-10（pin 占用指标+告警）已于 N49 兑现——/health 暴露
 > pin_roots/pinned_context/pin_occupancy/alerts，≥0.7 外显告警；回归

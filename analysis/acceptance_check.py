@@ -41,6 +41,10 @@ PENDING = [
     ("PENDING-08", "真实会话 L3 与独立人工复核未闭合", "真实 provider + 真实会话证据 + 人工抽检"),
     ("PENDING-09", "checkpoint 全量 pickle O(N)（预算闸已接线 N49，分段仍待）",
      "分段 pickle ADR（I5 单点接入；超线拒收与水位可观测已先行）"),
+    ("PENDING-11", "值链收敛触发盲区（纯观察流量张力不触发，旧代以当前值口吻驻留）",
+     "值变更后主动张力检查 或 检索期多代「当前值」消解（设计+回归）"),
+    ("PENDING-12", "值变更判罚口径不统一（同值变更 CREATE/CONFLICT 并存）",
+     "口径 ADR（与 PENDING-11 协同）"),
 ]
 
 results: list[tuple[str, str, str]] = []  # (id, VERDICT, detail)
