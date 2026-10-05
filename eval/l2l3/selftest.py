@@ -84,6 +84,10 @@ def _wait_mock(port: int, timeout: float = 90.0) -> None:
 
 
 def main() -> None:
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--retrieval-smoke", action="store_true")
+    args = ap.parse_args()
     tmp = Path(tempfile.mkdtemp(prefix="l2l3-selftest-"))
     cli_dir = tmp / "bin"
     cli_dir.mkdir()
@@ -102,10 +106,10 @@ def main() -> None:
         _wait_mock(mock_port)
         print(f"[selftest] mock_llm 就绪 :{mock_port}")
 
-        from eval.l2l3.gen_l2 import build as build_l2
+        from eval.l2l3.gen_l2 import build as build_l2, retrieval_smoke
         corpus_path = tmp / "l2_corpus.json"
-        corpus = build_l2(api_key="mock", seeds=1, out_path=str(corpus_path),
-                          mock=True, trim=True)
+        corpus = retrieval_smoke() if args.retrieval_smoke else build_l2(
+            api_key="mock", seeds=1, out_path=str(corpus_path), mock=True, trim=True)
         corpus["streams"] = corpus["streams"][:2]      # 自检裁剪：只跑 2 条流
         corpus_path.write_text(json.dumps(corpus, ensure_ascii=False),
                                encoding="utf-8")
@@ -132,6 +136,11 @@ def main() -> None:
             assert m["src"], f"记忆 {m['id']} 无 L0 引用"
             assert set(m["src"]) <= unit_ids, f"记忆 {m['id']} 引用越界"
         assert run["probe_records"], "探针未产生记录"
+        assert all(p["barrier"]["drained"] for p in run["probe_records"])
+        assert any(p["context"] for p in run["probe_records"]), "排空后仍无非空检索证据"
+        assert any(p["eligible"] and p["gold"] for p in run["probe_records"])
+        if args.retrieval_smoke:
+            assert {p["scenario"] for p in run["probe_records"]} >= {"preference", "mechanism", "scope", "retraction"}
 
         from eval.l2l3.audit import aggregate, build_worksheet
         info = build_worksheet([str(tmp / "runs" / "l2")],

@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-_INACTIVE_STATES = {"done", "dead", "operations", "cancelled"}
+_INACTIVE_STATES = {"done", "dead", "skipped", "operations", "cancelled"}
 
 
 class Sidecar:
@@ -170,21 +170,25 @@ class Sidecar:
         queued = {k: v for k, v in (sig.get("queued") or {}).items() if v}
         active = {k: v for k, v in counts.items()
                   if v and k not in _INACTIVE_STATES}
-        return {"active": active, "queued": queued}
+        return {"active": active, "queued": queued,
+                "units_pending": (sig.get("units") or {}).get("pending", 0),
+                "checkpoint_fault": bool(sig.get("checkpoint_fault"))}
 
     def drain(self, timeout: float = 1800.0, quiet_s: float = 20.0) -> dict:
         """等任务机排空：无 active 态且队列计数全 0，且连续 quiet_s 秒保持。"""
-        deadline = time.time() + timeout
+        deadline = time.monotonic() + timeout
         quiet_since: float | None = None
         last: dict = {}
-        while time.time() < deadline:
+        while time.monotonic() < deadline:
             last = self.active_tasks()
-            if not last["active"] and not last["queued"]:
+            if last["checkpoint_fault"]:
+                return {"drained": False, **last}
+            if not last["active"] and not last["queued"] and not last["units_pending"]:
                 if quiet_since is None:
-                    quiet_since = time.time()
-                if time.time() - quiet_since >= quiet_s:
+                    quiet_since = time.monotonic()
+                if time.monotonic() - quiet_since >= quiet_s:
                     return {"drained": True, **last}
             else:
                 quiet_since = None
-            time.sleep(2.0)
+            time.sleep(min(0.25, max(0, deadline - time.monotonic())))
         return {"drained": False, **last}

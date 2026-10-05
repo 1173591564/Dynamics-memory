@@ -104,3 +104,25 @@ python -m eval.drive 17872 /tmp/proj full
 - `export_run` 是离线只读导出：sidecar 必须停止；若 Windows 强制结束后仍有已提交 WAL，只在临时 DB+WAL 副本读取，原库不动；不启动服务，不自动迁移或修复原库。
 - `audit.aggregate` 拒绝漏填、未知或重复 ID；读回 `.first-pass` 并合并各 run。57 条历史探针仅作运行证据，不用于能力结论。
 - 原版 99.8% 来自 Agent 单评；重绑定后的待复核表不自动沿用 disposition。原始评分和语料不重写。
+
+## 因果探针与模型对照（N53）
+
+`probe.t` 仍是喂第 t 轮之前；每轮写入后等待持久任务和 L0 工作排空，终点探针不遗漏。超时停止后续喂入，`run.json` 保存边界和完整上下文。`pipeline_status` 区分 `not_ready` / `write_failed` / `not_distilled` / `ready`，`retrieval_status` 区分命中、漏召回和有害旧值；F 若未证明旧值曾可见则 `unexercised_retraction`，不进入有效均值。resume 只排空，不把未来池状态用来补答历史题。L2 独立流请用 `--stream-id` 分开项目运行。
+
+Windows 综合验收若发生 UTF-8 子进程输出被 GBK 解码，先在 PowerShell 设置 `$env:PYTHONUTF8='1'` 和 `$env:PYTHONIOENCODING='utf-8'`，再运行 `python analysis/acceptance_check.py --full`；无需改检查逻辑或全局配置。
+
+离线装具检验：`python -m eval.l2l3.selftest --retrieval-smoke`。它使用 CREATE-only mock，分数只证明能观察命中/旧值/串作用域，不证明模型质量或内核收敛。
+
+在仓库 `.env` 加 `DEEPSEEK_API_KEY=...`；现有 `ZAI_API_KEY` 保留。实验固定 **GLM-5.3-Flash max / DeepSeek V4.1 Flash high**，均显式发 effort。生产 `opencode.json`、Agent prompt、embedding 和 Python 语义链不改。
+
+```bash
+python -m eval.l2l3.gen_l2 --retrieval-smoke --out .opencode/tmp/probe-ab-next/corpus.json
+python -m eval.l2l3.run_audit_chain --corpus .opencode/tmp/probe-ab-next/corpus.json --project .opencode/tmp/probe-ab-next/project-glm --out-dir .opencode/tmp/probe-ab-next/run-glm --agent-provider glm --capture-dir .opencode/tmp/probe-ab-next/cases
+python -m eval.l2l3.model_ab --cases .opencode/tmp/probe-ab-next/cases --out-dir .opencode/tmp/probe-ab-next/ab
+```
+
+捕获的是实际 runtime payload，而不是从历史最终池猜原调用。载荷、prompt 和验证窗口有 hash，复跑前校验；目录不覆盖旧证据。`records.jsonl` 包含每次尝试、请求/响应时点、实际 API/model、effort 请求值、完整墙钟和 usage；非流式 TTFT 标未测，不能把 requested effort 当 provider 已证明执行。`source_coverage` 只衡量引用窗口单元，不是事实召回率；事实覆盖、faithful、Selector 判罚和 Reviewer 诊断由 `blind.jsonl` 的角色专属题独立复核，映射在 `blind.key.json`。填写后用 `python -m eval.l2l3.model_ab --filled filled.jsonl --out-dir <ab目录>` 结算：ID 必须完整唯一，核心题不能用 na 隐藏；逐角色检查 DS 接地门槛、耗时比 ≤0.5 和盲评不退，不将漏测角色判通过。无 usage/报价时成本为 null；`--glm-input-rate` / `--glm-output-rate` / `--glm-cached-input-rate` 及 DeepSeek 同名参数接受 USD/百万 token，结果是 usage 估算，不是账单。
+
+A/B 通过后以新的空项目/输出/捕获目录运行同一小链 `--agent-provider deepseek`。这仍是 inline 实验；OpenCode provider/effort 转发另需真实 CLI 验证。盲评与真实 V/C/F 小链未确认前不切生产默认，不将 PENDING-11/12 视为已解决。
+
+首轮实测（2026-10-05）结果与三层归因见 `eval/l2l3/REPORT.md` §11：探针时序成立；DS-high 提速 3.2-3.9× 但 reviewer 盲评单项失分未达门槛；三条链共同暴露 PENDING-11/12，DS 链额外暴露 PENDING-13（同批邮戳自碰撞死信）。

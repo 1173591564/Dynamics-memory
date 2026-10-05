@@ -173,6 +173,52 @@ python3 eval/l2l3/selftest.py
 aggregate.md, runs/*, watchdog.py, 各链 log}；本报告=工作区 `L2L3-抽检报告.md`
 （仓库副本 eval/l2l3/REPORT.md）。
 
+## 11. N53 复测：因果探针 + GLM-max/DS-high 对照（2026-10-05）
+
+相对 N51 的三处装具修正：①探针改因果屏障时序（喂轮→持久任务+L0 排空→发探针→喂下一轮；超时停喂不补答），探针走 `/search` passive（不写 L0、不登记反馈 ID、在记忆副本上运行）；②诊断分层 `pipeline_status`（not_ready/write_failed/not_distilled/ready）× `retrieval_status`（hit/miss/harmful/not_testable），不合格探针不进有效均值；③冻结载荷 A/B（`model_ab.py`）+ 盲评结算。另修评测器自身 bug：`_request` 的 socket 曾硬限 120s，GLM Reviewer ~160s 被误杀（首轮 GLM 链 p8 未发即因此）。
+
+语料：retrieval-smoke，9 轮 9 探针。三条真实链：`run-glm`（首轮，socket 缺陷时代）、`run-glm2`（修复后重跑）、`run-deepseek`。
+
+### 逐探针结果
+
+| 探针 | 维度 | run-glm | run-glm2 | run-deepseek |
+|---|---|---|---|---|
+| p0 t1 当前值 | R | hit | hit | hit |
+| p1 t2 旧值抑制 | V | not_distilled | not_distilled | not_distilled |
+| p2 t3 作用域 | C | harmful | harmful | harmful |
+| p3 t4 撤回前置 | R | hit | hit | write_failed（PENDING-13） |
+| p4 t5 偏好 | R | hit | hit | write_failed（PENDING-13） |
+| p5 t6 机制 | R | hit | hit | hit |
+| p6 t7 撤回后 | F | harmful | harmful | harmful |
+| p7 t8 更新域 | V | not_distilled | not_distilled | not_distilled |
+| p8 t9 纠正 | C | not_ready（装具 bug） | not_distilled | harmful（S=1.0，值已落库） |
+
+eligible：run-glm2 6/9（hit 4 / harmful 2）；run-deepseek 5/9（hit 2 / harmful 3）。
+链账目：run-glm2 selector_done 10、dead 0、reviewer done、mems 5、人审 13；run-deepseek selector_done 8、dead 2、reviewer done、mems 8、人审 8。
+
+### 三层归因
+
+1. **模型无关的内核行为（三链一致）**：p1/p7 新值不落库——Selector 判 UPDATE 但服务端因用户文本无纠正标记降级 CONFLICT、待人审；p2 旧值与新候选并排端出；p6 已作废值继续服务。PENDING-11/12 再获实锤，与模型无关。
+2. **内核死信（仅 DS 触发）**：DS 链 task 8/10 同批两条决定共用目标（`EXIST t0`+`CONFLICT/UPDATE t0`），前序决定事务内改 `last_seen`，后序决定 prepare 邮戳失配→整批拒绝；封存载荷使重试确定性复现→5 次耗尽死信→p3/p4 write_failed。已登记 **PENDING-13**。GLM 未触发仅因决定组合不共目标——是运气不是差异。
+3. **真实模型差异（n=1）**：纠正轮（t=9，"不对，你记错了"）DS Selector 正确主张 UPDATE+verified_correction，服务端在源单元用户文本中确认纠正标记→UPDATE 生效、旧值迁 ARCHIVE、新值入库——设计的 UPDATE 路径首次端到端跑通。GLM 同轮自判 CONFLICT；其 reviewer 产出的 2 条修复候选再过 Selector 仍 CONFLICT（修复文本本身不含纠正措辞）→ 新值永不落库。该样本偏向 DS，但 n=1 不足以下结论。
+
+### A/B 遥测与盲评（冻结载荷 7 case × 2 provider）
+
+| 角色 | GLM-max 均值 | DS-high 均值 | DS/GLM | 校验接受 |
+|---|---|---|---|---|
+| hauler | 14.76s | 4.67s | 0.316 | 3/3 vs 3/3 |
+| selector | 17.60s | 4.89s | 0.278 | 3/3 vs 3/3 |
+| reviewer | 159.79s | 40.91s | 0.256 | 1/1 vs 1/1 |
+
+盲评（单评分者）：hauler grounded GLM 2/3（一候选把邻单元值并入、src 归错）vs DS 3/3；selector disposition GLM 1/3 vs DS 2/3（两边失分同类：主张 UPDATE 被判 fail 多因服务端 CONFLICT 降级——PENDING-12 类判罚差异而非编造）；reviewer 两家 diagnosis 均 fail（都把服务端 CONFLICT 降级误诊为持久化/Selector 故障），repair_quality GLM 过 vs DS 失分（DS 的 rule 建议矛盾未决时让 Selector CREATE 当前值，越出契约）→ `settle=ab_thresholds_not_met`。
+
+### 结论与局限
+
+- 提问侧评测流程成立：探针全部在因果屏障后发出，无 L0 污染、无反馈副作用，写入失败/未蒸馏/检索漏分层可归因。
+- DS-high 三角色均值提速 3.2-3.9 倍，hauler/selector 盲评不弱于 GLM；但 reviewer 样本 n=1 且 repair_quality 失分 → **未达采纳门槛，不换生产默认模型**。
+- 当前检索质量的主要敌人是内核不是模型：旧值驻留（PENDING-11/12）三链同现；同批邮戳自碰撞死信（PENDING-13）直接吃掉 DS 两条探针。这些不修，换模型收益会被死信抵消。
+- 局限：样本极小（reviewer n=1）；inline 通道非生产 OpenCode CLI；盲评单评分者；DS 链 write_failed 属内核死信，不计入模型质量；DS 链同时产生了"用户要求不要混淆…"元投诉记忆（mem 7），属冗余写入待评。
+
 ---
 
-*评分明细见 worksheet.filled.jsonl（100 行含逐条 verdicts 与 note）。本报告待验收。*
+*评分明细见 worksheet.filled.jsonl（100 行含逐条 verdicts 与 note）；N53 原始证据在 `.opencode/tmp/probe-ab-n53-real/`（run-glm / run-glm2 / run-deepseek / cases / ab）。本报告待验收。*

@@ -161,6 +161,8 @@ MODULE_IO = {
                    "判分、元评测与可比报告；算法冻结，不为引擎放水"),
     "eval/tests/": ("TIDE 资产", "元评测通过/失败断言；冻结保留"),
     "eval/checks/": ("历史输入", "只作归档证据；不得作为现行入口"),
+    "eval/l2l3/model_ab.py": ("封存 runtime payload/prompt/window、两个固定模型档位、环境凭据与有界实验参数",
+                              "生产校验结果、逐尝试耗时/usage/费用估算、盲序工作台；无生产切换权，不证明 OpenCode 通道兼容"),
     "eval/": ("端口、项目目录、mock 端点与模式参数",
               "离线驱动/预览/harness 诊断输出；不修改判分真值"),
     ".opencode/plugin/memory-bridge.ts": ("OpenCode plugin context、env、会话事件与本地 token",
@@ -332,6 +334,50 @@ SYMBOL_OVERRIDES = {
         "效果原子回滚与预算闸", "无", "context manager",
         "备份引擎、计数器和预算水位；干净回滚恢复 _state_bytes；提交确认丢失仍保留 fault 安全停机",
         "超预算 Degraded；不能用失败序列化水位误拒后续效果"),
+    "eval/l2l3/run_audit_chain.py::run_chain": (
+        "因果屏障跑链", "corpus/project/out_dir、timeout/quiet_s/probes/resume", "run.json、barriers、probe_records、离线 export",
+        "保留 probe.t=喂 t 前；每轮 observe 后排空持久任务和 L0 工作，再发下一边界探针；包含终点探针；屏障失败停喂，进度落盘；resume 只排空不倒放",
+        "非空输出目录拒绝覆盖；不改冻结判分器，不把死信排空等同成功写入"),
+    "eval/l2l3/run_audit_chain.py::_probe_record": (
+        "探针分层诊断", "probe、barrier、当时 checkpoint、历史可见值、相关 unit IDs、HTTP 响应", "pipeline/retrieval 状态、eligible、原分数及证据",
+        "缺 gold 且相关任务死信=write_failed；无记忆=not_distilled；存在但未召回=miss；F 必须证明 harmful 曾可见；保留完整 context，不注入 gold",
+        "未排空/HTTP 错误/空池平凡卫生分不得进入有效均值；浅层匹配不证明语义正确"),
+    "eval/l2l3/export.py::read_snapshot": (
+        "运行中时点只读快照", "project", "同一 SQLite 读事务的 revision/mems/tasks",
+        "mode=ro 读取权威 checkpoint，复用受限 load_state 和 is_visible；不启动服务、不写状态、不用独立 state.pkl 代替权威 checkpoint",
+        "已处理任务缺 checkpoint 拒绝；数据库或快照损坏传播"),
+    "eval/l2l3/gen_l2.py::retrieval_smoke": (
+        "小型检索场景装配", "无", "9 轮单流及 9 个边界探针",
+        "覆盖现值/旧值/实体作用域/撤回前置正例/偏好/机制/纠正；真值只在评测侧，不作为 TIDE 曲线语料",
+        "精确短语评分不等于回答层或语义蕴含验证"),
+    "eval/l2l3/model_ab.py::load_key": (
+        "实验凭据读取", "固定 provider ID", "key 或 None，不输出值",
+        "环境优先；GLM 复用 load_env_key，DeepSeek 读仓库 .env 的 DEEPSEEK_API_KEY；不改 ZAI_BASE_URL 或 embedding",
+        "未知 provider 拒绝；缺 key 在任何双模型调用前阻断"),
+    "eval/l2l3/model_ab.py::freeze_case": (
+        "封存真实调用输入", "role、实际 payload、svc、输出目录", "私有 JSON 文件路径",
+        "模型调用前捕获原 payload/prompt、封存 revision 和生产来源窗口；canonical hashes；O_EXCL+0600；不从最终池重建并冒称历史封存",
+        "包含可脱敏内容、窗口超限、同名不同内容拒绝；不改 prompt/守卫/内核"),
+    "eval/l2l3/model_ab.py::validate_reply": (
+        "生产校验离线复用", "frozen case、parsed reply", "角色预检与 grounded/coverage/density/normalized",
+        "无写权 FrozenLog/Frozen service 复用 hauler/selector/reviewer.validate 和 validate_proposal；Selector 候选保持固定；空候选 grounding=None",
+        "非法来源/目标/作用域拒绝；source_coverage 不是事实覆盖率；Hauler 结构通过不代表候选接地"),
+    "eval/l2l3/model_ab.py::call_case": (
+        "固定档位单样本测量", "case/provider/key、attempt cap/timeout/rates", "逐尝试记录、完整墙钟、usage、JSON 响应与校验",
+        "GLM-5.3-Flash 显式 max，DeepSeek V4.1 Flash API deepseek-flash 显式 high；同 prompt/payload；失败回复的已知 usage 也计费；缺数标 None",
+        "鉴权失败及墙钟超时不内重试；socket 和墙钟预算同参数，不暗设 120s 次级截止；拒收产物和原因脱敏留证；非流式 TTFT 不伪造；effort_requested 不冒称 provider 已证明执行；费用为输入单价的 usage 估算"),
+    "eval/l2l3/model_ab.py::run_ab": (
+        "冻结载荷成对实验", "case paths、空输出目录、重复次数/尝试/timeout/rates", "records.jsonl、blind.jsonl/key、summary.json",
+        "双 key 前置检查；成对交替先后；逐调用落盘；三角色各自统计；保留盲评和真实链待验证状态，无生产切换",
+        "篡改摘要/重复样本/缺凭据/非空目录/无界实验参数拒绝；部分成功不外推三角色"),
+    "eval/l2l3/model_ab.py::settle": (
+        "三角色盲评严格结算", "filled_path、A/B run_dir", "reviewed-summary.json 与阈值结论",
+        "ID 完整唯一，映射匹配 case/provider/role，角色专属必填题不能 na；逐角色比质量不退和墙钟 ≤50%，Hauler 接地 ≥95%；三角色缺测不通过",
+        "最多给进入真实小链资格，不授权生产切换；样本比例不是总体统计置信保证"),
+    "eval/l2l3/model_ab.py::MeasuredRunner": (
+        "小型真实链固定模型运行器", "service、provider、case directory", "DispatchWorker callable 角色 JSON",
+        "仅 eval serve_inline 装配；冻结实际载荷后 call_case、落 usage，再交生产 worker 守卫和效果；embedding/语义服务保留 GLM/Zhipu",
+        "失败外抛由持久任务机重试；不修改生产 OpenCode 默认配置"),
     "eval/l2l3/export.py::export_run": (
         "离线只读审计导出", "repo/project/out_path", "L0、记忆、任务及提交回执",
         "只读已停止 sidecar 的 SQLite；有 WAL 时复制 DB+WAL 到临时目录读取；受限快照校验；不启动服务、不调用模型、不创建鉴权文件",

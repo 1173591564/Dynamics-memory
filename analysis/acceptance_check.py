@@ -45,6 +45,8 @@ PENDING = [
      "值变更后主动张力检查 或 检索期多代「当前值」消解（设计+回归）"),
     ("PENDING-12", "值变更判罚口径不统一（同值变更 CREATE/CONFLICT 并存）",
      "口径 ADR（与 PENDING-11 协同）"),
+    ("PENDING-13", "Selector 同批多决定命中同一目标时与 N08 邮戳自碰撞（确定性重试复现→死信）",
+     "事务内自碰撞豁免（同批已触目标跳过邮戳复核或批首一次性复核）+ 回归"),
 ]
 
 results: list[tuple[str, str, str]] = []  # (id, VERDICT, detail)

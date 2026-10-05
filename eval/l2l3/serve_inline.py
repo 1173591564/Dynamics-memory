@@ -25,7 +25,11 @@ def main() -> None:
     ap.add_argument("--model", default=os.environ.get("MEMORY_AGENT_MODEL",
                                                       "glm-5.3-flash"))
     ap.add_argument("--task-queue-cap", type=int, default=4096)
+    ap.add_argument("--experiment-provider", choices=("glm", "deepseek"), default=os.environ.get("L2L3_AGENT_PROVIDER"))
+    ap.add_argument("--capture-dir", default=os.environ.get("L2L3_CAPTURE_DIR"))
     args = ap.parse_args()
+    if args.experiment_provider and not args.capture_dir:
+        raise ValueError("experiment provider requires capture directory")
 
     from hybrid_memory.config import resolve_pipeline
     from hybrid_memory.dispatch.worker import DispatchWorker
@@ -44,7 +48,15 @@ def main() -> None:
     trio = None
     if service.trio_mode:
         from eval.l2l3.inline_runner import InlineAgentRunner
-        trio = DispatchWorker(service, InlineAgentRunner(model=args.model))
+        runner = InlineAgentRunner(model=args.model)
+        if args.experiment_provider:
+            from eval.l2l3.model_ab import MeasuredRunner
+            runner = MeasuredRunner(service, args.experiment_provider, args.capture_dir)
+            runner.verify_channel()
+        elif args.capture_dir:
+            from eval.l2l3.model_ab import CapturingRunner
+            runner = CapturingRunner(runner, service, args.capture_dir)
+        trio = DispatchWorker(service, runner)
         service.attach_dispatch(trio)
         trio.start()
     httpd = serve(service, args.port)

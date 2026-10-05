@@ -168,6 +168,37 @@ def build(api_key: str | None, seeds: int, out_path: str,
     return corpus
 
 
+def retrieval_smoke() -> dict:
+    texts = [
+        "网关模块的端口定为 gate-4100。",
+        "网关模块的端口改成 gate-4200 了。",
+        "部署模块的端口定为 deploy-5100。",
+        "日志级别定为 trace-6100。",
+        "以后写 PR 描述请保持简洁，先写动机，再写影响范围。",
+        "恢复机制要求 checkpoint 和效果在同一事务提交，失败时一起回滚。",
+        "日志级别那个设定作废了，先别用。",
+        "部署模块的端口改成 deploy-5200 了。",
+        "不对，你记错了，网关模块的端口是 gate-4200，部署模块的端口是 deploy-5200，不要混淆。",
+    ]
+    specs = [
+        (1, "R", "网关模块的端口现在是什么？", ["gate-4100"], [], "current_value"),
+        (2, "V", "网关模块的端口现在是什么？", ["gate-4200"], ["gate-4100"], "obsolete_suppression"),
+        (3, "C", "部署模块的端口现在是什么？", ["deploy-5100"], ["gate-4100", "gate-4200"], "scope"),
+        (4, "R", "日志级别现在是什么？", ["trace-6100"], [], "retraction_precondition"),
+        (5, "R", "用户偏好 PR 描述采用什么结构？", ["简洁", "动机", "影响范围"], [], "preference"),
+        (6, "R", "checkpoint 与效果在失败时怎样恢复？", ["同一事务", "回滚"], [], "mechanism"),
+        (7, "F", "日志级别现在是什么？", [], ["trace-6100"], "retraction"),
+        (8, "V", "部署模块的端口现在是什么？", ["deploy-5200"], ["deploy-5100", "gate-4200"], "update_scope"),
+        (9, "C", "网关模块的端口现在是什么？", ["gate-4200"], ["gate-4100", "deploy-5200"], "reviewer_correction"),
+    ]
+    return {"kind": "l2", "purpose": "retrieval-smoke-not-TIDE-curves", "streams": [{
+        "id": "retrieval-smoke", "turns": [{"t": i, "user": text, "assistant": "收到。"}
+                                               for i, text in enumerate(texts)],
+        "probes": [{"id": f"smoke-p{i}", "t": t, "dimension": dim, "knob": i,
+                    "query": query, "gold": gold, "harmful": harmful, "scenario": scenario}
+                   for i, (t, dim, query, gold, harmful, scenario) in enumerate(specs)]}]}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seeds", type=int, default=1)
@@ -179,7 +210,13 @@ def main() -> None:
     ap.add_argument("--dims", default=None,
                     help="逗号分隔维度过滤，如 R,V,C,F")
     ap.add_argument("--api-key", default=None)
+    ap.add_argument("--retrieval-smoke", action="store_true")
     args = ap.parse_args()
+    if args.retrieval_smoke:
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(retrieval_smoke(), ensure_ascii=False, indent=1), encoding="utf-8")
+        return
     key = args.api_key or __import__("os").environ.get("ZAI_API_KEY")
     dims = tuple(args.dims.split(",")) if args.dims else None
     build(key, args.seeds, args.out, mock=args.mock, trim=args.trim, dims=dims)

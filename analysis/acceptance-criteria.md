@@ -106,6 +106,7 @@
 | PENDING-09 | checkpoint 全量 pickle O(N)（500 条≈301 KB/次） | design-debts.md §2 实测；2MB 预算闸已接线（N49） | 分段 pickle ADR（I5 单点接入） |
 | PENDING-11 | 值链收敛触发盲区：纯观察流量张力不触发，旧代以"当前值"口吻驻留 | N51 实跑：V 链 43/57 过期代入池、21 条当前口吻；端口链 6 条并存；人审 50 条悬置 | 值变更后主动张力检查 或 检索期多代"当前值"消解（设计+回归） |
 | PENDING-12 | 值变更判罚口径不统一（同值变更 CREATE/CONFLICT 并存） | N51 实跑 + N52 修正：docs 鉴权链 CONFLICT×3 与 CREATE 并存（人审待决期间同义新记忆可检索） | 口径 ADR（与 PENDING-11 协同） |
+| PENDING-13 | Selector 同批多决定命中同一目标时与 N08 邮戳自碰撞：前序决定事务内改 `last_seen`/`superseded_by`，后序决定 prepare 邮戳失配→整批拒绝；封存载荷使重试确定性复现→死信 | N53 DS 小链 task 8/10 dead×5（`EXIST t0`+`CONFLICT/UPDATE t0` 同批）；GLM 同语料决定组合不共目标未触发——模型无关的内核盲区 | 事务内自碰撞豁免（同批已触目标跳过邮戳复核，或批首一次性复核）+ 同批双目标回归 |
 
 > 消项记录：PENDING-10（pin 占用指标+告警）已于 N49 兑现——/health 暴露
 > pin_roots/pinned_context/pin_occupancy/alerts，≥0.7 外显告警；回归

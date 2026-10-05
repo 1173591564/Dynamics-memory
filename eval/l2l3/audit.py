@@ -170,7 +170,7 @@ def aggregate(filled_path: str, key_path: str, run_paths: list[str],
             subset = [r for r in recs if r.get("dimension", "unknown") == dim]
             dims[dim] = _probe_summary(subset)
         auto[chain] = {**_probe_summary(recs), "dimensions": dims,
-                       "validity": "pre-drain-unverified"}
+                       "validity": "causal-barrier" if all("eligible" in r for r in recs) else "legacy-or-mixed-unverified"}
 
     def rate(st, q):
         p, t = st[q]
@@ -208,9 +208,13 @@ def aggregate(filled_path: str, key_path: str, run_paths: list[str],
 
 def _probe_summary(records: list[dict]) -> dict:
     """同一来源集合的探针计数及原始均值；不推断能力有效性。"""
-    return {"probes": len(records),
-            **{f: round(sum(r[f] for r in records) / len(records), 4)
-               for f in ("S", "H", "u") if all(f in r for r in records)}}
+    scored = [r for r in records if all(f in r for f in ("S", "H", "u"))]
+    eligible = [r for r in scored if r.get("eligible", True)]
+    return {"probes": len(records), "eligible_probes": len(eligible),
+            "raw": {f: round(sum(r[f] for r in scored) / len(scored), 4)
+                    for f in ("S", "H", "u") if scored},
+            **{f: round(sum(r[f] for r in eligible) / len(eligible), 4)
+               for f in ("S", "H", "u") if eligible}}
 
 
 def main() -> None:

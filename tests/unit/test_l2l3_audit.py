@@ -196,6 +196,141 @@ def test_export_reads_committed_wal_without_touching_source(tmp_path):
         writer.close()
 
 
+def test_probe_barrier_preserves_pre_ingest_gold_and_terminal_boundary(tmp_path, monkeypatch):
+    events = []
+    class Stub:
+        def __init__(self, *a, **kw): pass
+        def start(self): return self
+        def observe(self, user, assistant, request_id):
+            events.append(user)
+            return 200, {"unit_id": len(events)}
+        def drain(self, **kw):
+            events.append("drain")
+            return {"drained": True}
+        def search(self, query, **kw):
+            events.append(query)
+            return 200, {"context": "old-1234" if query == "before-update" else "new-5678", "n": 1}
+        def close(self): return ""
+    monkeypatch.setattr(sidecar, "Sidecar", Stub)
+    monkeypatch.setattr(export, "read_snapshot", lambda *a: {"revision": 1, "mems": [
+        {"id": 0, "text": "old-1234", "visible": True},
+        {"id": 1, "text": "new-5678", "visible": True}], "tasks": []}, raising=False)
+    monkeypatch.setattr(export, "export_run", lambda *a: {"mems": [], "units": [], "tasks": []})
+    corpus = {"kind": "l2", "streams": [{"id": "test-stream", "turns": [
+        {"t": 0, "user": "set-old", "assistant": "ok"},
+        {"t": 1, "user": "set-new", "assistant": "ok"}], "probes": [
+        {"id": "p1", "t": 1, "dimension": "V", "knob": 0, "query": "before-update", "gold": ["old-1234"], "harmful": []},
+        {"id": "p2", "t": 2, "dimension": "V", "knob": 1, "query": "after-update", "gold": ["new-5678"], "harmful": ["old-1234"]}]}]}
+    result = run_audit_chain.run_chain(corpus, str(tmp_path / "proj"), str(tmp_path / "out"))
+    assert events[:6] == ["set-old", "drain", "before-update", "set-new", "drain", "after-update"]
+    assert len(result["probe_records"]) == 2
+    assert all(p["eligible"] and p["S"] == 1 for p in result["probe_records"])
+    assert result["probe_validity"] == "causal-barrier"
+
+
+def test_probe_timeout_stops_future_feeding(tmp_path, monkeypatch):
+    fed = []
+    class Stub:
+        def __init__(self, *a, **kw): pass
+        def start(self): return self
+        def observe(self, user, assistant, request_id):
+            fed.append(user)
+            return 200, {"unit_id": 0}
+        def drain(self, **kw): return {"drained": False, "active": {"running": 1}}
+        def search(self, *a, **kw): pytest.fail("unready probe must not search")
+        def close(self): return ""
+    monkeypatch.setattr(sidecar, "Sidecar", Stub)
+    monkeypatch.setattr(export, "read_snapshot", lambda *a: {"revision": 1, "mems": [], "tasks": []}, raising=False)
+    monkeypatch.setattr(export, "export_run", lambda *a: {"mems": [], "units": [], "tasks": []})
+    corpus = {"kind": "l2", "streams": [{"id": "test-stream", "turns": [
+        {"t": 0, "user": "current", "assistant": "ok"},
+        {"t": 1, "user": "future", "assistant": "ok"}], "probes": [
+        {"id": "p", "t": 1, "dimension": "R", "knob": 1, "query": "q", "gold": ["old-1234"], "harmful": []}]}]}
+    result = run_audit_chain.run_chain(corpus, str(tmp_path / "proj"), str(tmp_path / "out"))
+    assert fed == ["current"]
+    assert result["status"] == "barrier_timeout"
+    assert result["probe_records"][0]["pipeline_status"] == "not_ready"
+    assert result["probe_records"][0]["eligible"] is False
+
+
+@pytest.mark.parametrize("mems,tasks,seen,ctx,gold,harmful,pipeline,retrieval,eligible", [
+    ([], [{"id": 1, "state": "dead", "unit_id": 0}], set(), "", ["a-1234"], [], "write_failed", "not_testable", False),
+    ([], [], set(), "", ["a-1234"], [], "not_distilled", "not_testable", False),
+    ([{"id": 0, "text": "a-1234", "visible": True}], [], set(), "", ["a-1234"], [], "ready", "miss", True),
+    ([{"id": 0, "text": "a-1234", "visible": True}], [], set(), "a-1234", ["a-1234"], [], "ready", "hit", True),
+    ([], [], set(), "", [], ["a-1234"], "unexercised_retraction", "not_testable", False),
+    ([], [], {"a-1234"}, "", [], ["a-1234"], "ready", "clean", True),
+    ([{"id": 0, "text": "a-1234", "visible": True}], [], {"a-1234"}, "a-1234", [], ["a-1234"], "ready", "harmful", True),
+])
+def test_probe_diagnostics(mems, tasks, seen, ctx, gold, harmful, pipeline, retrieval, eligible):
+    probe = {"id": "p", "t": 1, "dimension": "F", "knob": 0, "gold": gold, "harmful": harmful}
+    rec = run_audit_chain._probe_record("st", probe, {"drained": True},
+        {"revision": 1, "mems": mems, "tasks": tasks}, seen, {0}, 200, {"context": ctx})
+    assert rec["pipeline_status"] == pipeline
+    assert rec["retrieval_status"] == retrieval
+    assert rec["eligible"] is eligible
+
+
+def test_drain_waits_for_pending_l0_and_treats_skipped_as_terminal(monkeypatch):
+    sc = sidecar.Sidecar("repo", "project")
+    monkeypatch.setattr(sc, "signals", lambda: {"tasks": {"done": 1, "skipped": 1}, "units": {"pending": 1}})
+    assert sc.active_tasks()["units_pending"] == 1
+    assert sc.drain(timeout=0.01, quiet_s=0)["drained"] is False
+
+
+def test_live_probe_snapshot_does_not_change_database(tmp_path):
+    project = tmp_path / "project"
+    svc = _svc(project / ".opencode" / "memory")
+    try:
+        svc.observe("项目改用 bun 构建", "好的")
+        svc.propose([{"text": "项目用 bun 构建", "src": [0]}])
+        before = svc.tasks.checkpoint()
+        snapshot = export.read_snapshot(str(project))
+        assert snapshot["mems"][0]["visible"]
+        assert svc.tasks.checkpoint() == before
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
+def test_retrieval_smoke_has_positive_precondition_and_non_configuration_probes():
+    corpus = gen_l2.retrieval_smoke()
+    st = corpus["streams"][0]
+    assert {p["scenario"] for p in st["probes"]} >= {"mechanism", "preference", "scope", "retraction"}
+    retract = next(p for p in st["probes"] if p["dimension"] == "F")
+    assert any(p["t"] < retract["t"] and p["gold"] == retract["harmful"] for p in st["probes"])
+
+
+def test_passive_probe_does_not_append_log_or_mutate_memory_checkpoint(tmp_path):
+    svc = _svc(tmp_path / ".opencode" / "memory")
+    try:
+        svc.observe("网关模块的端口定为 gate-4100。", "收到。")
+        svc.propose([{"text": "网关模块的端口定为 gate-4100。", "src": [0]}])
+        before_state = svc._dump_state()
+        before_checkpoint = svc.tasks.checkpoint()
+        before_tasks = svc.tasks.stats()
+        before_time = svc._t
+        result = svc.recall("网关模块的端口定为 gate-4100。", passive=True)
+        assert result["n"] > 0 and result["retrieval_id"] is None
+        assert svc.log.count() == 1
+        assert svc._t == before_time
+        assert svc._dump_state() == before_state
+        assert svc.tasks.checkpoint() == before_checkpoint
+        assert svc.tasks.stats() == before_tasks
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
+def test_probe_summary_excludes_vacuous_scores_but_keeps_raw_evidence():
+    records = [{"S": 1, "H": 0, "u": 1, "eligible": False},
+               {"S": 0, "H": 0, "u": 0, "eligible": True}]
+    summary = audit._probe_summary(records)
+    assert summary["eligible_probes"] == 1
+    assert summary["S"] == 0
+    assert summary["raw"]["S"] == 0.5
+
+
 def test_silent_sidecar_boot_timeout_is_bounded(tmp_path, monkeypatch):
     import subprocess
     import sys

@@ -862,6 +862,9 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 - **N51 L2/L3 评测资产接入**：`eval/l2l3/` 提供语料、跑链、只读导出、盲序和结算；inline runner 仅为评测替身，不替代生产 CLI。导出不得启动服务或改项目数据库。报告原始评分来自 Agent 单评；85 条 L3 均为开发日志引述，真实会话和人工复核仍待 PENDING-08。原始资料本地保留，不进 Git。
 - **N52 同步核验修正**：N49 干净事务回滚恢复 `_state_bytes`，确认丢失仍保持 fault 安全停机；裁决按 `(run,memory_id)` 及提交回执关联，dead 不作已提交产物，旧导出多义不猜；结算强校验完整唯一 ID 和适用题，跨 run 累计并保全 first-pass；撤回改写禁旧值，不修改旧语料或评分。Windows 仅补测试启动器、PATH 分隔符和自建 PID 子树清理；启动等待改为有界队列，不改变 Agent 协议。回归见 `test_l2l3_audit.py`、`test_observability.py`、`test_opencode_file_channel.py`。
 
+- **N53 因果检索测量与固定模型对照**：仅改 `eval/l2l3/` 和测试。保留 TIDE `probe.t` 的喂入前语义：喂 t−1 → 持久任务/L0 排空 → 发 t 探针 → 喂 t；终点也发，超时停喂且保存进度，不补放未来时点。运行中只读 checkpoint 区分未就绪、相关死信、未蒸馏、已存在但漏召回与有害旧值；F 需曾可见的正例，原分数保留、无效样本不进有效均值。小链包含 V/C/F、偏好、机制和 Reviewer 纠正。
+  `model_ab.py` 从实际调用冻结 payload/prompt/window/revision/hash，用生产角色预检和接地闸比较 **GLM-5.3-Flash max / DeepSeek V4.1 Flash high**；API 名分别为 `glm-5.3-flash` / `deepseek-flash`。环境或仓库 `.env` 供 key，任何模型调用前核对双凭据；同输入、交替先后、逐尝试落耗时/usage/缓存与单价依据；缺 TTFT/usage/价格不猜。盲评、实际 OpenCode provider 兼容与真实小链未验证前不切默认；Zhipu embedding/Python 语义链不换，PENDING-08/11/12 不因此关闭。接口坞和并发不在本轮范围。
+
 ### 9.1 旧目标条目的最终去向
 
 - X1–X7：保核心含义，纠正“不调LLM=无嵌入I/O”“所有磁盘有界”“effects完成=模型只一次”。
@@ -876,7 +879,7 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 
 ## 10. 验收与下一轮
 
-当前本机证据见 §9.3 N52 核验段（pytest 534/1skip、checker 170/1602/0、acceptance --full 25 PASS/0 SKIP/0 FAIL、Bun 26 pass）；历史各轮数字保留在 §9.3 追记中，不代替当前状态。本文只是设计；符号齐全不证明目标已实现，人决定验收。
+当前本机证据为 N53：pytest 560 passed/1 平台条件 skip、checker 172 模块/1675 符号/0 failures、acceptance --full 25 PASS/0 SKIP/0 FAIL、Bun 26 pass；9 轮因果检索 mock 自检及三角色 MeasuredRunner→真实 worker 效果回归通过。真实 GLM max/DeepSeek high 对照、独立盲评和 CLI provider 验证仍待凭据与实跑；历史 N52 等数字不代替当前状态。本文只是设计；符号齐全不证明目标已实现，人决定验收。
 
 - `python analysis/check_architecture.py`：固定契约核对——模块 IO 齐备；每符号六字段（功能/输入/输出/作用/错误/目标）齐备；显式契约与删除项必须在源码存在；产品模块级常量必须在 `CONSTANTS` 逐条登记（未登记/失效/缺理由即红）；计划新增必须不存在于源码且在主文出现；迁移目标不得与现存模块冲突；附录不得含占位说明；源 hash 漂移即红（本轮已由编辑自身触发验证）。`--build-inventory` 只重建附录，不自动批准；改契约=改 `architecture_contract.py` + 本文。
 - Signal门：kind双向真实消费、payload/version封存、lost wake重启、队满L0接受、due筛选、过期5次耗尽、ready不调模型、lease/CAS/quota/真停机。
@@ -910,6 +913,6 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 
 **声明与事实不符已修正**：N29–N33 由 decision-register 移入本文 §9.2 并改为如实状态；附录计数以重新生成为准（N47 后：156 模块 / 1500 符号）。
 
-**N52 当前本机核验（Windows，N49–N51 汇合后）**：pytest 534 passed / 1 平台条件 skipped；checker 170 模块 / 1602 符号 / 0 failures；acceptance `--full` 25 PASS / 0 SKIP / 0 FAIL（含 A12）；Bun 26 pass；TIDE 单测 8 pass。mock 全链自检喂入 194 轮、194 个 Selector 完成、排空/导出/抽样/结算通过。A7 曾一次连接中止 10053，单独三次及完整重跑通过，未改 HTTP 协议来绕过。原始数据库哈希不变；原评分 499/500 仅为 Agent 单评，一行裁决待复核；PENDING-08 保留。下列为历史执行数字，不代替本段当前状态。
+**N52 历史本机核验（Windows，N49–N51 汇合后）**：pytest 534 passed / 1 平台条件 skipped；checker 170 模块 / 1602 符号 / 0 failures；acceptance `--full` 25 PASS / 0 SKIP / 0 FAIL（含 A12）；Bun 26 pass；TIDE 单测 8 pass。mock 全链自检喂入 194 轮、194 个 Selector 完成、排空/导出/抽样/结算通过。A7 曾一次连接中止 10053，单独三次及完整重跑通过，未改 HTTP 协议来绕过。原始数据库哈希不变；原评分 499/500 仅为 Agent 单评，一行裁决待复核；PENDING-08 保留。下列为历史执行数字，不代替本段当前状态。
 
 **收尾轮执行记录**：五处接线（N35–N39）→ N01/N06/文件通道/schema/HTTP code/消费者自检（N40–N45）→ canonical 导入（N41）→ 三门重跑。测试数字：基线 pytest 437 passed（Linux 实测，非任务书所写 427+1）；收尾轮后 500 passed（437 基线 + 63 新增回归）；checker 0 failures；acceptance 21 PASS/2 SKIP/0 FAIL（bun 与真实 opencode CLI 沙箱未装，记未验证）。**Windows 本机复测（合并后）**：pytest 499 passed/1 skipped（Linux 500/0 与 Windows 499/1 差同一平台条件用例）；checker 155 模块/1494 符号/0 failures；acceptance 22 PASS/1 SKIP/0 FAIL（A1-bun 由 SKIP 转 PASS：26 例全过）；bun 超时用例在 Windows 修复——mock fetch 挂起时 `AbortSignal.timeout` 定时器不触发属 Bun-Windows 运行时怪癖（真实 fetch 对本地静默服务器验证正常），mock 改为直接抛 `TimeoutError`；真实 opencode CLI 与 bench smoke（`--full`）仍未验证。 **追记（N47，Linux，合并 9205601 后复跑）**：直写 propose 效果事务化后 504 passed（500 + 4 新增回归）、checker 156 模块/1500 符号 0 failures、acceptance --full 22 PASS/1 SKIP/0 FAIL——A3-bench-smoke 由 SKIP 转 PASS（mock LLM 下 bench 跑通）；A2-bun 沙箱无 bun（Windows 侧 26 例已全过）。 **追记（N49，Linux，dev/n49-observability 分支）**：可观测性轮（PENDING-10 兑现 + PENDING-09 预算闸先行）——pytest 510 passed（504+6：observability 5 + http_codes 1）、checker 158 模块/1513 符号 0 failures、acceptance --full 24 项 23 PASS/1 SKIP（A2-bun 沙箱无 bun）/0 FAIL（A11 新增通过；PENDING-10 消项）；A7 快照 --freeze 再生成（health 新字段 + 状态表 propose_overbudget_503 探针，理由=N49 只许加字段）。

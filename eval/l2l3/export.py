@@ -93,6 +93,31 @@ def _readonly_db(path: Path):
             yield conn
 
 
+def read_snapshot(project: str) -> dict:
+    from hybrid_memory.core.types import is_visible
+    from hybrid_memory.store.state import load_state
+
+    memory = Path(project).resolve() / ".opencode" / "memory"
+    svc = SimpleNamespace(engine=SimpleNamespace(), state_path=memory / "state.pkl")
+    with closing(sqlite3.connect((memory / "tasks.sqlite").as_uri() + "?mode=ro", uri=True)) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("BEGIN")
+        checkpoint = conn.execute("SELECT revision,state FROM checkpoint WHERE id=1").fetchone()
+        tasks = []
+        for row in conn.execute("SELECT id,kind,state,payload,attempts,last_error FROM tasks ORDER BY id"):
+            task = dict(row)
+            payload = json.loads(task.pop("payload"))
+            task["unit_id"] = payload.get("unit_id")
+            tasks.append(task)
+        if checkpoint is None:
+            if any(t["attempts"] for t in tasks):
+                raise ValueError("processed tasks have no durable checkpoint")
+            return {"revision": 0, "mems": [], "tasks": tasks}
+        load_state(svc, checkpoint["state"])
+        return {"revision": checkpoint["revision"], "tasks": tasks,
+                "mems": [dict(_mem_row(m), visible=is_visible(m)) for m in svc.engine.mems.values()]}
+
+
 def export_run(repo: str, project: str, out_path: str) -> dict:
     _repo_setup(repo)
     from hybrid_memory.core.types import Pool

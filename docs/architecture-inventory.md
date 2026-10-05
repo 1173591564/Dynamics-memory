@@ -5,7 +5,7 @@
 > 未在本页出现的函数/模块在下一轮统一删除前，必须先在此登记或列入删除项。
 > 生成命令：`python analysis/check_architecture.py --build-inventory`；核对：同命令不带参数。
 > 固定契约数据（目标路径、显式契约、计划新增、删除条件、模块备注）在 `analysis/architecture_contract.py`。
-> 当前登记 165 个 Python 模块、5 个 TS/角色定义模块、1602 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、165 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
+> 当前登记 167 个 Python 模块、5 个 TS/角色定义模块、1679 个显式类/函数/具名回调（含私有、嵌套、测试、评测）、167 个模块级常量、0 个计划新增模块、0 个计划新增符号、3 个删除项。
 
 每符号给出：功能、输入、输出、作用、错误、目标（目标路径/处置/变更）。
 公开产品符号在固定契约里逐条定义目标；私有 helper 与测试符号由模块契约+语法签名合成，仍必须完整给出上述字段。
@@ -21,7 +21,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`analysis/acceptance_check.py`（当前路径）。
 - 模块输入：源文件与设计契约数据。
 - 模块输出：符号覆盖、验收与目标契约结论。
-- 源校验：`06c926ede6cad64531ebbf070a503bc041e9129f4396aac8edfae5e8dc3ceff5`。
+- 源校验：`cb92de1cc2f85e154dddeeae86aaae5356c144c38c39e4ca0787874200be2b1d`。
 - 模块级常量：`ROOT`（未登记）；`SNAP_DIR`（未登记）；`SNAP_FILES`（未登记）；`PENDING`（未登记）；`A2_ROWS`（未登记）。
 
 ### `analysis/acceptance_check.py::report`
@@ -31,7 +31,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 print, results.append。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L49)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L53)。
 
 ### `analysis/acceptance_check.py::run`
 
@@ -40,7 +40,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`subprocess.CompletedProcess；subprocess.run(cmd, cwd=str(cwd or ROOT), env=env, capture_output=True, text=True, timeout=timeout)`。
 - 作用：调用 str, subprocess.run。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L55)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L59)。
 
 ### `analysis/acceptance_check.py::pytest_run`
 
@@ -49,7 +49,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`subprocess.CompletedProcess；run([sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', '--tb=short'] + nodes, timeout=timeout)`。
 - 作用：调用 run。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L61)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L65)。
 
 ### `analysis/acceptance_check.py::detect_phase`
 
@@ -58,7 +58,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`str；'P0'；'P1'；'P2'；'P3'；'P4'；'P5'；'P6'`。
 - 作用：调用 (ROOT / 'tests' / 'characterization').is_dir, (h / 'agents' / 'opencode.py').is_file, (h / 'errors.py').is_file, (h / 'legacy').is_dir, (h / 'transport' / 'http.py').is_file, any, svc.is_dir, svc.iterdir。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L66)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L70)。
 
 ### `analysis/acceptance_check.py::check_a1`
 
@@ -67,7 +67,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 '\n'.join, (out.stdout + out.stderr).strip, (out.stdout + out.stderr).strip().splitlines, pytest_run, report, run, shutil.which。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L89)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L93)。
 
 ### `analysis/acceptance_check.py::check_a2`
 
@@ -76,7 +76,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 (ROOT / doc).read_text, len, pytest_run, report。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L128)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L132)。
 
 ### `analysis/acceptance_check.py::check_a3`
 
@@ -85,7 +85,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 Path, dm[0].strip, mock.terminate, mock.wait, out.stdout.strip, out.stdout.strip().splitlines, rep.exists, rep.read_text, rep.read_text(encoding='utf-8').splitlines, report, run, shutil.rmtree, str, subprocess.Popen, tempfile.mkdtemp, time.sleep, time.time, urllib.request.urlopen, urllib.request.urlopen('http://127.0.0.1:18080/stats', timeout=2).read。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L145)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L149)。
 
 ### `analysis/acceptance_check.py::check_a4`
 
@@ -94,7 +94,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 d.is_dir, out.stdout.strip, out.stdout.strip().splitlines, pytest_run, report, str。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L205)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L209)。
 
 ### `analysis/acceptance_check.py::check_a5`
 
@@ -103,7 +103,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 f.is_file, out.stdout.strip, out.stdout.strip().splitlines, pytest_run, report, str。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L215)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L219)。
 
 ### `analysis/acceptance_check.py::check_a6`
 
@@ -112,7 +112,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 eff.is_file, len, pol.is_file, policy.assert_consumers, report, str, sys.path.insert, sys.path.remove, type。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L225)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L229)。
 
 ### `analysis/acceptance_check.py::_snapshot_tree`
 
@@ -121,7 +121,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；[_snapshot_tree(x, depth + 1) for x in obj[:3]]；type(obj).__name__；{k: _snapshot_tree(v, depth + 1) for k, v in sorted(obj.items())} if depth < 2 else sorted(obj)`。
 - 作用：调用 _snapshot_tree, isinstance, obj.items, sorted, type。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L245)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L249)。
 
 ### `analysis/acceptance_check.py::capture_contracts`
 
@@ -130,7 +130,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`dict；{'health': {'fields': _snapshot_tree(health), 'literals': {'validation': health.get('validation')}}, 'signals': {'fields': _snapshot_tree(signals)}, 'status_table': table}`。
 - 作用：调用 _http, _service, _snapshot_tree, conn.close, conn.endheaders, conn.getresponse, conn.putheader, conn.putrequest, dict, get, health.get, http.client.HTTPConnection, post, post2, str, svc.health_view, svc.observe, svc.recall, svc.report_miss, svc.signals, sys.path.insert, sys.path.remove, urllib.request.urlopen。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L254)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L258)。
 
 ### `analysis/acceptance_check.py::check_a7`
 
@@ -139,7 +139,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 (SNAP_DIR / name).write_text, SNAP_DIR.mkdir, capture_contracts, json.dumps, json.loads, p.is_file, p.read_text, report。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L319)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L323)。
 
 ### `analysis/acceptance_check.py::check_a8`
 
@@ -148,7 +148,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 ag.is_file, json.loads, len, oc.OpenCodeRunner._parse_text, p.is_file, p.read_text, pytest_run, report, str, sys.path.insert, sys.path.remove, table.items, type。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L346)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L350)。
 
 ### `analysis/acceptance_check.py::_ast_literal_in`
 
@@ -157,7 +157,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`bool；False；any((isinstance(n, ast.Constant) and n.value == value for n in ast.walk(node)))`。
 - 作用：调用 any, ast.parse, ast.walk, isinstance, path.read_text。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L388)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L392)。
 
 ### `analysis/acceptance_check.py::_find_trio_memories_file`
 
@@ -166,7 +166,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`tuple[Path | None, str]；(None, '_memories')；(p, '_memories')；(p, 'memory_snapshot')`。
 - 作用：调用 p.is_file, p.read_text。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L397)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L401)。
 
 ### `analysis/acceptance_check.py::_find_tasks_file`
 
@@ -175,7 +175,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`Path；p if p.is_file() else ROOT / 'hybrid_memory' / 'taskstore.py'`。
 - 作用：调用 p.is_file。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L411)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L415)。
 
 ### `analysis/acceptance_check.py::check_a9`
 
@@ -184,7 +184,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 (ROOT / 'hybrid_memory' / 'agents').is_dir, (ROOT / 'hybrid_memory').rglob, _ast_literal_in, _find_tasks_file, _find_tasks_file().read_text, _find_trio_memories_file, any, due, hasattr, inspect.signature, isinstance, p.read_text, pytest_run, report, rows.append, str, sys.path.insert, sys.path.remove, trio_file.is_file, trio_file.read_text。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L416)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L420)。
 
 ### `analysis/acceptance_check.py::check_a9.due`
 
@@ -193,7 +193,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`bool；order.index(phase) >= order.index(p)`。
 - 作用：调用 order.index。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L420)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L424)。
 
 ### `analysis/acceptance_check.py::check_a10`
 
@@ -202,7 +202,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 new.is_file, out.stdout.strip, out.stdout.strip().splitlines, pytest_run, report, str。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L471)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L475)。
 
 ### `analysis/acceptance_check.py::check_a11`
 
@@ -211,7 +211,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 pytest_run, report。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L486)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L490)。
 
 ### `analysis/acceptance_check.py::check_a12`
 
@@ -220,7 +220,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 pytest_run, report。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L496)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L500)。
 
 ### `analysis/acceptance_check.py::check_pending`
 
@@ -229,7 +229,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 (ROOT / 'analysis' / 'acceptance-criteria.md').read_text, print, report。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L505)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L509)。
 
 ### `analysis/acceptance_check.py::main`
 
@@ -238,7 +238,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`int；1 if fails else 0`。
 - 作用：调用 ap.add_argument, ap.parse_args, argparse.ArgumentParser, check_a1, check_a10, check_a11, check_a12, check_a2, check_a3, check_a4, check_a5, check_a6, check_a7, check_a8, check_a9, check_pending, detect_phase, len, print, sum。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L515)。
+- 目标：`analysis/acceptance_check.py`；处置：保留；变更：保留当前签名与 IO；[源码](../analysis/acceptance_check.py#L519)。
 
 ## `analysis/architecture_contract.py`
 
@@ -247,7 +247,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`analysis/architecture_contract.py`（当前路径）。
 - 模块输入：源码语法树与人工冻结的契约数据。
 - 模块输出：无运行逻辑；供检查器渲染逐符号目标与执行覆盖校验。
-- 源校验：`7b5fe86bda92337c338e5bd766d459f221b3c3dc02073ab08c0919301c6a374b`。
+- 源校验：`e28df90d918ff72821feb0107ba16753348966494f53dc32213434b798515f74`。
 - 模块级常量：`TARGET_PATHS`（未登记）；`MODULE_IO`（未登记）；`SYMBOL_OVERRIDES`（未登记）；`PLANNED_MODULES`（未登记）；`PLANNED_SYMBOLS`（未登记）；`DELETIONS`（未登记）；`CONSTANTS`（未登记）；`MODULE_NOTES`（未登记）。
 - 输入/输出：本模块只有常量/数据契约，无独立函数；语义见模块输入/输出与备注。
 - 导出/输入依赖：annotations ← __future__.annotations
@@ -590,7 +590,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`eval/l2l3/audit.py`（当前路径）。
 - 模块输入：端口、项目目录、mock 端点与模式参数。
 - 模块输出：离线驱动/预览/harness 诊断输出；不修改判分真值。
-- 源校验：`9271feca69dd1a46550ea0da6e3451cdf947124663fd3e25de43d0f692d859c6`。
+- 源校验：`9e46dac67f6d21b10f0dd463a7bf1edb2b93318a10941561764bfeb853ccd140`。
 - 模块级常量：`QUESTIONS`（未登记）。
 
 ### `eval/l2l3/audit.py::_load_export`
@@ -642,8 +642,8 @@ vendored `mvp/agent/` 完全排除。
 
 - 功能：同一来源集合的探针计数及原始均值；不推断能力有效性。
 - 输入：`records: list[dict]`。
-- 输出：`dict；{'probes': len(records), **{f: round(sum((r[f] for r in records)) / len(records), 4) for f in ('S', 'H', 'u') if all((f in r for r in records))}}`。
-- 作用：调用 all, len, round, sum。
+- 输出：`dict；{'probes': len(records), 'eligible_probes': len(eligible), 'raw': {f: round(sum((r[f] for r in scored)) / len(scored), 4) for f in ('S', 'H', 'u') if scored}, **{f: round(sum((r[f] for r in eligible)) / len(eligible), 4) for f in ('S', 'H', 'u') if eligible}}`。
+- 作用：调用 all, len, r.get, round, sum。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
 - 目标：`eval/l2l3/audit.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/audit.py#L209)。
 
@@ -654,7 +654,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 a.add_argument, aggregate, ap.add_subparsers, ap.parse_args, argparse.ArgumentParser, build_worksheet, print, sub.add_parser, w.add_argument。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`eval/l2l3/audit.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/audit.py#L216)。
+- 目标：`eval/l2l3/audit.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/audit.py#L220)。
 
 ## `eval/l2l3/export.py`
 
@@ -663,7 +663,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`eval/l2l3/export.py`（当前路径）。
 - 模块输入：端口、项目目录、mock 端点与模式参数。
 - 模块输出：离线驱动/预览/harness 诊断输出；不修改判分真值。
-- 源校验：`d052920ca56d73d7601e5157ca903ae36a254f8a08965a7dc2a43b430dd5abb7`。
+- 源校验：`c2d88867f93df97b95c007b35172ae73328b5ae700e31c32518a3f0847cdda86`。
 
 ### `eval/l2l3/export.py::_repo_setup`
 
@@ -710,6 +710,15 @@ vendored `mvp/agent/` 完全排除。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
 - 目标：`eval/l2l3/export.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/export.py#L81)。
 
+### `eval/l2l3/export.py::read_snapshot`
+
+- 功能：运行中时点只读快照
+- 输入：`project`。
+- 输出：`同一 SQLite 读事务的 revision/mems/tasks`。
+- 作用：mode=ro 读取权威 checkpoint，复用受限 load_state 和 is_visible；不启动服务、不写状态、不用独立 state.pkl 代替权威 checkpoint。
+- 错误：已处理任务缺 checkpoint 拒绝；数据库或快照损坏传播。
+- 目标：`eval/l2l3/export.py`；处置：迁移修复；变更：按本项目标契约实施；[源码](../eval/l2l3/export.py#L96)。
+
 ### `eval/l2l3/export.py::export_run`
 
 - 功能：离线只读审计导出
@@ -717,7 +726,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`L0、记忆、任务及提交回执`。
 - 作用：只读已停止 sidecar 的 SQLite；有 WAL 时复制 DB+WAL 到临时目录读取；受限快照校验；不启动服务、不调用模型、不创建鉴权文件。
 - 错误：缺失 durable checkpoint 显式拒绝，原库和 WAL 不得改写。
-- 目标：`eval/l2l3/export.py`；处置：迁移修复；变更：按本项目标契约实施；[源码](../eval/l2l3/export.py#L96)。
+- 目标：`eval/l2l3/export.py`；处置：迁移修复；变更：按本项目标契约实施；[源码](../eval/l2l3/export.py#L121)。
 
 ## `eval/l2l3/gen_l2.py`
 
@@ -726,7 +735,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`eval/l2l3/gen_l2.py`（当前路径）。
 - 模块输入：端口、项目目录、mock 端点与模式参数。
 - 模块输出：离线驱动/预览/harness 诊断输出；不修改判分真值。
-- 源校验：`befa4d2d7b0d001c31f98bf4c11c41ace3e96cc41a9ae57a2f180a3402c086ab`。
+- 源校验：`c74098bffde93b58d67e09681e45a4fdb9b2d300a88e3e1d6397fe2c68bac01e`。
 - 模块级常量：`_EVAL`（未登记）；`_REPO`（未登记）；`_SYS`（未登记）；`_SYS_Q`（未登记）。
 
 ### `eval/l2l3/gen_l2.py::_chat_json`
@@ -774,14 +783,23 @@ vendored `mvp/agent/` 完全排除。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
 - 目标：`eval/l2l3/gen_l2.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/gen_l2.py#L127)。
 
+### `eval/l2l3/gen_l2.py::retrieval_smoke`
+
+- 功能：小型检索场景装配
+- 输入：`无`。
+- 输出：`9 轮单流及 9 个边界探针`。
+- 作用：覆盖现值/旧值/实体作用域/撤回前置正例/偏好/机制/纠正；真值只在评测侧，不作为 TIDE 曲线语料。
+- 错误：精确短语评分不等于回答层或语义蕴含验证。
+- 目标：`eval/l2l3/gen_l2.py`；处置：迁移修复；变更：按本项目标契约实施；[源码](../eval/l2l3/gen_l2.py#L171)。
+
 ### `eval/l2l3/gen_l2.py::main`
 
 - 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
 - 输入：`无参数`。
 - 输出：`None；None`。
-- 作用：调用 __import__, __import__('os').environ.get, ap.add_argument, ap.parse_args, argparse.ArgumentParser, args.dims.split, build, tuple。
+- 作用：调用 Path, __import__, __import__('os').environ.get, ap.add_argument, ap.parse_args, argparse.ArgumentParser, args.dims.split, build, json.dumps, out.parent.mkdir, out.write_text, retrieval_smoke, tuple。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`eval/l2l3/gen_l2.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/gen_l2.py#L171)。
+- 目标：`eval/l2l3/gen_l2.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/gen_l2.py#L202)。
 
 ## `eval/l2l3/gen_l3.py`
 
@@ -818,7 +836,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`eval/l2l3/inline_runner.py`（当前路径）。
 - 模块输入：端口、项目目录、mock 端点与模式参数。
 - 模块输出：离线驱动/预览/harness 诊断输出；不修改判分真值。
-- 源校验：`f877f63b072709f1ccbf3090df25b1ff18edaf44de65ff014ef4019606b2c2aa`。
+- 源校验：`556d5c1419bd5e8275f8382719ed0abfa07ce66748abeb2075546b402e517059`。
 - 模块级常量：`_REPO`（未登记）；`_ROLES`（未登记）；`_WALL_CLOCK_CAP`（未登记）。
 
 ### `eval/l2l3/inline_runner.py::_agent_prompt`
@@ -842,7 +860,7 @@ vendored `mvp/agent/` 完全排除。
 ### `eval/l2l3/inline_runner.py::InlineAgentRunner.__init__`
 
 - 功能：用给定参数与依赖初始化 InlineAgentRunner，建立其对象状态；业务归属为离线 mock、HTTP 驱动及预览 harness
-- 输入：`self, model: str='glm-5.3-flash', api_key: str | None=None`。
+- 输入：`self, model: str='glm-5.3-flash', api_key: str | None=None, reasoning_effort: str='max'`。
 - 输出：`未注解；None`。
 - 作用：调用 _agent_prompt。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
@@ -855,7 +873,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`bool；True`。
 - 作用：调用 无外部调用。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`eval/l2l3/inline_runner.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/inline_runner.py#L45)。
+- 目标：`eval/l2l3/inline_runner.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/inline_runner.py#L47)。
 
 ### `eval/l2l3/inline_runner.py::InlineAgentRunner.verify_channel`
 
@@ -864,7 +882,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`bool；True`。
 - 作用：调用 RuntimeError, all, self.prompts.values。
 - 错误：异常 RuntimeError('agent prompt 缺失：.opencode/agent/*.md')。
-- 目标：`eval/l2l3/inline_runner.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/inline_runner.py#L48)。
+- 目标：`eval/l2l3/inline_runner.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/inline_runner.py#L50)。
 
 ### `eval/l2l3/inline_runner.py::InlineAgentRunner.close`
 
@@ -873,7 +891,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 无外部调用。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`eval/l2l3/inline_runner.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/inline_runner.py#L54)。
+- 目标：`eval/l2l3/inline_runner.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/inline_runner.py#L56)。
 
 ### `eval/l2l3/inline_runner.py::InlineAgentRunner.run_agent`
 
@@ -882,16 +900,16 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`dict；OpenCodeRunner._parse_text(text, name)`。
 - 作用：调用 OpenCodeRunner._parse_text, RuntimeError, ValueError, isinstance, json.dumps, resp.get, self._chat, text.strip。
 - 错误：异常 RuntimeError(f'inline agent {name} 空回复'), ValueError(f'unknown agent {name!r}')。
-- 目标：`eval/l2l3/inline_runner.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/inline_runner.py#L57)。
+- 目标：`eval/l2l3/inline_runner.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/inline_runner.py#L59)。
 
 ### `eval/l2l3/inline_runner.py::InlineAgentRunner._chat`
 
 - 功能：直连智谱 chat/completions。 与生产 llm.chat_messages 等价（同端点/模型/温度；实测 glm-5.3-flash 始终思考，单次 hauler 调用 60-90s，时间预算见抽检报告）。
 - 输入：`self, messages: list`。
 - 输出：`dict；box['out']['choices'][0]['message']`。
-- 作用：调用 RuntimeError, json.dumps, json.dumps({'model': self.model, 'messages': messages, 'temperature': 0.0}, ensure_ascii=False).enco…, os.environ.get, t.is_alive, t.join, t.start, threading.Thread, urllib.request.Request。
+- 作用：调用 RuntimeError, json.dumps, json.dumps({'model': self.model, 'messages': messages, 'reasoning_effort': self.reasoning_effort, 't…, os.environ.get, t.is_alive, t.join, t.start, threading.Thread, urllib.request.Request。
 - 错误：异常 RuntimeError('ZAI_API_KEY is not set'), RuntimeError(f'inline agent 调用超过墙钟上限 {_WALL_CLOCK_CAP}s（API 无响应）'), box['err']。
-- 目标：`eval/l2l3/inline_runner.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/inline_runner.py#L71)。
+- 目标：`eval/l2l3/inline_runner.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/inline_runner.py#L73)。
 
 ### `eval/l2l3/inline_runner.py::InlineAgentRunner._chat._do`
 
@@ -900,7 +918,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`None；None`。
 - 作用：调用 json.loads, r.read, urllib.request.urlopen。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`eval/l2l3/inline_runner.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/inline_runner.py#L92)。
+- 目标：`eval/l2l3/inline_runner.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/inline_runner.py#L95)。
 
 ### `eval/l2l3/inline_runner.py::InlineAgentRunner.__call__`
 
@@ -909,7 +927,314 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`dict；self.run_agent(name, payload)`。
 - 作用：调用 self.run_agent。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`eval/l2l3/inline_runner.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/inline_runner.py#L109)。
+- 目标：`eval/l2l3/inline_runner.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/inline_runner.py#L112)。
+
+## `eval/l2l3/model_ab.py`
+
+- 模块功能：离线 mock、HTTP 驱动及预览 harness。
+- 设计归属：评测边界；处置：迁移修复。
+- 目标路径：`eval/l2l3/model_ab.py`（当前路径）。
+- 模块输入：封存 runtime payload/prompt/window、两个固定模型档位、环境凭据与有界实验参数。
+- 模块输出：生产校验结果、逐尝试耗时/usage/费用估算、盲序工作台；无生产切换权，不证明 OpenCode 通道兼容。
+- 源校验：`47a96e2bbace7d662a433e23839a3ddaafcd27462f9b01acafb4bcea0a1d6478`。
+- 模块级常量：`REVIEW_QUESTIONS`（未登记）；`PROVIDERS`（未登记）。
+
+### `eval/l2l3/model_ab.py::_hash`
+
+- 功能：委托 `hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf…` 执行；边界与失败由被调用方契约承担
+- 输入：`value`。
+- 输出：`str；hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')).hexdigest()`。
+- 作用：调用 hashlib.sha256, hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_na…, json.dumps, json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L39)。
+
+### `eval/l2l3/model_ab.py::load_key`
+
+- 功能：实验凭据读取
+- 输入：`固定 provider ID`。
+- 输出：`key 或 None，不输出值`。
+- 作用：环境优先；GLM 复用 load_env_key，DeepSeek 读仓库 .env 的 DEEPSEEK_API_KEY；不改 ZAI_BASE_URL 或 embedding。
+- 错误：未知 provider 拒绝；缺 key 在任何双模型调用前阻断。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：按本项目标契约实施；[源码](../eval/l2l3/model_ab.py#L44)。
+
+### `eval/l2l3/model_ab.py::freeze_case`
+
+- 功能：封存真实调用输入
+- 输入：`role、实际 payload、svc、输出目录`。
+- 输出：`私有 JSON 文件路径`。
+- 作用：模型调用前捕获原 payload/prompt、封存 revision 和生产来源窗口；canonical hashes；O_EXCL+0600；不从最终池重建并冒称历史封存。
+- 错误：包含可脱敏内容、窗口超限、同名不同内容拒绝；不改 prompt/守卫/内核。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：按本项目标契约实施；[源码](../eval/l2l3/model_ab.py#L59)。
+
+### `eval/l2l3/model_ab.py::CapturingRunner`
+
+- 功能：定义 CapturingRunner 的数据或接口类型，承载离线 mock、HTTP 驱动及预览 harness；构造字段及继承输出在本项完整登记
+- 输入：`见显式或继承的 __init__；无新增字段`。
+- 输出：`类型/实例；基类 object`。
+- 作用：字段与方法契约；dataclass 自动生成的方法不另建手写符号。
+- 错误：见构造函数及方法。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L102)。
+
+### `eval/l2l3/model_ab.py::CapturingRunner.__init__`
+
+- 功能：用给定参数与依赖初始化 CapturingRunner，建立其对象状态；业务归属为离线 mock、HTTP 驱动及预览 harness
+- 输入：`self, runner, service, directory`。
+- 输出：`未注解；None`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L103)。
+
+### `eval/l2l3/model_ab.py::CapturingRunner.available`
+
+- 功能：委托 `self.runner.available` 执行；边界与失败由被调用方契约承担
+- 输入：`self`。
+- 输出：`未注解；self.runner.available()`。
+- 作用：调用 self.runner.available。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L106)。
+
+### `eval/l2l3/model_ab.py::CapturingRunner.verify_channel`
+
+- 功能：委托 `self.runner.verify_channel` 执行；边界与失败由被调用方契约承担
+- 输入：`self`。
+- 输出：`未注解；self.runner.verify_channel()`。
+- 作用：调用 self.runner.verify_channel。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L109)。
+
+### `eval/l2l3/model_ab.py::CapturingRunner.run_agent`
+
+- 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
+- 输入：`self, name, payload`。
+- 输出：`未注解；self.runner.run_agent(name, payload)`。
+- 作用：调用 freeze_case, self.runner.run_agent。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L112)。
+
+### `eval/l2l3/model_ab.py::CapturingRunner.close`
+
+- 功能：委托 `self.runner.close` 执行；边界与失败由被调用方契约承担
+- 输入：`self`。
+- 输出：`未注解；self.runner.close()`。
+- 作用：调用 self.runner.close。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L116)。
+
+### `eval/l2l3/model_ab.py::CapturingRunner.__call__`
+
+- 功能：委托 `self.run_agent` 执行；边界与失败由被调用方契约承担
+- 输入：`self, name, payload`。
+- 输出：`未注解；self.run_agent(name, payload)`。
+- 作用：调用 self.run_agent。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L119)。
+
+### `eval/l2l3/model_ab.py::load_cases`
+
+- 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
+- 输入：`paths: list[str]`。
+- 输出：`list[dict]；cases`。
+- 作用：调用 Path, ValueError, _hash, case.pop, cases.append, file.read_text, json.loads, len, path.glob, path.is_dir, sorted。
+- 错误：异常 ValueError('empty or duplicate frozen cases'), ValueError('frozen case hash mismatch'), ValueError('unsupported frozen case')。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L123)。
+
+### `eval/l2l3/model_ab.py::FrozenLog`
+
+- 功能：定义 FrozenLog 的数据或接口类型，承载离线 mock、HTTP 驱动及预览 harness；构造字段及继承输出在本项完整登记
+- 输入：`见显式或继承的 __init__；无新增字段`。
+- 输出：`类型/实例；基类 object`。
+- 作用：字段与方法契约；dataclass 自动生成的方法不另建手写符号。
+- 错误：见构造函数及方法。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L142)。
+
+### `eval/l2l3/model_ab.py::FrozenLog.__init__`
+
+- 功能：用给定参数与依赖初始化 FrozenLog，建立其对象状态；业务归属为离线 mock、HTTP 驱动及预览 harness
+- 输入：`self, window`。
+- 输出：`未注解；None`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L143)。
+
+### `eval/l2l3/model_ab.py::FrozenLog.get`
+
+- 功能：委托 `self.units.get` 执行；边界与失败由被调用方契约承担
+- 输入：`self, uid`。
+- 输出：`未注解；self.units.get(uid)`。
+- 作用：调用 self.units.get。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L146)。
+
+### `eval/l2l3/model_ab.py::FrozenLog.exists`
+
+- 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
+- 输入：`self, ids, before=None`。
+- 输出：`未注解；[uid for uid in ids if uid in self.units and (before is None or self.units[uid]['t'] < before)]`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L149)。
+
+### `eval/l2l3/model_ab.py::validate_reply`
+
+- 功能：生产校验离线复用
+- 输入：`frozen case、parsed reply`。
+- 输出：`角色预检与 grounded/coverage/density/normalized`。
+- 作用：无写权 FrozenLog/Frozen service 复用 hauler/selector/reviewer.validate 和 validate_proposal；Selector 候选保持固定；空候选 grounding=None。
+- 错误：非法来源/目标/作用域拒绝；source_coverage 不是事实覆盖率；Hauler 结构通过不代表候选接地。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：按本项目标契约实施；[源码](../eval/l2l3/model_ab.py#L153)。
+
+### `eval/l2l3/model_ab.py::_request`
+
+- 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
+- 输入：`url, key, body, timeout`。
+- 输出：`未注解；box['response']`。
+- 作用：调用 Request, TimeoutError, json.dumps, json.dumps(body, ensure_ascii=False).encode, thread.is_alive, thread.join, thread.start, threading.Thread。
+- 错误：异常 TimeoutError('model request wall-clock limit exceeded'), box['error']。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L186)。
+
+### `eval/l2l3/model_ab.py::_request.send`
+
+- 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 closing, json.loads, response.read, urlopen。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L190)。
+
+### `eval/l2l3/model_ab.py::_cost`
+
+- 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
+- 输入：`usage, rates`。
+- 输出：`未注解；(miss * rates['input'] + hit * (rates.get('cached_input') or 0) + usage['completion_tokens'] * rates['output']) / 1000000；None`。
+- 作用：调用 (usage.get('prompt_tokens_details') or {}).get, rates.get, type, usage.get。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L206)。
+
+### `eval/l2l3/model_ab.py::call_case`
+
+- 功能：固定档位单样本测量
+- 输入：`case/provider/key、attempt cap/timeout/rates`。
+- 输出：`逐尝试记录、完整墙钟、usage、JSON 响应与校验`。
+- 作用：GLM-5.3-Flash 显式 max，DeepSeek V4.1 Flash API deepseek-flash 显式 high；同 prompt/payload；失败回复的已知 usage 也计费；缺数标 None。
+- 错误：鉴权失败及墙钟超时不内重试；socket 和墙钟预算同参数，不暗设 120s 次级截止；拒收产物和原因脱敏留证；非流式 TTFT 不伪造；effort_requested 不冒称 provider 已证明执行；费用为输入单价的 usage 估算。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：按本项目标契约实施；[源码](../eval/l2l3/model_ab.py#L218)。
+
+### `eval/l2l3/model_ab.py::call_case.total`
+
+- 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
+- 输入：`field`。
+- 输出：`未注解；sum((u[field] for u in usages)) if all((type(u.get(field)) is int for u in usages)) else None`。
+- 作用：调用 all, sum, type, u.get。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L259)。
+
+### `eval/l2l3/model_ab.py::call_case.detail`
+
+- 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
+- 输入：`field, parent`。
+- 输出：`未注解；sum(values) if all((type(v) is int for v in values)) else None`。
+- 作用：调用 (u.get(parent) or {}).get, all, sum, type, u.get。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L261)。
+
+### `eval/l2l3/model_ab.py::MeasuredRunner`
+
+- 功能：小型真实链固定模型运行器
+- 输入：`service、provider、case directory`。
+- 输出：`DispatchWorker callable 角色 JSON`。
+- 作用：仅 eval serve_inline 装配；冻结实际载荷后 call_case、落 usage，再交生产 worker 守卫和效果；embedding/语义服务保留 GLM/Zhipu。
+- 错误：失败外抛由持久任务机重试；不修改生产 OpenCode 默认配置。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：按本项目标契约实施；[源码](../eval/l2l3/model_ab.py#L281)。
+
+### `eval/l2l3/model_ab.py::MeasuredRunner.__init__`
+
+- 功能：用给定参数与依赖初始化 MeasuredRunner，建立其对象状态；业务归属为离线 mock、HTTP 驱动及预览 harness
+- 输入：`self, service, provider, directory`。
+- 输出：`未注解；None`。
+- 作用：调用 load_key。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L282)。
+
+### `eval/l2l3/model_ab.py::MeasuredRunner.available`
+
+- 功能：委托 `bool` 执行；边界与失败由被调用方契约承担
+- 输入：`self`。
+- 输出：`未注解；bool(self.key)`。
+- 作用：调用 bool。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L286)。
+
+### `eval/l2l3/model_ab.py::MeasuredRunner.verify_channel`
+
+- 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
+- 输入：`self`。
+- 输出：`未注解；True`。
+- 作用：调用 RuntimeError, _agent_prompt, all。
+- 错误：异常 RuntimeError('agent prompt missing'), RuntimeError('missing ' + PROVIDERS[self.provider]['key_env'])。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L289)。
+
+### `eval/l2l3/model_ab.py::MeasuredRunner.run_agent`
+
+- 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
+- 输入：`self, name, payload`。
+- 输出：`未注解；record['response']`。
+- 作用：调用 Path, RuntimeError, call_case, f.write, freeze_case, json.dumps, load_cases, open。
+- 错误：异常 RuntimeError('evaluation model call failed: ' + record['attempts'][-1]['error_type'])。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L296)。
+
+### `eval/l2l3/model_ab.py::MeasuredRunner.__call__`
+
+- 功能：委托 `self.run_agent` 执行；边界与失败由被调用方契约承担
+- 输入：`self, name, payload`。
+- 输出：`未注解；self.run_agent(name, payload)`。
+- 作用：调用 self.run_agent。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L306)。
+
+### `eval/l2l3/model_ab.py::MeasuredRunner.close`
+
+- 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
+- 输入：`self`。
+- 输出：`未注解；None`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L309)。
+
+### `eval/l2l3/model_ab.py::summarize`
+
+- 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
+- 输入：`records`。
+- 输出：`未注解；{'roles': roles, 'decision': 'awaiting_blind_review_and_real_chain', 'required_roles_present': set(roles) == {'hauler', 'selector', 'reviewer'}, 'limits': ['grounding is not semantic entailment', 'source coverage is not fact recall', 'Selector disposition and Reviewer diagnosis require blind review', 'requested effort is explicit; provider execution effort cannot be inferred from usage', 'inline comparison does not verify OpenCode provider compatibility or task leases']}`。
+- 作用：调用 (r['validation'] or {}).get, all, len, max, set, sum。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L313)。
+
+### `eval/l2l3/model_ab.py::run_ab`
+
+- 功能：冻结载荷成对实验
+- 输入：`case paths、空输出目录、重复次数/尝试/timeout/rates`。
+- 输出：`records.jsonl、blind.jsonl/key、summary.json`。
+- 作用：双 key 前置检查；成对交替先后；逐调用落盘；三角色各自统计；保留盲评和真实链待验证状态，无生产切换。
+- 错误：篡改摘要/重复样本/缺凭据/非空目录/无界实验参数拒绝；部分成功不外推三角色。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：按本项目标契约实施；[源码](../eval/l2l3/model_ab.py#L341)。
+
+### `eval/l2l3/model_ab.py::settle`
+
+- 功能：三角色盲评严格结算
+- 输入：`filled_path、A/B run_dir`。
+- 输出：`reviewed-summary.json 与阈值结论`。
+- 作用：ID 完整唯一，映射匹配 case/provider/role，角色专属必填题不能 na；逐角色比质量不退和墙钟 ≤50%，Hauler 接地 ≥95%；三角色缺测不通过。
+- 错误：最多给进入真实小链资格，不授权生产切换；样本比例不是总体统计置信保证。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：按本项目标契约实施；[源码](../eval/l2l3/model_ab.py#L388)。
+
+### `eval/l2l3/model_ab.py::main`
+
+- 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 ap.add_argument, ap.error, ap.parse_args, argparse.ArgumentParser, getattr, json.dumps, print, run_ab, settle。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`eval/l2l3/model_ab.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/model_ab.py#L441)。
 
 ## `eval/l2l3/run_audit_chain.py`
 
@@ -918,7 +1243,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`eval/l2l3/run_audit_chain.py`（当前路径）。
 - 模块输入：端口、项目目录、mock 端点与模式参数。
 - 模块输出：离线驱动/预览/harness 诊断输出；不修改判分真值。
-- 源校验：`48e667105434f8d38fd881d4f5ffffe19fcb3fa59b23040aae700d218581f548`。
+- 源校验：`f80eaa5400dbaff86ab80008c0b361b43ceb6980db70861f619dc506c33c7191`。
 - 模块级常量：`_REPO`（未登记）；`_EVAL`（未登记）。
 
 ### `eval/l2l3/run_audit_chain.py::_iter_turns`
@@ -928,25 +1253,34 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；生成器/上下文管理器`。
 - 作用：调用 corpus.get。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`eval/l2l3/run_audit_chain.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/run_audit_chain.py#L24)。
+- 目标：`eval/l2l3/run_audit_chain.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/run_audit_chain.py#L25)。
+
+### `eval/l2l3/run_audit_chain.py::_probe_record`
+
+- 功能：探针分层诊断
+- 输入：`probe、barrier、当时 checkpoint、历史可见值、相关 unit IDs、HTTP 响应`。
+- 输出：`pipeline/retrieval 状态、eligible、原分数及证据`。
+- 作用：缺 gold 且相关任务死信=write_failed；无记忆=not_distilled；存在但未召回=miss；F 必须证明 harmful 曾可见；保留完整 context，不注入 gold。
+- 错误：未排空/HTTP 错误/空池平凡卫生分不得进入有效均值；浅层匹配不证明语义正确。
+- 目标：`eval/l2l3/run_audit_chain.py`；处置：迁移修复；变更：按本项目标契约实施；[源码](../eval/l2l3/run_audit_chain.py#L37)。
 
 ### `eval/l2l3/run_audit_chain.py::run_chain`
 
-- 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
-- 输入：`corpus: dict, project: str, out_dir: str, *, env_extra: dict | None=None, drain_timeout: float=1800.0, with_probes: bool=True, budget: int=128, resume: bool=False`。
-- 输出：`dict；run`。
-- 作用：调用 (out / 'run.json').write_text, (out / 'sidecar_tail.log').write_text, (project_p / '.opencode' / 'memory' / 'tasks.sqlite').exists, Path, RuntimeError, Sidecar, Sidecar(_REPO, str(project_p), env=env_extra, module=module).start, _iter_turns, _saved_env.items, _served_text, any, by_t.get, by_t.setdefault, by_t.setdefault(p['t'], []).append, corpus.get, dict, env_extra.pop, export_run, json.dumps, json.loads, json.loads(previous.read_text(encoding='utf-8')).get, len, module.endswith, os.environ.pop, os.environ.update, out.mkdir, previous.exists, previous.read_text, probe_records.append, project_p.exists, project_p.iterdir, project_p.mkdir, rec.update, round, sc.close, sc.drain, sc.observe, sc.search, score_context, str, sum, time.time。
-- 错误：异常 RuntimeError(f'project 目录非空：{project}（每链一次干净运行；续跑用 --resume）'), RuntimeError(f'resume 需要既有项目目录：{project}')。
-- 目标：`eval/l2l3/run_audit_chain.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/run_audit_chain.py#L36)。
+- 功能：因果屏障跑链
+- 输入：`corpus/project/out_dir、timeout/quiet_s/probes/resume`。
+- 输出：`run.json、barriers、probe_records、离线 export`。
+- 作用：保留 probe.t=喂 t 前；每轮 observe 后排空持久任务和 L0 工作，再发下一边界探针；包含终点探针；屏障失败停喂，进度落盘；resume 只排空不倒放。
+- 错误：非空输出目录拒绝覆盖；不改冻结判分器，不把死信排空等同成功写入。
+- 目标：`eval/l2l3/run_audit_chain.py`；处置：迁移修复；变更：按本项目标契约实施；[源码](../eval/l2l3/run_audit_chain.py#L74)。
 
 ### `eval/l2l3/run_audit_chain.py::main`
 
 - 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
 - 输入：`无参数`。
 - 输出：`None；None`。
-- 作用：调用 Path, Path(args.corpus).read_text, ap.add_argument, ap.parse_args, argparse.ArgumentParser, corpus.get, json.dumps, json.loads, os.environ.get, print, run_chain, set。
+- 作用：调用 Path, Path(args.capture_dir).resolve, Path(args.corpus).read_text, ap.add_argument, ap.parse_args, argparse.ArgumentParser, corpus.get, json.dumps, json.loads, os.environ.get, print, run_chain, set, str。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`eval/l2l3/run_audit_chain.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/run_audit_chain.py#L133)。
+- 目标：`eval/l2l3/run_audit_chain.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/run_audit_chain.py#L206)。
 
 ## `eval/l2l3/selftest.py`
 
@@ -955,7 +1289,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`eval/l2l3/selftest.py`（当前路径）。
 - 模块输入：端口、项目目录、mock 端点与模式参数。
 - 模块输出：离线驱动/预览/harness 诊断输出；不修改判分真值。
-- 源校验：`da049cd6e3f24427027ad5336e47965542a515e02b4f8c626ba9191da5680b74`。
+- 源校验：`29ca427fd37af47aae9d50a7a7406ae61c0eb547d1f63f9f024f402c744e7a70`。
 - 模块级常量：`_REPO`（未登记）；`_EVAL`（未登记）；`FAKE_CLI`（未登记）。
 
 ### `eval/l2l3/selftest.py::_free_port`
@@ -981,7 +1315,7 @@ vendored `mvp/agent/` 完全排除。
 - 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
 - 输入：`无参数`。
 - 输出：`None；None`。
-- 作用：调用 (cli_dir / 'opencode.cmd').write_text, (tmp / 'runs' / 'l2' / 'export.json').read_text, (tmp / 'worksheet.jsonl').read_text, (tmp / 'worksheet.jsonl').read_text(encoding='utf-8').splitlines, Path, _free_port, _wait_mock, aggregate, all, build_l2, build_worksheet, cli.chmod, cli.stat, cli.write_text, cli_dir.mkdir, corpus_path.write_text, f.write, json.dumps, json.loads, len, mock.kill, mock.terminate, mock.wait, open, os.environ.get, print, run['drain'].get, run_chain, set, str, subprocess.Popen, sum, tempfile.mkdtemp。
+- 作用：调用 (cli_dir / 'opencode.cmd').write_text, (tmp / 'runs' / 'l2' / 'export.json').read_text, (tmp / 'worksheet.jsonl').read_text, (tmp / 'worksheet.jsonl').read_text(encoding='utf-8').splitlines, Path, _free_port, _wait_mock, aggregate, all, any, ap.add_argument, ap.parse_args, argparse.ArgumentParser, build_l2, build_worksheet, cli.chmod, cli.stat, cli.write_text, cli_dir.mkdir, corpus_path.write_text, f.write, json.dumps, json.loads, len, mock.kill, mock.terminate, mock.wait, open, os.environ.get, print, retrieval_smoke, run['drain'].get, run_chain, set, str, subprocess.Popen, sum, tempfile.mkdtemp。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
 - 目标：`eval/l2l3/selftest.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/selftest.py#L86)。
 
@@ -992,7 +1326,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`eval/l2l3/serve_inline.py`（当前路径）。
 - 模块输入：端口、项目目录、mock 端点与模式参数。
 - 模块输出：离线驱动/预览/harness 诊断输出；不修改判分真值。
-- 源校验：`8372fab45dfb1695ad95c760a62a8d0ef74048d8b42a024524a1f46b298cbd26`。
+- 源校验：`49ffafbe5532cc2931f9defc55a801476bcad421412777daebf5b8fbd4a3f204`。
 - 模块级常量：`_REPO`（未登记）。
 
 ### `eval/l2l3/serve_inline.py::main`
@@ -1000,8 +1334,8 @@ vendored `mvp/agent/` 完全排除。
 - 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
 - 输入：`无参数`。
 - 输出：`None；None`。
-- 作用：调用 DispatchWorker, Fatal, InlineAgentRunner, Path, Path(args.project).resolve, _signal.signal, ap.add_argument, ap.parse_args, argparse.ArgumentParser, build_default_service, httpd.serve_forever, httpd.server_close, len, os.environ.get, os.getpid, print, resolve_pipeline, serve, service.attach_dispatch, service.health_view, service.log.count, service.save, service.start_unit_recovery, service.stop_unit_recovery, str, trio.start, trio.stop。
-- 错误：异常 Fatal(str(exc))。
+- 作用：调用 CapturingRunner, DispatchWorker, Fatal, InlineAgentRunner, MeasuredRunner, Path, Path(args.project).resolve, ValueError, _signal.signal, ap.add_argument, ap.parse_args, argparse.ArgumentParser, build_default_service, httpd.serve_forever, httpd.server_close, len, os.environ.get, os.getpid, print, resolve_pipeline, runner.verify_channel, serve, service.attach_dispatch, service.health_view, service.log.count, service.save, service.start_unit_recovery, service.stop_unit_recovery, str, trio.start, trio.stop。
+- 错误：异常 Fatal(str(exc)), ValueError('experiment provider requires capture directory')。
 - 目标：`eval/l2l3/serve_inline.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/serve_inline.py#L21)。
 
 ### `eval/l2l3/serve_inline.py::main._term`
@@ -1011,7 +1345,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 SystemExit。
 - 错误：异常 SystemExit(0)。
-- 目标：`eval/l2l3/serve_inline.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/serve_inline.py#L58)。
+- 目标：`eval/l2l3/serve_inline.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/serve_inline.py#L70)。
 
 ## `eval/l2l3/sidecar.py`
 
@@ -1020,7 +1354,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`eval/l2l3/sidecar.py`（当前路径）。
 - 模块输入：端口、项目目录、mock 端点与模式参数。
 - 模块输出：离线驱动/预览/harness 诊断输出；不修改判分真值。
-- 源校验：`f89cc4d5de2a776f5cab687b04f85652b2127a833511a6053b5714eae29e7a4f`。
+- 源校验：`715a899a685a3eef551901cf782c063a541f369449b35a22591ebff089b27b8c`。
 - 模块级常量：`_INACTIVE_STATES`（未登记）。
 
 ### `eval/l2l3/sidecar.py::Sidecar`
@@ -1135,8 +1469,8 @@ vendored `mvp/agent/` 完全排除。
 
 - 功能：离线 mock、HTTP 驱动及预览 harness 的具名操作；流程见作用行，输入输出见本项签名与返回
 - 输入：`self`。
-- 输出：`dict；{'active': active, 'queued': queued}`。
-- 作用：调用 (sig.get('queued') or {}).items, counts.items, dict, self.signals, sig.get。
+- 输出：`dict；{'active': active, 'queued': queued, 'units_pending': (sig.get('units') or {}).get('pending', 0), 'checkpoint_fault': bool(sig.get('checkpoint_fault'))}`。
+- 作用：调用 (sig.get('queued') or {}).items, (sig.get('units') or {}).get, bool, counts.items, dict, self.signals, sig.get。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
 - 目标：`eval/l2l3/sidecar.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/sidecar.py#L167)。
 
@@ -1145,9 +1479,9 @@ vendored `mvp/agent/` 完全排除。
 - 功能：等任务机排空：无 active 态且队列计数全 0，且连续 quiet_s 秒保持。
 - 输入：`self, timeout: float=1800.0, quiet_s: float=20.0`。
 - 输出：`dict；{'drained': False, **last}；{'drained': True, **last}`。
-- 作用：调用 self.active_tasks, time.sleep, time.time。
+- 作用：调用 max, min, self.active_tasks, time.monotonic, time.sleep。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`eval/l2l3/sidecar.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/sidecar.py#L175)。
+- 目标：`eval/l2l3/sidecar.py`；处置：迁移修复；变更：保留当前签名与 IO；[源码](../eval/l2l3/sidecar.py#L177)。
 
 ## `eval/mock_llm.py`
 
@@ -14463,7 +14797,7 @@ vendored `mvp/agent/` 完全排除。
 - 目标路径：`tests/unit/test_l2l3_audit.py`（当前路径）。
 - 模块输入：被测对象与 pytest 夹具。
 - 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
-- 源校验：`8a2bafae4d129f47b69a3e58828d52a305d629b50cbea58e9c11cb8f594997ca`。
+- 源校验：`43db566d21f12bc77682759024a209e230b97c8c059f9be5dfc4ca52223f5c10`。
 
 ### `tests/unit/test_l2l3_audit.py::_run`
 
@@ -14636,6 +14970,204 @@ vendored `mvp/agent/` 完全排除。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
 - 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L181)。
 
+### `tests/unit/test_l2l3_audit.py::test_probe_barrier_preserves_pre_ingest_gold_and_terminal_boundary`
+
+- 功能：行为断言：probe_barrier_preserves_pre_ingest_gold_and_terminal_boundary；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path, monkeypatch`。
+- 输出：`未注解；None`。
+- 作用：调用 all, len, monkeypatch.setattr, run_audit_chain.run_chain, str。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L199)。
+
+### `tests/unit/test_l2l3_audit.py::test_probe_barrier_preserves_pre_ingest_gold_and_terminal_boundary.Stub`
+
+- 功能：测试场景/夹具/假实现：test_probe_barrier_preserves_pre_ingest_gold_and_terminal_boundary.Stub；输入输出见本项，生产不调用
+- 输入：`见显式或继承的 __init__；无新增字段`。
+- 输出：`类型/实例；基类 object`。
+- 作用：字段与方法契约；dataclass 自动生成的方法不另建手写符号。
+- 错误：见构造函数及方法。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L201)。
+
+### `tests/unit/test_l2l3_audit.py::test_probe_barrier_preserves_pre_ingest_gold_and_terminal_boundary.Stub.__init__`
+
+- 功能：测试场景/夹具/假实现：test_probe_barrier_preserves_pre_ingest_gold_and_terminal_boundary.Stub.__init__；输入输出见本项，生产不调用
+- 输入：`self, *a, **kw`。
+- 输出：`未注解；None`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L202)。
+
+### `tests/unit/test_l2l3_audit.py::test_probe_barrier_preserves_pre_ingest_gold_and_terminal_boundary.Stub.start`
+
+- 功能：测试场景/夹具/假实现：test_probe_barrier_preserves_pre_ingest_gold_and_terminal_boundary.Stub.start；输入输出见本项，生产不调用
+- 输入：`self`。
+- 输出：`未注解；self`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L203)。
+
+### `tests/unit/test_l2l3_audit.py::test_probe_barrier_preserves_pre_ingest_gold_and_terminal_boundary.Stub.observe`
+
+- 功能：测试场景/夹具/假实现：test_probe_barrier_preserves_pre_ingest_gold_and_terminal_boundary.Stub.observe；输入输出见本项，生产不调用
+- 输入：`self, user, assistant, request_id`。
+- 输出：`未注解；(200, {'unit_id': len(events)})`。
+- 作用：调用 events.append, len。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L204)。
+
+### `tests/unit/test_l2l3_audit.py::test_probe_barrier_preserves_pre_ingest_gold_and_terminal_boundary.Stub.drain`
+
+- 功能：测试场景/夹具/假实现：test_probe_barrier_preserves_pre_ingest_gold_and_terminal_boundary.Stub.drain；输入输出见本项，生产不调用
+- 输入：`self, **kw`。
+- 输出：`未注解；{'drained': True}`。
+- 作用：调用 events.append。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L207)。
+
+### `tests/unit/test_l2l3_audit.py::test_probe_barrier_preserves_pre_ingest_gold_and_terminal_boundary.Stub.search`
+
+- 功能：测试场景/夹具/假实现：test_probe_barrier_preserves_pre_ingest_gold_and_terminal_boundary.Stub.search；输入输出见本项，生产不调用
+- 输入：`self, query, **kw`。
+- 输出：`未注解；(200, {'context': 'old-1234' if query == 'before-update' else 'new-5678', 'n': 1})`。
+- 作用：调用 events.append。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L210)。
+
+### `tests/unit/test_l2l3_audit.py::test_probe_barrier_preserves_pre_ingest_gold_and_terminal_boundary.Stub.close`
+
+- 功能：测试场景/夹具/假实现：test_probe_barrier_preserves_pre_ingest_gold_and_terminal_boundary.Stub.close；输入输出见本项，生产不调用
+- 输入：`self`。
+- 输出：`未注解；''`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L213)。
+
+### `tests/unit/test_l2l3_audit.py::test_probe_timeout_stops_future_feeding`
+
+- 功能：行为断言：probe_timeout_stops_future_feeding；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path, monkeypatch`。
+- 输出：`未注解；None`。
+- 作用：调用 monkeypatch.setattr, run_audit_chain.run_chain, str。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L231)。
+
+### `tests/unit/test_l2l3_audit.py::test_probe_timeout_stops_future_feeding.Stub`
+
+- 功能：测试场景/夹具/假实现：test_probe_timeout_stops_future_feeding.Stub；输入输出见本项，生产不调用
+- 输入：`见显式或继承的 __init__；无新增字段`。
+- 输出：`类型/实例；基类 object`。
+- 作用：字段与方法契约；dataclass 自动生成的方法不另建手写符号。
+- 错误：见构造函数及方法。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L233)。
+
+### `tests/unit/test_l2l3_audit.py::test_probe_timeout_stops_future_feeding.Stub.__init__`
+
+- 功能：测试场景/夹具/假实现：test_probe_timeout_stops_future_feeding.Stub.__init__；输入输出见本项，生产不调用
+- 输入：`self, *a, **kw`。
+- 输出：`未注解；None`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L234)。
+
+### `tests/unit/test_l2l3_audit.py::test_probe_timeout_stops_future_feeding.Stub.start`
+
+- 功能：测试场景/夹具/假实现：test_probe_timeout_stops_future_feeding.Stub.start；输入输出见本项，生产不调用
+- 输入：`self`。
+- 输出：`未注解；self`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L235)。
+
+### `tests/unit/test_l2l3_audit.py::test_probe_timeout_stops_future_feeding.Stub.observe`
+
+- 功能：测试场景/夹具/假实现：test_probe_timeout_stops_future_feeding.Stub.observe；输入输出见本项，生产不调用
+- 输入：`self, user, assistant, request_id`。
+- 输出：`未注解；(200, {'unit_id': 0})`。
+- 作用：调用 fed.append。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L236)。
+
+### `tests/unit/test_l2l3_audit.py::test_probe_timeout_stops_future_feeding.Stub.drain`
+
+- 功能：测试场景/夹具/假实现：test_probe_timeout_stops_future_feeding.Stub.drain；输入输出见本项，生产不调用
+- 输入：`self, **kw`。
+- 输出：`未注解；{'drained': False, 'active': {'running': 1}}`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L239)。
+
+### `tests/unit/test_l2l3_audit.py::test_probe_timeout_stops_future_feeding.Stub.search`
+
+- 功能：测试场景/夹具/假实现：test_probe_timeout_stops_future_feeding.Stub.search；输入输出见本项，生产不调用
+- 输入：`self, *a, **kw`。
+- 输出：`未注解；None`。
+- 作用：调用 pytest.fail。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L240)。
+
+### `tests/unit/test_l2l3_audit.py::test_probe_timeout_stops_future_feeding.Stub.close`
+
+- 功能：测试场景/夹具/假实现：test_probe_timeout_stops_future_feeding.Stub.close；输入输出见本项，生产不调用
+- 输入：`self`。
+- 输出：`未注解；''`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L241)。
+
+### `tests/unit/test_l2l3_audit.py::test_probe_diagnostics`
+
+- 功能：行为断言：probe_diagnostics；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`mems, tasks, seen, ctx, gold, harmful, pipeline, retrieval, eligible`。
+- 输出：`未注解；None`。
+- 作用：调用 pytest.mark.parametrize, run_audit_chain._probe_record, set。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L265)。
+
+### `tests/unit/test_l2l3_audit.py::test_drain_waits_for_pending_l0_and_treats_skipped_as_terminal`
+
+- 功能：行为断言：drain_waits_for_pending_l0_and_treats_skipped_as_terminal；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`monkeypatch`。
+- 输出：`未注解；None`。
+- 作用：调用 monkeypatch.setattr, sc.active_tasks, sc.drain, sidecar.Sidecar。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L274)。
+
+### `tests/unit/test_l2l3_audit.py::test_live_probe_snapshot_does_not_change_database`
+
+- 功能：行为断言：live_probe_snapshot_does_not_change_database；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _svc, export.read_snapshot, str, svc.log.close, svc.observe, svc.propose, svc.tasks.checkpoint, svc.tasks.close。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L281)。
+
+### `tests/unit/test_l2l3_audit.py::test_retrieval_smoke_has_positive_precondition_and_non_configuration_probes`
+
+- 功能：行为断言：retrieval_smoke_has_positive_precondition_and_non_configuration_probes；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 any, gen_l2.retrieval_smoke, next。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L296)。
+
+### `tests/unit/test_l2l3_audit.py::test_passive_probe_does_not_append_log_or_mutate_memory_checkpoint`
+
+- 功能：行为断言：passive_probe_does_not_append_log_or_mutate_memory_checkpoint；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _svc, svc._dump_state, svc.log.close, svc.log.count, svc.observe, svc.propose, svc.recall, svc.tasks.checkpoint, svc.tasks.close, svc.tasks.stats。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L304)。
+
+### `tests/unit/test_l2l3_audit.py::test_probe_summary_excludes_vacuous_scores_but_keeps_raw_evidence`
+
+- 功能：行为断言：probe_summary_excludes_vacuous_scores_but_keeps_raw_evidence；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`无参数`。
+- 输出：`未注解；None`。
+- 作用：调用 audit._probe_summary。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L325)。
+
 ### `tests/unit/test_l2l3_audit.py::test_silent_sidecar_boot_timeout_is_bounded`
 
 - 功能：行为断言：silent_sidecar_boot_timeout_is_bounded；成功正常返回，违约抛 AssertionError/pytest 失败
@@ -14643,7 +15175,7 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 isinstance, monkeypatch.setattr, sc.close, sidecar.Sidecar, str, thread.is_alive, thread.join, thread.start, threading.Thread。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L199)。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L334)。
 
 ### `tests/unit/test_l2l3_audit.py::test_silent_sidecar_boot_timeout_is_bounded.start`
 
@@ -14652,7 +15184,187 @@ vendored `mvp/agent/` 完全排除。
 - 输出：`未注解；None`。
 - 作用：调用 errors.append, sc.start。
 - 错误：异常 无显式 raise；被调用方错误仍可传播。
-- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L210)。
+- 目标：`tests/unit/test_l2l3_audit.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_l2l3_audit.py#L345)。
+
+## `tests/unit/test_model_ab.py`
+
+- 模块功能：行为、恢复、权限及协议回归；不得按产品死代码删除。
+- 设计归属：验收资产；处置：保留迁移。
+- 目标路径：`tests/unit/test_model_ab.py`（当前路径）。
+- 模块输入：被测对象与 pytest 夹具。
+- 模块输出：通过/失败断言与恢复、权限、协议证据；验收资产，删除须有替代断言。
+- 源校验：`fd744cfce380286006c7d179e022c05473265afa64fb2c15671a6ad0f2054722`。
+
+### `tests/unit/test_model_ab.py::_case`
+
+- 功能：测试场景/夹具/假实现：_case；输入输出见本项，生产不调用
+- 输入：`tmp_path, role='hauler'`。
+- 输出：`未注解；model_ab.freeze_case(role, payload, svc, str(tmp_path))`。
+- 作用：调用 _svc, build_payload, model_ab.freeze_case, str, svc.log.close, svc.observe, svc.tasks.close, svc.tasks.enqueue, svc.tasks.get。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L12)。
+
+### `tests/unit/test_model_ab.py::test_freeze_keeps_exact_payload_prompt_and_integrity`
+
+- 功能：行为断言：freeze_keeps_exact_payload_prompt_and_integrity；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 Path, Path(path).write_text, _case, json.dumps, model_ab._agent_prompt, model_ab.load_cases, pytest.raises。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L29)。
+
+### `tests/unit/test_model_ab.py::test_three_roles_use_production_validators`
+
+- 功能：行为断言：three_roles_use_production_validators；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path, role, reply`。
+- 输出：`未注解；None`。
+- 作用：调用 _case, model_ab.load_cases, model_ab.validate_reply, pytest.mark.parametrize, pytest.raises。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L45)。
+
+### `tests/unit/test_model_ab.py::test_grounding_and_source_coverage_do_not_reward_empty_output`
+
+- 功能：行为断言：grounding_and_source_coverage_do_not_reward_empty_output；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 _case, model_ab.load_cases, model_ab.validate_reply。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L57)。
+
+### `tests/unit/test_model_ab.py::test_deepseek_high_request_does_not_change_glm_or_payload`
+
+- 功能：行为断言：deepseek_high_request_does_not_change_glm_or_payload；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path, monkeypatch`。
+- 输出：`未注解；None`。
+- 作用：调用 _case, model_ab.call_case, model_ab.load_cases, monkeypatch.setattr。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L67)。
+
+### `tests/unit/test_model_ab.py::test_deepseek_high_request_does_not_change_glm_or_payload.request`
+
+- 功能：测试场景/夹具/假实现：test_deepseek_high_request_does_not_change_glm_or_payload.request；输入输出见本项，生产不调用
+- 输入：`url, key, body, timeout`。
+- 输出：`未注解；{'model': body['model'], 'choices': [{'message': {'content': '{"candidates": []}'}}], 'usage': {'prompt_tokens': 100, 'completion_tokens': 20, 'prompt_cache_hit_tokens': 60, 'prompt_cache_miss_tokens': 40, 'completion_tokens_details': {'reasoning_tokens': 10}}}`。
+- 作用：调用 seen.append。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L70)。
+
+### `tests/unit/test_model_ab.py::test_retry_usage_and_cost_include_failed_protocol_response`
+
+- 功能：行为断言：retry_usage_and_cost_include_failed_protocol_response；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path, monkeypatch`。
+- 输出：`未注解；None`。
+- 作用：调用 _case, model_ab.call_case, model_ab.load_cases, monkeypatch.setattr, pytest.approx。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L88)。
+
+### `tests/unit/test_model_ab.py::test_request_socket_uses_the_configured_wall_budget`
+
+- 功能：行为断言：request_socket_uses_the_configured_wall_budget；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`monkeypatch`。
+- 输出：`未注解；None`。
+- 作用：调用 model_ab._request, monkeypatch.setattr。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L102)。
+
+### `tests/unit/test_model_ab.py::test_request_socket_uses_the_configured_wall_budget.open_response`
+
+- 功能：测试场景/夹具/假实现：test_request_socket_uses_the_configured_wall_budget.open_response；输入输出见本项，生产不调用
+- 输入：`request, timeout`。
+- 输出：`未注解；SimpleNamespace(read=lambda: b'{}', close=lambda: None)`。
+- 作用：调用 SimpleNamespace, observed.append。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L105)。
+
+### `tests/unit/test_model_ab.py::test_rejected_response_keeps_redacted_validation_diagnostics`
+
+- 功能：行为断言：rejected_response_keeps_redacted_validation_diagnostics；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path, monkeypatch`。
+- 输出：`未注解；None`。
+- 作用：调用 _case, json.dumps, model_ab.call_case, model_ab.load_cases, monkeypatch.setattr。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L113)。
+
+### `tests/unit/test_model_ab.py::test_missing_key_preflight_does_not_call_either_model`
+
+- 功能：行为断言：missing_key_preflight_does_not_call_either_model；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path, monkeypatch`。
+- 输出：`未注解；None`。
+- 作用：调用 _case, model_ab.run_ab, monkeypatch.delenv, monkeypatch.setattr, pytest.raises, str。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L126)。
+
+### `tests/unit/test_model_ab.py::test_blind_output_hides_provider_and_quality_gate_stays_pending`
+
+- 功能：行为断言：blind_output_hides_provider_and_quality_gate_stays_pending；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path, monkeypatch`。
+- 输出：`未注解；None`。
+- 作用：调用 (tmp_path / 'out' / 'blind.jsonl').read_text, _case, len, model_ab.run_ab, monkeypatch.setattr, monkeypatch.setenv, str, worksheet.splitlines。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L136)。
+
+### `tests/unit/test_model_ab.py::test_deepseek_reads_repo_dotenv_without_exposing_or_changing_glm`
+
+- 功能：行为断言：deepseek_reads_repo_dotenv_without_exposing_or_changing_glm；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path, monkeypatch`。
+- 输出：`未注解；None`。
+- 作用：调用 (tmp_path / '.env').write_text, model_ab.load_key, monkeypatch.delenv, monkeypatch.setattr, monkeypatch.setenv。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L150)。
+
+### `tests/unit/test_model_ab.py::test_blind_settlement_rejects_partial_and_never_approves_missing_roles`
+
+- 功能：行为断言：blind_settlement_rejects_partial_and_never_approves_missing_roles；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path, monkeypatch`。
+- 输出：`未注解；None`。
+- 作用：调用 ''.join, (out / 'blind.jsonl').read_text, (out / 'blind.jsonl').read_text(encoding='utf-8').splitlines, _case, any, filled.write_text, json.dumps, json.loads, model_ab.run_ab, model_ab.settle, monkeypatch.setattr, pytest.raises, str。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L161)。
+
+### `tests/unit/test_model_ab.py::test_measured_runner_three_roles_reach_real_worker_effects`
+
+- 功能：行为断言：measured_runner_three_roles_reach_real_worker_effects；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path, monkeypatch`。
+- 输出：`未注解；None`。
+- 作用：调用 (tmp_path / 'chain-calls.jsonl').read_text, (tmp_path / 'chain-calls.jsonl').read_text(encoding='utf-8').splitlines, DispatchWorker, _svc, all, any, json.loads, model_ab.MeasuredRunner, model_ab.load_cases, monkeypatch.setattr, range, str, svc.engine.mems.values, svc.log.close, svc.observe, svc.tasks.close, svc.tasks.list_tasks, worker.process_once。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L181)。
+
+### `tests/unit/test_model_ab.py::test_measured_runner_three_roles_reach_real_worker_effects.request`
+
+- 功能：测试场景/夹具/假实现：test_measured_runner_three_roles_reach_real_worker_effects.request；输入输出见本项，生产不调用
+- 输入：`url, key, body, timeout`。
+- 输出：`未注解；{'model': body['model'], 'choices': [{'message': {'content': json.dumps(reply, ensure_ascii=False)}}], 'usage': {'prompt_tokens': 100, 'completion_tokens': 10}}`。
+- 作用：调用 body['messages'][1]['content'].split, json.dumps, json.loads, len, range。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L186)。
+
+### `tests/unit/test_model_ab.py::test_capture_runner_is_callable_on_real_dispatch_path`
+
+- 功能：行为断言：capture_runner_is_callable_on_real_dispatch_path；成功正常返回，违约抛 AssertionError/pytest 失败
+- 输入：`tmp_path`。
+- 输出：`未注解；None`。
+- 作用：调用 Runner, _svc, build_payload, len, model_ab.CapturingRunner, model_ab.load_cases, runner, str, svc.log.close, svc.observe, svc.tasks.close, svc.tasks.enqueue, svc.tasks.get。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L217)。
+
+### `tests/unit/test_model_ab.py::test_capture_runner_is_callable_on_real_dispatch_path.Runner`
+
+- 功能：测试场景/夹具/假实现：test_capture_runner_is_callable_on_real_dispatch_path.Runner；输入输出见本项，生产不调用
+- 输入：`见显式或继承的 __init__；无新增字段`。
+- 输出：`类型/实例；基类 object`。
+- 作用：字段与方法契约；dataclass 自动生成的方法不另建手写符号。
+- 错误：见构造函数及方法。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L224)。
+
+### `tests/unit/test_model_ab.py::test_capture_runner_is_callable_on_real_dispatch_path.Runner.run_agent`
+
+- 功能：测试场景/夹具/假实现：test_capture_runner_is_callable_on_real_dispatch_path.Runner.run_agent；输入输出见本项，生产不调用
+- 输入：`self, name, payload`。
+- 输出：`未注解；{'candidates': []}`。
+- 作用：调用 无外部调用。
+- 错误：异常 无显式 raise；被调用方错误仍可传播。
+- 目标：`tests/unit/test_model_ab.py`；处置：保留迁移；变更：保留当前签名与 IO；[源码](../tests/unit/test_model_ab.py#L225)。
 
 ## `tests/unit/test_observability.py`
 

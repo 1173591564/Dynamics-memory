@@ -37,9 +37,11 @@ _WALL_CLOCK_CAP = 300.0  # 单次调用墙钟上限（max 档 hauler 实测 30-9
 class InlineAgentRunner:
     """DispatchWorker 兼容 runner：run_agent(name, payload) -> dict。"""
 
-    def __init__(self, model: str = "glm-5.3-flash", api_key: str | None = None):
+    def __init__(self, model: str = "glm-5.3-flash", api_key: str | None = None,
+                 reasoning_effort: str = "max"):
         self.model = model
         self.api_key = api_key
+        self.reasoning_effort = reasoning_effort
         self.prompts = {n: _agent_prompt(n) for n in _ROLES}
 
     def available(self) -> bool:
@@ -81,6 +83,7 @@ class InlineAgentRunner:
         if not key:
             raise RuntimeError("ZAI_API_KEY is not set")
         body = json.dumps({"model": self.model, "messages": messages,
+                           "reasoning_effort": self.reasoning_effort,
                            "temperature": 0.0},
                           ensure_ascii=False).encode()
         req = urllib.request.Request(
