@@ -72,10 +72,19 @@ def run_retrieve(eng, q_emb: np.ndarray, q: Query, t: int) -> Retrieval:
 
     lex = (lexical_scores(q.text, {m.id: m.text for m in eng.mems.values()
                                    if is_visible(m)}) if cfg.lex_weight > 0 else {})
+    # 槽位作用域：只当查询点名了某个已登记的 (实体,属性) 槽位时，才排除
+    # “明确属于其他槽位”的记忆；无声明键的记忆（偏好、机制等）不被作用域
+    # 过滤，交还给向量排序，避免混合问题漏召回。
+    named = {m.claim_key for m in eng.mems.values() if m.claim_key
+             and m.claim_key[1] in q.text
+             and (not m.claim_key[0] or m.claim_key[0] in q.text)}
     scored = []
     for m in eng.mems.values():
+        if named and m.claim_key and m.claim_key not in named:
+            continue
         # Cold but still valid may reappear; retired versions never serve as facts.
-        if m.superseded_by is not None or m.aggregated_into is not None:
+        if (m.superseded_by is not None or m.aggregated_into is not None
+                or m.withdrawn_at is not None):
             continue
         if (not is_visible(m)
                 and not (cfg.archive_retrieval and m.pool is Pool.ARCHIVE)):

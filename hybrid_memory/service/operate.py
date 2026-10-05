@@ -11,6 +11,7 @@ import re
 import time
 from dataclasses import replace
 
+from ..core import triggers
 from ..core.types import Event
 from ..dispatch import effects
 from ..errors import ProposalRejected
@@ -73,11 +74,46 @@ def validate_proposal(svc, p: dict, before: int | None) -> tuple[Event, list[int
     if not isinstance(sup, list):
         raise ProposalRejected("supersedes_must_be_list")
     sup = parse_ids(sup)
+    claims = triggers.claims_in(text)
+    if not claims:
+        hints = triggers.claims_in(re.sub(r"[（(][^（）()]*[）)]\s*[。.]*$", "", text))
+        if len(hints) == 1:
+            sources = [(i, row, x) for i in src if (row := svc.log.get(i)) is not None
+                       for x in triggers.claims_in(row["user_text"], authoritative=True)
+                       if x["key"] == hints[0]["key"] and x["value"] == hints[0]["value"]]
+            if sources:
+                _, _, sourced = max(sources, key=lambda item: (item[1]["t"], item[0]))
+                text, claims = sourced["text"], [sourced]
+    claim = claims[0] if len(claims) == 1 else None
+    claim_unit = None
+    if claim:
+        matching = [(i, row) for i in src if (row := svc.log.get(i)) is not None
+                    and any(x["key"] == claim["key"] and x["value"] == claim["value"]
+                            for x in triggers.claims_in(row["user_text"]))]
+        if not matching:
+            alternatives = [(i, row, x) for i in src if (row := svc.log.get(i)) is not None
+                            for x in triggers.claims_in(row["user_text"], authoritative=True)
+                            if x["value"] == claim["value"]
+                            and (x["mode"] == "retract") == (claim["mode"] == "retract")]
+            if len({x["key"] for _, _, x in alternatives}) > 1:
+                raise ProposalRejected("ambiguous_claim_source")
+            if alternatives:
+                uid, source, claim = max(alternatives, key=lambda item: (item[1]["t"], item[0]))
+                text = claim["text"]
+                matching = [(uid, source)]
+        if matching:
+            claim_unit = max(matching, key=lambda item: (item[1]["t"], item[0]))[0]
+        if claim["old_value"]:
+            subject = "的".join(part for part in claim["key"] if part)
+            text = f"{subject}是 {claim['value']}。"
     ev = Event(svc.semantics.fingerprint(normalize(text)), normalize(text),
                text, tuple(sorted(set(src))),
                salience=parse_salience(p.get("salience")),
                kind="fact", scene=svc._scene,
-               entity=(ek.strip()[:120] if isinstance(ek, str) else ""))
+               entity=(ek.strip()[:120] if isinstance(ek, str) else ""),
+               claim_key=claim["key"] if claim else (),
+               claim_value=claim["value"] if claim else "",
+               claim_mode=claim["mode"] if claim else "", claim_unit=claim_unit)
     return ev, sup
 
 

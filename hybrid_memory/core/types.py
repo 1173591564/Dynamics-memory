@@ -26,7 +26,8 @@ def is_visible(m: "Memory") -> bool:
     不用本谓词。"""
     return (m.pool is not Pool.ARCHIVE
             and m.superseded_by is None
-            and m.aggregated_into is None)
+            and m.aggregated_into is None
+            and m.withdrawn_at is None)
 
 
 @dataclass
@@ -70,6 +71,11 @@ class Memory:
     # 交给评测决定。
     origin: str = "passive"
     entity: str = ""        # agent 提议时回填的实体键（实体版本链的锚，可空）
+    claim_key: tuple[str, str] = ()
+    claim_value: str = ""
+    claim_unit: int | None = None
+    withdrawn_at: int | None = None
+    reviewed_after: tuple[int, int] | None = None
 
 
 @dataclass
@@ -86,6 +92,10 @@ class Event:
     scene: str = ""
     origin: str = "passive"
     entity: str = ""
+    claim_key: tuple[str, str] = ()
+    claim_value: str = ""
+    claim_unit: int | None = None
+    claim_mode: str = ""
 
 
 @dataclass
@@ -133,6 +143,7 @@ class Tension:
 @dataclass
 class Retrieval:
     selected: list[Memory] = field(default_factory=list)
+    disputes: list[dict] = field(default_factory=list)
     presented_texts: tuple[str, ...] = ()  # sidecar 实际送出的原文快照，供延迟反馈
     suppressed: list[tuple[int, int]] = field(default_factory=list)  # (被压, 压制者)
     contested: list[tuple[Memory, Memory]] = field(default_factory=list)

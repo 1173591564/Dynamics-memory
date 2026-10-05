@@ -255,3 +255,71 @@ def test_prepare_effect_target_stamp_drift_rejected(tmp_path):
     finally:
         svc.tasks.close()
         svc.log.close()
+
+
+@pytest.mark.parametrize("action", ["CONFLICT", "UPDATE"])
+def test_selector_shared_target_does_not_self_invalidate(tmp_path, action):
+    svc = _svc(tmp_path)
+    svc.trio_mode = True
+
+    def runner(name, payload):
+        if name == "reviewer":
+            return {"diagnosis": "用户纠正已交 Selector", "rules": [],
+                    "repair_candidates": [], "rule_reviews": []}
+        uid = payload["unit_id"]
+        if name == "hauler":
+            candidates = [{"text": "项目统一使用 bun 工具", "source_unit_ids": [0]}]
+            if uid:
+                candidates.append({"text": "项目统一使用 npm 工具", "source_unit_ids": [1]})
+            return {"candidates": candidates}
+        if not uid:
+            return {"decisions": [{"candidate_index": 0, "action": "CREATE"}]}
+        return {"decisions": [
+            {"candidate_index": 0, "action": "EXIST", "target_id": 0},
+            {"candidate_index": 1, "action": action, "target_id": 0,
+             "verified_correction": action == "UPDATE"}]}
+
+    worker = DispatchWorker(svc, runner)
+    try:
+        svc.observe("项目统一使用 bun 工具", "好的")
+        for _ in range(4):
+            worker.process_once()
+        svc.observe("不对，项目统一使用 npm 工具" if action == "UPDATE"
+                    else "项目可能使用 npm 工具", "好的")
+        for _ in range(4):
+            worker.process_once()
+        rows = svc.tasks.list_tasks(kinds={"selector_due"})
+        assert len(rows) == 2
+        assert all(row["state"] == "done" for row in rows)
+        assert not any("drifted" in row["last_error"] for row in rows)
+        if action == "UPDATE":
+            assert svc.engine.mems[0].superseded_by is not None
+        else:
+            assert len(svc.human_reviews()) == 1
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
+def test_prepare_target_stamps_follow_candidate_indices(tmp_path):
+    svc = _svc(tmp_path)
+    svc.trio_mode = True
+    try:
+        svc.observe("项目工具为 bun，构建工具为 vite", "好的")
+        candidates = [{"text": text, "source_unit_ids": [0]}
+                      for text in ("项目工具为 bun", "构建工具为 vite")]
+        for i, c in enumerate(candidates):
+            svc.engine.propose([Event(i, c["text"], c["text"], (0,),
+                                      origin="agent")], i)
+        row = _selector_row(svc, 0, candidates)
+        row["result"] = {"decisions": [
+            {"candidate_index": 1, "action": "EXIST", "target_id": 1},
+            {"candidate_index": 0, "action": "EXIST", "target_id": 0}]}
+        plan = effects.prepare_effect(svc, row)
+        assert [target["target_id"] for target in plan["targets"]] == [0, 1]
+        svc.engine.mems[0].last_seen += 5
+        with pytest.raises(ValueError, match="drifted"):
+            effects.apply_selector(svc, row, row["result"], None, plan=plan)
+    finally:
+        svc.tasks.close()
+        svc.log.close()

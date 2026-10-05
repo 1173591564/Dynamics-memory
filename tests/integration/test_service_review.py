@@ -102,3 +102,48 @@ def test_review_http_requires_independent_human_capability(tmp_path):
         thread.join(5)
         svc.tasks.close()
         svc.log.close()
+
+
+def test_repeated_conflict_has_one_proposal_and_durable_review_consumer(tmp_path):
+    svc = _svc(tmp_path)
+    svc.trio_mode = True
+    def runner(name, payload):
+        if name == "hauler":
+            unit = payload["window"][-1]
+            return {"candidates": [{"text": unit["user_text"], "source_unit_ids": [unit["unit_id"]]}]}
+        return {"decisions": [{"candidate_index": 0, "action": "CREATE" if not payload["memories"] else "CONFLICT",
+                               **({"target_id": 0} if payload["memories"] else {})}]}
+    worker = DispatchWorker(svc, runner)
+    try:
+        for text in ("网关模块的端口定为 gate-4100。", "网关模块的端口是 gate-4200。",
+                     "网关模块的端口是 gate-4200。"):
+            svc.observe(text, "好的")
+            drain(worker)
+            svc.process_semantic_tasks()
+        reviews = svc.human_reviews()
+        assert len(reviews) == 1
+        assert json.loads(reviews[0]["candidate"])["source_unit_ids"] == [1, 2]
+        assert reviews[0]["review_key"] and reviews[0]["target_stamp"]
+        jobs = svc.tasks.list_tasks(kinds={"conflict_pending"})
+        assert jobs and all(job["state"] == "done" for job in jobs)
+        assert all(job["result"]["reviews"][0]["outcome"] == "needs_human" for job in jobs)
+        assert svc.engine.mems[0].pending_review
+        revision = svc._checkpoint_revision
+        result = svc.recall("网关模块的端口现在是多少？", passive=True)
+        assert "gate-4100" in result["context"] and "gate-4200" in result["context"]
+        assert "待人审" in result["context"]
+        assert svc._checkpoint_revision == revision
+        svc.tasks.close()
+        svc.log.close()
+        svc = _svc(tmp_path)
+        svc.trio_mode = True
+        assert len(svc.human_reviews()) == 1
+        review_id = svc.human_reviews()[0]["id"]
+        accepted = svc.decide_human_review(review_id, "accept_new", svc.human_review_token)
+        assert accepted["new_ids"]
+        assert not svc.human_reviews()
+        assert "gate-4100" not in svc.recall("网关模块的端口现在是多少？", passive=True)["context"]
+        assert svc.decide_human_review(review_id, "accept_new", svc.human_review_token)["replayed"]
+    finally:
+        svc.tasks.close()
+        svc.log.close()

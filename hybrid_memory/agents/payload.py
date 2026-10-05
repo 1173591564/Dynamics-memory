@@ -17,16 +17,20 @@ def rules_for(svc, kind, row, unit):
 def memory_snapshot(svc):
     """未退役记忆的确定性 id 序快照；超 500 直接失败，禁截断猜测（H17）。"""
     memories = [m for m in svc.engine.mems.values()
-                if m.superseded_by is None and m.aggregated_into is None]
+                if m.superseded_by is None and m.aggregated_into is None
+                and m.withdrawn_at is None]
     # Never let a truncated pool be mistaken for the whole store.
     if len(memories) > 500:
         raise RuntimeError("selector memory context exceeds limit; needs indexed paging")
     return [{"id": m.id, "text": m.text, "src": sorted(m.src),
-             "entity": m.entity, "birth": m.birth, "pool": m.pool.value}
+             "entity": m.entity, "birth": m.birth, "pool": m.pool.value, "v": m.v,
+             "claim_key": list(m.claim_key), "claim_value": m.claim_value,
+             "claim_unit": m.claim_unit, "reviewed_after": m.reviewed_after,
+             "pending_review": m.pending_review}
             for m in sorted(memories, key=lambda m: m.id)]
 
 
-PROTOCOL_VERSION = 1  # 模型调用 payload 形状版本（N10：封存上下文随附）
+PROTOCOL_VERSION = 2  # 模型调用 payload 形状版本（N10：封存上下文随附）
 
 
 def seal_context(kind: str, built: dict, revision: int) -> dict:
@@ -54,6 +58,7 @@ def seal_context(kind: str, built: dict, revision: int) -> dict:
         ctx["rule_ids"] = [r.get("id") for r in built.get("rules", [])]
     if kind == "selector_due":
         ctx["candidate_texts"] = [c.get("text") for c in built.get("candidates", [])]
+        ctx["memory_ids"] = [m["id"] for m in built.get("memories", [])]
     if kind == "reviewer_due":
         ctx["handoff_rule_ids"] = sorted(
             {rid for t in built.get("handoffs", [])
@@ -88,7 +93,11 @@ def build_payload(kind, svc, row):
                     "previous_retrieval": (work or {}).get("context", {}),
                     "rules": rules_for(svc, kind, row, unit),
                     "memories": memory_snapshot(svc)}
+        source_ids = sorted({i for c in row["payload"]["candidates"] for i in c["source_unit_ids"]})
+        evidence = svc.log.window(source_ids, max_chars=12000, before=unit["t"] + 1)
+        if evidence["truncated"]:
+            raise ValueError("Selector evidence exceeded 12000 characters")
         return {"kind": kind, "task_id": row["id"], "unit_id": uid,
-                "candidates": row["payload"]["candidates"],
+                "candidates": row["payload"]["candidates"], "source_units": evidence["units"],
                 "memories": memory_snapshot(svc),
                 "rules": rules_for(svc, kind, row, unit)}

@@ -23,7 +23,7 @@ def run_ingest(eng, events: list[Event], t: int, vectors=None) -> None:
         vecs = eng.emb.embed([e.text for e in events], keys=keys)
     else:
         vecs = vectors
-    active = [m for m in eng.mems.values() if is_visible(m)]
+    active = [m for m in eng.mems.values() if is_visible(m) and m.withdrawn_at is None]
 
     for ev, vec in zip(events, vecs):
         best = max(active, key=lambda m: cosine(vec, m.emb), default=None)
@@ -36,11 +36,12 @@ def run_ingest(eng, events: list[Event], t: int, vectors=None) -> None:
                 and ev.belief_id == best.belief_id
                 and ev.value == best.value):   # verbatim：确定性 dedup
             discount_to(best, t, cfg)
-            best.evid += 1          # 确认事件：证据汇聚，不新增
+            added = len(set(ev.src) - set(best.src)) if ev.src else 1
+            best.evid += added          # 确认事件：证据汇聚，不新增
             best.last_seen = t
             best.src = best.src | frozenset(ev.src)
             if cfg.confidence_on:
-                best.conf_pos += cfg.conf_confirm_evidence
+                best.conf_pos += cfg.conf_confirm_evidence * added
             if cfg.salience_on:
                 best.salience = max(best.salience, sal)
             continue
@@ -61,7 +62,9 @@ def run_ingest(eng, events: list[Event], t: int, vectors=None) -> None:
                    salience=sal if cfg.salience_on else cfg.salience_default,
                    novelty=novelty,
                    kind=ev.kind, derived_from=ev.derived_from,
-                   scene=ev.scene, origin=ev.origin, entity=ev.entity)
+                   scene=ev.scene, origin=ev.origin, entity=ev.entity,
+                   claim_key=ev.claim_key, claim_value=ev.claim_value,
+                   claim_unit=ev.claim_unit)
         eng.mems[m.id] = m
         active.append(m)
         if cfg.consolidation_on and m.kind != "reflection":

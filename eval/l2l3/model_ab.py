@@ -158,8 +158,14 @@ def validate_reply(case: dict, reply: dict) -> dict:
     svc = SimpleNamespace(log=FrozenLog(case["window"]), _scene="",
         semantics=RealChatSemantics(None),
         tasks=SimpleNamespace(call_context=lambda _: seal),
-        engine=SimpleNamespace(mems={m["id"]: SimpleNamespace(**m, superseded_by=None, aggregated_into=None)
+        engine=SimpleNamespace(mems={m["id"]: SimpleNamespace(**dict(
+            {"claim_key": (), "claim_value": "", "claim_unit": None, "withdrawn_at": None,
+             "pending_review": False, "reviewed_after": None, "v": 0.5, "birth": 0}, **m, superseded_by=None, aggregated_into=None))
                                      for m in built.get("memories", [])}))
+    for memory in svc.engine.mems.values():
+        memory.claim_key = tuple(memory.claim_key)
+        if memory.reviewed_after is not None:
+            memory.reviewed_after = tuple(memory.reviewed_after)
     svc._validate_proposal = lambda proposal, before: validate_proposal(svc, proposal, before)
     uid = built.get("unit_id", (built.get("complaint") or {}).get("id"))
     row = {"id": built["task_id"], "kind": kind, "payload": dict(built, unit_id=uid)}

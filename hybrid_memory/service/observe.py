@@ -13,6 +13,7 @@ from dataclasses import asdict
 from ..core import triggers
 from ..core.interaction import InteractionUnit, InteractionWindow
 from ..core.types import Event
+from ..dispatch.effects import enforce_capacity, protected_ids
 from ..guards.bounds import capture_fingerprint as _capture_fingerprint
 from ..guards.bounds import validate_request_id as _validate_request_id
 from ..guards.grounding import content_grounded as _content_grounded
@@ -180,7 +181,9 @@ def process_unit(svc, uid: int, work: dict) -> dict:
                        for c in grounded]
                 if evs:
                     svc.engine.observe(evs, t)
+                svc.engine._external_pins = protected_ids(svc)
                 svc.engine.step(t)
+                enforce_capacity(svc)
                 svc._t = max(svc._t, t + 1)
                 if result and result["failure"]:
                     svc.n_candgen_fail += 1

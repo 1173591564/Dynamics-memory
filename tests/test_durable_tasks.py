@@ -262,7 +262,7 @@ def test_sqlite_receipt_failure_rolls_back_checkpoint_and_preserves_memory_ident
     assert svc.tasks.stats()["operations"] == 0
     svc.tasks._conn.execute("DROP TRIGGER fail_receipt")
     assert agent.process_once()["run"] == 0
-    assert original_mem.evid == 2 and svc.n_proposals == 2
+    assert original_mem.evid == 1 and svc.n_proposals == 2
     assert len(fake.calls) == 1
 
 

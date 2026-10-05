@@ -147,7 +147,8 @@ class MemoryService:
                 "(PENDING-09: segmented-pickle ADR required)")
         eng = self.engine
         fields = ("mems", "tensions", "_next_id", "_consolidation_pending",
-                  "_consolidation_deferred", "_shadow_pending") + _COUNTERS
+                  "_consolidation_deferred", "_shadow_pending",
+                  "_external_pins") + _COUNTERS
         original_mems = dict(eng.mems)
         backup = copy.deepcopy({k: getattr(eng, k) for k in fields})
         counters = {k: getattr(self, k) for k in _SERVICE_COUNTERS}

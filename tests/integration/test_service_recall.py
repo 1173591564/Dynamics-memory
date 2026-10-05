@@ -39,6 +39,63 @@ def _suppressed(tmp_path):
     return svc
 
 
+def test_real_feedback_drives_promotion_decay_archive_and_revival(tmp_path):
+    import math
+    from hybrid_memory.dispatch.worker import DispatchWorker
+    from test_ouroboros import _svc
+    svc = _svc(tmp_path)
+    svc.trio_mode = True
+    def agent(name, payload):
+        if name == "hauler":
+            return {"candidates": [{"text": "网关模块的端口定为 gate-4100。", "source_unit_ids": [0]}]
+                    if payload["unit_id"] == 0 else []}
+        return {"decisions": [{"candidate_index": i, "action": "CREATE"} for i in range(len(payload["candidates"]))]}
+    worker = DispatchWorker(svc, agent)
+    svc.semantics.relevant_set = lambda texts, q, a: ["gate-4100" in text and "gate-4100" in a for text in texts]
+    try:
+        svc.observe("网关模块的端口定为 gate-4100。", "好的", request_id="dynamics-initial")
+        for _ in range(4):
+            worker.process_once()
+        memory = svc.engine.mems[0]
+        predicted = svc.cfg.v_init
+        for i in range(4):
+            result = svc.recall("网关模块的端口现在是什么？")
+            rid = result["retrieval_id"]
+            key = f"dynamics-feedback-{i}"
+            response = svc.feedback(rid, "端口？", "gate-4100", request_id=key)
+            assert response["n_useful"] == 1
+            assert svc.feedback(rid, "端口？", "gate-4100", request_id=key)["replayed"]
+            svc.observe(f"这一轮继续工作 {i}", "好的", request_id=f"dynamics-observe-{i}")
+            for _ in range(3):
+                worker.process_once()
+            predicted = predicted * math.exp(-svc.cfg.lam) + svc.cfg.eta
+            assert memory.v == pytest.approx(predicted)
+        assert memory.pool is Pool.MEMORY and svc.engine.n_promote == 1
+        revision, units, value = svc._checkpoint_revision, svc.log.count(), memory.v
+        assert svc.recall("网关模块的端口现在是什么？", passive=True)["retrieval_id"] is None
+        assert (svc._checkpoint_revision, svc.log.count(), memory.v) == (revision, units, value)
+        assert svc.observe("这一轮继续工作 3", "好的", request_id="dynamics-observe-3")["replayed"]
+        assert memory.v == value
+        for i in range(70):
+            svc.observe(f"其他工作第 {i} 轮", "好的")
+            for _ in range(2):
+                worker.process_once()
+        assert memory.pool is Pool.ARCHIVE
+        assert svc.engine.n_demote == 1 and svc.engine.n_archive == 1
+        assert memory.v == pytest.approx(value * math.exp(-70 * svc.cfg.lam))
+        cold = svc.recall(memory.text)
+        assert cold["n"] == 1 and memory.pool is Pool.ARCHIVE
+        svc.feedback(cold["retrieval_id"], "端口？", "gate-4100")
+        assert memory.pool is Pool.CANDIDATE and svc.engine.n_revive == 1
+        svc.tasks.close()
+        svc.log.close()
+        svc = _svc(tmp_path)
+        assert svc.engine.mems[0].pool is Pool.CANDIDATE
+        assert svc.engine.mems[0].hits == 5
+    finally:
+        _close(svc)
+
+
 def test_shadow_pending_survives_restart_and_settles_once(tmp_path):
     script = r'''
 import os, sys

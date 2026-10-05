@@ -8,6 +8,7 @@ effect_transaction 是效果 + checkpoint 同事务的唯一入口（I5）。
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from dataclasses import dataclass
@@ -15,8 +16,9 @@ from typing import Callable
 
 from ..agents import hauler, reviewer, selector
 from ..core import dynamics, triggers
+from ..core.confidence import discount_to
 from ..core.types import Event, Pool, is_visible
-from ..errors import Degraded
+from ..errors import Degraded, ProposalRejected
 from ..store.evidence import entities_in
 from ..store.tasks import SEMANTIC_KINDS, WORKFLOW_KINDS
 
@@ -112,17 +114,41 @@ def effect_transaction(svc, mutate, *, capture=None):
             raise
 
 
-def enforce_capacity(svc) -> None:
+def protected_ids(svc) -> frozenset[int]:
+    roots, windows = set(), set()
+    for ret in svc._retrievals.values():
+        if ret.feedback_sent and not ret.credited:
+            roots.update(m.id for m in ret.selected)
+    active = svc.tasks.list_tasks(states=("pending", "running", "ready", "applying"),
+                                  kinds=SEMANTIC_KINDS | WORKFLOW_KINDS, limit=svc.tasks.capacity)
+    for task in active:
+        payload = task["payload"]
+        if task["kind"] == "feedback_pending":
+            roots.update(i for i in payload.get("selected", []) if type(i) is int)
+        if task["kind"] == "selector_due" and isinstance(task.get("result"), dict):
+            roots.update(d["target_id"] for d in task["result"].get("decisions", [])
+                         if isinstance(d, dict) and type(d.get("target_id")) is int)
+        parent = payload.get("parent_task") if isinstance(payload, dict) else None
+        context = svc.tasks.call_context(parent) if type(parent) is int else svc.tasks.call_context(task["id"])
+        windows.update((context or {}).get("window_ids", []))
+    if any(m.withdrawn_at is not None for m in svc.engine.mems.values()):
+        windows.update(svc.log.recent_ids(svc._unit_id - 1, limit=6))
+        roots.update(m.id for m in svc.engine.mems.values()
+                     if m.withdrawn_at is not None and set(m.src) & windows)
+    return dynamics.pinned_ids(svc.engine, external=roots)
+
+
+def enforce_capacity(svc, fresh=()) -> None:
     """commit 前容量收口（N17/N12）：plan_capacity 模拟全池与上下文。
 
     全 pin 无法收口 → Degraded("capacity_backpressure")：整批效果拒收/回滚，
     合法产物留 ready 退避，应用上限耗尽后 dead（不静默超限、不解除保护）。
     """
+    pins = protected_ids(svc) | frozenset(fresh)
+    svc.engine._external_pins = pins
     if not svc.cfg.capacity_on:
         return
-    plan = dynamics.plan_capacity(svc.engine.mems, svc.cfg,
-                                  dynamics.pinned_ids(svc.engine),
-                                  t=svc._t)
+    plan = dynamics.plan_capacity(svc.engine.mems, svc.cfg, pins, t=svc._t)
     if not plan["accepted"]:
         raise Degraded("capacity_backpressure",
                        "capacity cannot be closed under pins; effect rejected",
@@ -137,9 +163,90 @@ def enforce_capacity(svc) -> None:
         svc.engine.n_pool_truncated += 1
 
 
+MAX_PENDING_REVIEWS = 512
+
+
+def review_stamp(memory) -> list:
+    return [memory.superseded_by, memory.aggregated_into, memory.withdrawn_at,
+            list(memory.claim_key), memory.claim_value, memory.text]
+
+
+def enqueue_review(svc, conn, row, candidate, event, target, reason, related=()) -> int:
+    stamp = review_stamp(target)
+    peers = [{"id": mid, "stamp": review_stamp(svc.engine.mems[mid])}
+             for mid in sorted(set(related) - {target.id})]
+    identity = [target.id, stamp, peers, list(event.claim_key),
+                event.claim_value if event.claim_key else event.value, event.claim_mode == "retract"]
+    key = hashlib.sha256(json.dumps(identity, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+    closed = conn.execute("SELECT * FROM human_reviews WHERE review_key=? AND status='done' "
+                          "AND decision='keep_old' ORDER BY id DESC LIMIT 1", (key,)).fetchone()
+    if closed is not None and set(event.src) <= set(json.loads(closed["candidate"])["source_unit_ids"]):
+        return closed["id"]
+    previous = conn.execute("SELECT * FROM human_reviews WHERE review_key=? AND status='pending'", (key,)).fetchone()
+    if previous is not None:
+        proposal = json.loads(previous["candidate"])
+        proposal["source_unit_ids"] = sorted(set(proposal["source_unit_ids"]) | set(event.src))
+        conn.execute("UPDATE human_reviews SET candidate=? WHERE id=?",
+                     (json.dumps(proposal, ensure_ascii=False, sort_keys=True), previous["id"]))
+        review_id = previous["id"]
+    else:
+        count = conn.execute("SELECT COUNT(*) FROM human_reviews WHERE status='pending'").fetchone()[0]
+        if count >= MAX_PENDING_REVIEWS:
+            raise Degraded("capacity_backpressure", "human review queue is full")
+        proposal = {"text": event.text, "source_unit_ids": sorted(event.src), "_related_targets": peers}
+        cursor = conn.execute("INSERT INTO human_reviews"
+                             "(source_task,target_id,candidate,reason,created_at,review_key,target_stamp)"
+                             " VALUES(?,?,?,?,?,?,?)",
+                             (row["id"], target.id, json.dumps(proposal, ensure_ascii=False, sort_keys=True),
+                              str(reason)[:500], time.time(), key, json.dumps(stamp, ensure_ascii=False)))
+        review_id = cursor.lastrowid
+    target.pending_review = True
+    for peer in peers:
+        svc.engine.mems[peer["id"]].pending_review = True
+    svc.tasks._enqueue(conn, "conflict_pending", {"review_ids": [review_id]}, svc._t,
+                       key=f"review:{review_id}", merge=lambda old, new: old,
+                       memory_next_id=svc.engine._next_id)
+    return review_id
+
+
+def close_retired_relations(svc, conn) -> None:
+    retired = {m.id for m in svc.engine.mems.values()
+               if m.superseded_by is not None or m.aggregated_into is not None or m.withdrawn_at is not None}
+    for mid in retired:
+        conn.execute("UPDATE human_reviews SET status='stale' WHERE target_id=? AND status='pending'", (mid,))
+        svc.engine.mems[mid].pending_review = False
+    for pair in list(svc.engine.tensions):
+        if any(mid in retired for mid in pair):
+            svc.engine._settle_shadow(pair, "pending")
+            del svc.engine.tensions[pair]
+
+
 def apply_conflict(svc, row, result, plan=None) -> dict:
     """conflict_pending applier：邮戳一致的裁决落地；过期对重排待判。"""
     t = row["t"]
+    if isinstance(row["payload"], dict):
+        reviews = result.get("reviews")
+        if not isinstance(reviews, list) or {r.get("id") for r in reviews} != set(row["payload"]["review_ids"]):
+            raise ValueError("review result must cover supplied review ids")
+        outcomes = []
+        conn = svc.tasks._conn
+        for item in reviews:
+            review = conn.execute("SELECT * FROM human_reviews WHERE id=?", (item["id"],)).fetchone()
+            old = svc.engine.mems.get(review["target_id"]) if review is not None else None
+            if review is None or review["status"] != "pending":
+                outcome = "resolved" if review is not None and review["status"] == "done" else "stale"
+            elif (old is None or old.superseded_by is not None or old.aggregated_into is not None
+                  or old.withdrawn_at is not None or (review["target_stamp"]
+                      and json.loads(review["target_stamp"]) != review_stamp(old))):
+                conn.execute("UPDATE human_reviews SET status='stale' WHERE id=?", (item["id"],))
+                outcome = "stale"
+                if old is not None:
+                    old.pending_review = bool(conn.execute("SELECT 1 FROM human_reviews WHERE target_id=? "
+                                                         "AND status='pending' LIMIT 1", (old.id,)).fetchone())
+            else:
+                outcome = "needs_human"
+            outcomes.append({"id": item["id"], "outcome": outcome})
+        return {"resolved": 0, "reviews": outcomes}
     current, stale = [], []
     for left, right, verdict, stamp in result["verdicts"]:
         tension = svc.engine.tensions.get(tuple(sorted((left, right))))
@@ -148,6 +255,23 @@ def apply_conflict(svc, row, result, plan=None) -> dict:
         if stamp != [tension.last_seen, tension.observations]:
             stale.append([left, right])
         else:
+            memories = [svc.engine.mems.get(mid) for mid in (left, right)]
+            if any(m is None or m.pending_review or m.withdrawn_at is not None for m in memories):
+                verdict = "pending"
+            elif all(m.claim_key for m in memories) and memories[0].claim_key != memories[1].claim_key:
+                verdict = "collision"
+            elif verdict == "synonym" and all(m.claim_key for m in memories) and memories[0].claim_value != memories[1].claim_value:
+                verdict = "pending"
+            elif verdict == "update" and svc.trio_mode:
+                newest = max(memories, key=lambda m: (m.birth, m.id))
+                oldest = min(memories, key=lambda m: (m.birth, m.id))
+                if not newest.src or not newest.claim_key or newest.claim_key != oldest.claim_key:
+                    verdict = "pending"
+                else:
+                    ev, _ = svc._validate_proposal({"text": newest.text, "source_unit_ids": sorted(newest.src)}, None)
+                    anchor = max(newest.src, key=lambda uid: (svc.log.get(uid)["t"], uid))
+                    if selector.authorized_change(svc, {"payload": {"unit_id": anchor}}, ev, oldest) is None:
+                        verdict = "pending"
             current.append((left, right, verdict))
     if stale:
         svc.engine.signals.emit("conflict_pending", stale, t,
@@ -223,15 +347,52 @@ def send_workflow(conn, svc, kind, uid, candidates, parent):
 def apply_hauler(svc, row, output, conn, plan=None) -> dict:
     """hauler_due applier：校验候选 → 下发 selector_due。"""
     candidates = hauler.validate(output, row, svc)
-    send_workflow(conn, svc, "selector_due", row["payload"]["unit_id"],
-                  candidates, row["id"])
-    return {"candidates": len(candidates)}
+    uid = row["payload"]["unit_id"]
+    unit = svc.log.get(uid)
+    # §3.3：浅正文接地校验在 Hauler effect 完成——未接地候选（翻译、复述、
+    # 自指）按条拒绝并计数（可见），不再让一条坏候选把整批合法证据（含
+    # 授权撤回）拖成 selector 死信；其余非法候选仍由 selector 预检整批拒绝。
+    valid, rejected = [], []
+    for index, candidate in enumerate(candidates):
+        try:
+            event, _ = svc._validate_proposal(candidate, None)
+        except ProposalRejected as exc:
+            rejected.append({"index": index, "reason": str(exc)})
+        else:
+            valid.append(dict(candidate, text=event.text))
+    if rejected:
+        svc.n_ungrounded += len(rejected)
+    candidates = valid
+    known = {m.claim_key for m in svc.engine.mems.values() if m.claim_key
+             and m.superseded_by is None and m.aggregated_into is None and m.withdrawn_at is None}
+    claims = triggers.claims_in(unit["user_text"], authoritative=True)
+    authorized = [claim for claim in claims if claim["key"] in known
+                  and claim["mode"] in ("set", "change", "correction", "retract")
+                  and len({(c["value"], c["mode"] == "retract") for c in claims
+                           if c["key"] == claim["key"]}) == 1]
+    all_keys = {m.claim_key for m in svc.engine.mems.values() if m.claim_key}
+    reinstated = {c["key"] for c in claims if c["mode"] in ("set", "change", "correction")}
+    covered = {claim["key"] for claim in authorized}
+    retained = []
+    for candidate in candidates:
+        mentioned = {key for key in all_keys if key[1] in candidate["text"]
+                     and (not key[0] or key[0] in candidate["text"])}
+        parsed = {claim["key"] for claim in triggers.claims_in(candidate["text"])}
+        if parsed & covered or (len(mentioned) == 1 and mentioned & covered):
+            continue
+        if len(mentioned) == 1 and not mentioned & (known | reinstated):
+            continue
+        retained.append(candidate)
+    candidates = [{"text": claim["text"], "source_unit_ids": [uid]} for claim in authorized] + retained
+    if len(candidates) > 50:
+        raise ValueError("Hauler and source reconciliation exceed 50 candidates")
+    send_workflow(conn, svc, "selector_due", uid, candidates, row["id"])
+    return {"candidates": len(candidates), "source_reconciled": len(authorized), "rejected_candidates": rejected}
 
 
 def apply_selector(svc, row, output, conn, plan=None) -> dict:
     """selector_due applier：预检 → 逐决定校验+写入（同一事务，全有或全无）。"""
-    selector.validate(output, row, svc)
-    decisions = output.get("decisions")
+    decisions = selector.validate(output, row, svc)
     candidates = row["payload"]["candidates"]
     if (not isinstance(decisions, list) or len(decisions) != len(candidates)
             or sorted(d.get("candidate_index") for d in decisions if isinstance(d, dict))
@@ -242,6 +403,20 @@ def apply_selector(svc, row, output, conn, plan=None) -> dict:
     prepared_vecs = (plan or {}).get("vectors") or []
     reuse = bool(prepared) and len(prepared) == len(candidates)
     outcomes = []
+    initial_tensions = set(svc.engine.tensions)
+    # 入事务复核目标邮戳（N08）：prepare 与事务之间目标被并发推进则
+    # 整批拒绝重判，不沿旧 id 套新对象。
+    if reuse and plan.get("targets"):
+        for d in decisions:
+            idx, target = d["candidate_index"], d.get("target_id")
+            pt = plan["targets"][idx] if idx < len(plan["targets"]) else None
+            old = svc.engine.mems.get(target) if type(target) is int else None
+            if pt and pt.get("target_id") is not None and pt["target_id"] == target and old is not None:
+                stamp = [old.superseded_by, old.aggregated_into, old.last_seen]
+                if pt.get("stamps") is not None and pt["stamps"] != stamp:
+                    raise ValueError(
+                        f"selector target {target} drifted since prepare; "
+                        "batch rejected for re-judgement")
     for d in decisions:
         idx, action = d["candidate_index"], d.get("action")
         c = candidates[idx]
@@ -264,31 +439,27 @@ def apply_selector(svc, row, output, conn, plan=None) -> dict:
         ev.origin = "agent"
         target = d.get("target_id")
         old = svc.engine.mems.get(target) if type(target) is int else None
-        # 入事务复核目标邮戳（N08）：prepare 与事务之间目标被并发推进则
-        # 整批拒绝重判，不沿旧 id 套新对象。
-        if reuse and plan.get("targets"):
-            pt = plan["targets"][idx] if idx < len(plan["targets"]) else None
-            if pt and pt.get("target_id") is not None and pt["target_id"] == target and old is not None:
-                stamp = [old.superseded_by, old.aggregated_into, old.last_seen]
-                if pt.get("stamps") is not None and pt["stamps"] != stamp:
-                    raise ValueError(
-                        f"selector target {target} drifted since prepare; "
-                        "batch rejected for re-judgement")
         # Exact re-extraction from overlapping windows cannot yield a second
         # identical memory even when the model misclassifies it as CREATE.
         if action == "CREATE":
             same = next((m for m in svc.engine.mems.values()
                          if m.superseded_by is None and m.aggregated_into is None
-                         and m.text == ev.text), None)
+                         and m.withdrawn_at is None and m.text == ev.text), None)
             if same is not None:
                 action, old = "EXIST", same
         if action != "CREATE" and (old is None or old.superseded_by is not None
-                                   or old.aggregated_into is not None):
+                                   or old.aggregated_into is not None or old.withdrawn_at is not None):
             raise ValueError("Selector target is retired or unknown")
         if action == "EXIST":
+            for equivalent_id in d.get("equivalent_ids", []):
+                svc.engine.add_tension(old.id, equivalent_id, svc._t)
+                svc.engine.submit_verdicts([(old.id, equivalent_id, "synonym")], svc._t)
             new_sources = set(ev.src) - set(old.src)
             old.src = old.src | frozenset(ev.src)
             old.evid += len(new_sources)
+            if svc.cfg.confidence_on:
+                discount_to(old, svc._t, svc.cfg)
+                old.conf_pos += svc.cfg.conf_confirm_evidence * len(new_sources)
             if old.pool is Pool.ARCHIVE:
                 old.pool = Pool.CANDIDATE if svc.cfg.two_pool else Pool.MEMORY
             old.last_seen = max(old.last_seen, svc._t)
@@ -298,27 +469,61 @@ def apply_selector(svc, row, output, conn, plan=None) -> dict:
         if action == "UPDATE":
             # Recent != correct. Without an explicit user correction, refer
             # incompatible statements to a human rather than choosing newest.
-            confirmed = (d.get("verified_correction") is True) and any(
-                triggers.is_correction(svc.log.get(i)["user_text"])
-                for i in ev.src if svc.log.get(i))
+            confirmed = (not old.pending_review and d.get("verified_correction") is True
+                         and (d.get("proof_unit_id") in ev.src if ev.claim_key else any(
+                             triggers.is_correction(source["user_text"])
+                             and not triggers.UNSAFE_CLAIM_RE.search(source["user_text"])
+                             for i in ev.src if (source := svc.log.get(i)))))
             if not confirmed:
                 action = "CONFLICT"
+            elif d.get("change_kind") == "retract":
+                withdrawn_ids = sorted(set(d.get("related_target_ids", [])) | {old.id})
+                for mid in withdrawn_ids:
+                    withdrawn = svc.engine.mems[mid]
+                    withdrawn.withdrawn_at = withdrawn.archived_at = svc._t
+                    withdrawn.pool = Pool.ARCHIVE
+                    withdrawn.src |= frozenset(ev.src)
+                    withdrawn.last_seen = max(withdrawn.last_seen, svc._t)
+                outcomes.append({"index": idx, "action": "UPDATE", "target_id": old.id,
+                                 "change_kind": "retract", "withdrawn_ids": withdrawn_ids,
+                                 "proof_unit_id": d["proof_unit_id"]})
+                continue
         if action == "CONFLICT":
-            conn.execute("INSERT OR IGNORE INTO human_reviews"
-                         "(source_task,target_id,candidate,reason,created_at) VALUES(?,?,?,?,?)",
-                         (row["id"], old.id, json.dumps(c, ensure_ascii=False, sort_keys=True),
-                          str(d.get("reason", "conflicting evidence"))[:500], time.time()))
-            old.pending_review = True
-            outcomes.append({"index": idx, "action": action, "target_id": old.id})
+            review_id = enqueue_review(svc, conn, row, c, ev, old,
+                                       d.get("reason", "conflicting evidence"), d.get("related_target_ids", []))
+            status = conn.execute("SELECT status FROM human_reviews WHERE id=?", (review_id,)).fetchone()[0]
+            outcomes.append({"index": idx, "action": action if status == "pending" else "REJECT", "target_id": old.id,
+                             "review_id": review_id})
             continue
         vec = prepared_vecs[idx] if reuse and idx < len(prepared_vecs) else None
         ids = svc.engine.propose([ev], svc._t, vectors=[vec] if vec is not None else None)
         if action == "UPDATE" and ids:
             svc.engine.add_tension(ids[0], old.id, svc._t)
             svc.engine.submit_verdicts([(ids[0], old.id, "update")], svc._t)
+            for mid in d.get("related_target_ids", []):
+                other = svc.engine.mems[mid]
+                if mid != old.id:
+                    other.superseded_by = ids[0]
+                    other.pool = Pool.ARCHIVE
+                    other.archived_at = svc._t
+                    svc.engine.mems[ids[0]].src |= other.src
+                    svc.engine.n_merge += 1
         outcomes.append({"index": idx, "action": action if ids else "EXIST", "new_ids": ids})
     # 批内 CREATE/EXIST 复活超过容量：提交前统一收口，全 pin 则整批背压。
-    enforce_capacity(svc)
+    if conn is not None:
+        close_retired_relations(svc, conn)
+        pairs = [list(pair) for pair in svc.engine.tensions if pair not in initial_tensions
+                 and all(not svc.engine.mems[mid].pending_review for mid in pair)]
+        if pairs:
+            svc.tasks._enqueue(conn, "conflict_pending", pairs, svc._t, key="conflict",
+                               merge=lambda old, new: old + [pair for pair in new if pair not in old],
+                               memory_next_id=svc.engine._next_id)
+    for outcome in outcomes:
+        decision = next(d for d in decisions if d["candidate_index"] == outcome["index"])
+        outcome["requested_action"] = decision.get("requested_action", decision["action"])
+        if decision.get("reason"):
+            outcome["reason"] = decision["reason"]
+    enforce_capacity(svc, fresh={mid for outcome in outcomes for mid in outcome.get("new_ids", [])})
     return {"outcomes": outcomes}
 
 
@@ -352,20 +557,19 @@ def prepare_effect(svc, row: dict) -> dict:
             batch = svc.emb.embed([e.text for e in events], keys=keys)
             vectors = [batch[i] for i in range(len(events))]
         if isinstance(result, dict):
-            for d in result.get("decisions", []):
-                if not isinstance(d, dict):
-                    targets.append(None)
-                    actions.append(None)
-                    continue
-                actions.append(d.get("action"))
+            targets, actions = [None] * len(candidates), [None] * len(candidates)
+            for d in selector.validate(result, row, svc):
+                idx = d.get("candidate_index") if isinstance(d, dict) else None
+                if type(idx) is not int or not 0 <= idx < len(candidates) or actions[idx] is not None:
+                    raise ValueError("Selector must return exactly one decision per candidate")
+                actions[idx] = d.get("action")
                 tid = d.get("target_id")
                 old = (svc.engine.mems.get(tid)
                        if type(tid) is int and type(tid) is not bool else None)
-                targets.append({"target_id": tid,
+                targets[idx] = {"target_id": tid,
                                 "stamps": ([old.superseded_by, old.aggregated_into,
                                             old.last_seen]
                                            if old is not None else None)}
-                               if old is not None else {"target_id": tid, "stamps": None})
     elif kind == "maintenance_due" and isinstance(result, dict) \
             and isinstance(result.get("event"), dict):
         event = result["event"]

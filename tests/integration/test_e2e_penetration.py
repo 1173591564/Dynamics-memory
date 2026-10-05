@@ -182,6 +182,12 @@ def test_chain2_conflict_to_human_review_both_branches(tmp_path):
         assert svc.tasks.pending_reviews() == []
 
         # 分支 B：accept_new —— 新版本入库、旧版退役、张力消解
+        svc.tasks.close()
+        svc.log.close()
+        svc = _svc(tmp_path / "accept-new")
+        svc.trio_mode = True
+        svc.observe("部署在 A 服务器", "说明")
+        target = _seed_conflict_target(svc)
         _apply_selector_conflict(svc, target)
         reviews = svc.tasks.pending_reviews()
         assert len(reviews) == 1

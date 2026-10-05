@@ -14,7 +14,7 @@ import math
 from .types import Memory, Pool
 
 
-def pinned_ids(engine) -> frozenset[int]:
+def pinned_ids(engine, external=None) -> frozenset[int]:
     """淘汰保护：未决 tension 两端 ∪ 待裁决聚合体 ∪ 其成员 id。
 
     只读引擎内存态；人审队（tasks 侧 target_id）引用的条目若被迁往 A，
@@ -29,6 +29,21 @@ def pinned_ids(engine) -> frozenset[int]:
         if m.pending_review:
             pins.add(m.id)
             pins.update(m.agg_members)
+    pins.update(getattr(engine, "_external_pins", ()) if external is None else external)
+    for pair, mid, _, _ in getattr(engine, "_shadow_pending", ()):
+        pins.update(pair)
+        pins.add(mid)
+    pending = list(pins)
+    while pending:
+        mid = pending.pop()
+        memory = engine.mems.get(mid)
+        if memory is None:
+            continue
+        refs = [memory.superseded_by, memory.aggregated_into, *memory.agg_members]
+        for ref in refs:
+            if ref is not None and ref in engine.mems and ref not in pins:
+                pins.add(ref)
+                pending.append(ref)
     return frozenset(pins)
 
 
@@ -84,7 +99,8 @@ def plan_capacity(mems: dict[int, Memory], cfg,
     to_archive = [m.id for m in c_unpinned[:archive_count]]
 
     def _non_retired(m: Memory) -> bool:
-        return m.superseded_by is None and m.aggregated_into is None
+        return (m.superseded_by is None and m.aggregated_into is None
+                and m.withdrawn_at is None)
 
     # A 池 = 存量 A + 模拟迁入。新迁入的排序戳 = t（缺省按最新）。
     a_keys: dict[int, tuple[float, int]] = {

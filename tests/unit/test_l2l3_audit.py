@@ -269,6 +269,81 @@ def test_probe_diagnostics(mems, tasks, seen, ctx, gold, harmful, pipeline, retr
     assert rec["pipeline_status"] == pipeline
     assert rec["retrieval_status"] == retrieval
     assert rec["eligible"] is eligible
+    failed = any(t["state"] == "dead" and t.get("unit_id") in {0} for t in tasks)
+    assert rec["end_to_end_pass"] is (pipeline == "ready" and retrieval in ("hit", "clean") and not failed)
+
+
+def test_probe_needs_human_and_uncertain_end_to_end(tmp_path):
+    probe = {"id": "p", "t": 1, "dimension": "C", "knob": 0, "gold": ["flag-8000", "flag-8100"],
+             "harmful": [], "expect_uncertain": True}
+    snapshot = {"revision": 2, "mems": [{"id": 0, "text": "开关是 flag-8000", "visible": True}],
+                "tasks": [], "reviews": [{"id": 1, "target_id": 0}]}
+    ctx = "- [待人审冲突] 开关是 flag-8000\n- [待人审提案，非当前事实] 开关是 flag-8100"
+    rec = run_audit_chain._probe_record("st", probe, {"drained": True}, snapshot, set(), {0}, 200,
+                                        {"context": ctx})
+    assert rec["pipeline_status"] == "needs_human"
+    assert rec["eligible"] is False
+    assert rec["end_to_end_pass"] is True
+    missing = run_audit_chain._probe_record("st", probe, {"drained": True}, snapshot, set(), {0}, 200,
+                                            {"context": "- [待人审冲突] 开关是 flag-8000"})
+    assert missing["end_to_end_pass"] is False
+
+
+def test_convergence_summary_reports_identity_and_future_sources():
+    export = {"mems": [
+        {"id": 0, "claim_key": ["网关", "端口"], "claim_value": "gate-1", "pending_review": False,
+         "superseded_by": None, "aggregated_into": None, "withdrawn_at": None},
+        {"id": 1, "claim_key": ["网关", "端口"], "claim_value": "gate-1", "pending_review": False,
+         "superseded_by": None, "aggregated_into": None, "withdrawn_at": None},
+        {"id": 2, "claim_key": [], "claim_value": "", "pending_review": False,
+         "superseded_by": None, "aggregated_into": None, "withdrawn_at": None}],
+        "tasks": [{"state": "done", "committed_effect": {"outcomes": [{"action": "UPDATE"}]}},
+                  {"state": "dead", "id": 9, "committed_effect": None}],
+        "units": [{"unit_id": 0, "t": 0}], "tensions": [], "human_reviews": [],
+        "pool_sizes": {"C": 2, "M": 0, "A": 1}}
+    probes = [{"probe": "p0", "http": 200, "end_to_end_pass": True, "pipeline_status": "ready",
+               "retrieval_status": "hit", "response": {"selected": [{"src": [0]}]}}]
+    summary = run_audit_chain.convergence_summary(export, probes, 1)
+    assert summary["duplicate_current_claims"] == 1
+    assert summary["unknown_identity_current"] == 1
+    assert summary["committed_actions"] == {"UPDATE": 1}
+    assert summary["dead_tasks"] == [9]
+    assert summary["future_sources"] == [] and summary["end_to_end_rate"] == 1.0
+    later = [{"probe": "p0", "t": 0, "http": 200, "end_to_end_pass": True,
+              "pipeline_status": "ready", "retrieval_status": "hit",
+              "response": {"selected": [{"src": [0]}]}}]
+    assert run_audit_chain.convergence_summary(export, later, 1)["future_sources"] == [
+        {"probe": "p0", "source": 0}]
+
+
+def test_convergence_summary_counts_inflight_duplicates_and_stale_versions():
+    export = {"mems": [], "tasks": [], "units": [], "tensions": [], "human_reviews": []}
+    probes = [
+        {"probe": "p0", "http": 200, "gold": ["gate-1"], "harmful": [], "memory_matches": {"gate-1": [4, 7]}},
+        {"probe": "p1", "http": 200, "gold": ["gate-2"], "harmful": ["gate-1"],
+         "memory_matches": {"gate-2": [8], "gate-1": [4]}},
+        {"probe": "p2", "http": 200, "gold": [], "harmful": ["gate-1", "gate-2"],
+         "memory_matches": {"gate-1": [], "gate-2": []}},
+        {"probe": "legacy", "http": 200, "gold": ["x"], "harmful": []}]
+    summary = run_audit_chain.convergence_summary(export, probes, 4)
+    assert summary["inflight_duplicates"] == 1
+    assert summary["inflight_stale_retrievable"] == 1
+    assert summary["inflight_unmeasured"] == 1
+
+
+def test_kernel_corpus_live_slot_is_append_only_and_ends_unretracted():
+    base = gen_l2.kernel_convergence(3)["streams"][0]
+    live = gen_l2.kernel_convergence(3, live=True)["streams"][0]
+    assert len(base["turns"]) == len(base["probes"]) == 21
+    assert live["turns"][:21] == base["turns"] and live["probes"][:21] == base["probes"]
+    extra_turns, extra_probes = live["turns"][21:], live["probes"][21:]
+    assert len(extra_turns) == len(extra_probes) == 4
+    assert [p["id"] for p in live["probes"]] == [f"kernel-s3-p{i}" for i in range(25)]
+    assert all(p["t"] == i + 22 for i, p in enumerate(extra_probes))
+    assert not any("作废" in t["user"] for t in extra_turns)
+    final = extra_probes[-1]
+    assert final["gold"] and not final["expect_uncertain"] and final["harmful"] == extra_probes[-2]["harmful"]
+    assert not set(final["gold"]) & set(final["harmful"])
 
 
 def test_drain_waits_for_pending_l0_and_treats_skipped_as_terminal(monkeypatch):

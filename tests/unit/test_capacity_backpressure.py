@@ -35,6 +35,46 @@ def _mem(i, pool=Pool.CANDIDATE, v=0.5, archived_at=None, **kw):
 
 # ---------------------------------------------------------------- plan_capacity
 
+@pytest.mark.parametrize("existing_m", [False, True])
+def test_maintenance_promotes_best_after_freeing_demotion_capacity(tmp_path, existing_m):
+    svc = _svc(tmp_path, cap_m=1)
+    try:
+        svc.engine.mems = {0: _mem(0, v=3.0),
+                           1: _mem(1, pool=Pool.MEMORY if existing_m else Pool.CANDIDATE,
+                                   v=0.5 if existing_m else 4.0)}
+        svc.engine._next_id = 2
+        svc.engine.step(1)
+        expected = 0 if existing_m else 1
+        assert svc.engine.mems[expected].pool is Pool.MEMORY
+        assert sum(m.pool is Pool.MEMORY for m in svc.engine.mems.values()) == 1
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
+def test_pending_feedback_pins_archive_after_registry_retirement(tmp_path):
+    from hybrid_memory.dispatch.effects import enforce_capacity
+    svc = _svc(tmp_path, theta=-1, cap_a=1)
+    try:
+        svc.observe("旧事实", "好的")
+        svc.engine.mems[0] = _mem(0, pool=Pool.ARCHIVE, archived_at=0)
+        svc.engine._next_id = 1
+        rid = svc.recall("旧事实")["retrieval_id"]
+        svc.process_semantic_tasks = lambda: {}
+        assert svc.feedback(rid, "旧事实？", "旧事实")["accepted"]
+        svc._retrievals.pop(rid)
+        svc.engine.mems[1] = _mem(1, pool=Pool.ARCHIVE, archived_at=1)
+        svc.engine._next_id = 2
+        svc._commit_sidecar_effect(lambda: enforce_capacity(svc))
+        assert 0 in svc.engine.mems and 1 not in svc.engine.mems
+        del svc.process_semantic_tasks
+        assert svc.process_semantic_tasks()["credited"] == 1
+        assert svc.engine.mems[0].pool is Pool.CANDIDATE
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
 def test_plan_capacity_fifo_uses_current_t_for_new_archives():
     """cap_c=1/cap_a=1：C 溢出 1 条迁 A 后 A 共 2 条，须删"存量最旧"，
     新迁入者（打当前 t）必须存活——旧实现 None→-1 把新迁入当最旧先删（FIFO 反了）。"""
@@ -108,7 +148,7 @@ def _pinned_pair_service(tmp_path, **cfg):
 
 def test_apply_selector_backpressure_rejects_and_preserves_result(tmp_path):
     calls = []
-    svc = _pinned_pair_service(tmp_path, cap_c=1, cap_a=10, cap_context=100)
+    svc = _pinned_pair_service(tmp_path, cap_c=2, cap_a=10, cap_context=100)
     worker = DispatchWorker(svc, _fake_agents(calls))
     now = [0.0]
     svc.tasks.clock = lambda: now[0]
@@ -196,6 +236,9 @@ def test_decide_human_review_backpressure(tmp_path):
         eng.mems[2] = _mem(2, v=0.9)
         eng._next_id = max(eng._next_id, 3)
         eng.add_tension(0, 2, 0)     # 未决张力：target 退役后仍被钉住
+        svc.tasks.enqueue("feedback_pending", {"retrieval_id": 99, "selected": [0],
+                                              "texts": [eng.mems[0].text], "question": "旧方案？",
+                                              "answer": "webpack"}, 0)
         cand = {"text": "旧方案用 webpack", "source_unit_ids": [0]}
         with svc.tasks.transaction() as conn:
             conn.execute(

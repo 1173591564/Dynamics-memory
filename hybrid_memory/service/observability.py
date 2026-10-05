@@ -8,7 +8,7 @@ monkeypatch）。
 """
 from __future__ import annotations
 
-from ..core import dynamics
+from ..dispatch.effects import protected_ids
 
 # PENDING-09 预算线（design-debts §2）：单次引擎状态序列化超过此值拒收
 # 新效果（吵闹失败，不静默变慢）。解冻=分段 pickle ADR（I5 单点接入）。
@@ -26,9 +26,10 @@ def capacity_status(service: object) -> dict:
       503 的逼近由非退役 pin 决定；
     - 只读，不触发裁决/收口；alerts 为外显告警键（空列表=无告警）。
     """
-    pinned = dynamics.pinned_ids(service.engine)
+    pinned = protected_ids(service)
     non_retired = {m.id for m in service.engine.mems.values()
-                   if m.superseded_by is None and m.aggregated_into is None}
+                   if m.superseded_by is None and m.aggregated_into is None
+                   and m.withdrawn_at is None}
     occupied = len(pinned & non_retired)
     cap = service.cfg.cap_context
     ratio = (occupied / cap) if cap else 0.0

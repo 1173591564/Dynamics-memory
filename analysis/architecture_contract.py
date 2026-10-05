@@ -304,7 +304,7 @@ SYMBOL_OVERRIDES = {
     "hybrid_memory/dispatch/effects.py::apply_selector": (
         "五路分流执行", "svc、row、output、conn", "{'outcomes':[{index,action,target_id?,new_ids?,new_evidence?}]}", "规范计划+动态复核+容量准入；全批原子", "非法/漂移整批回滚；容量不足背压"),
     "hybrid_memory/dispatch/effects.py::apply_hauler": (
-        "候选校验与接力", "svc、row、output、conn", "{'candidates':n}", "去重后建 selector_due；空批不建任务", "非法候选整批拒绝"),
+        "候选校验与接力", "svc、row、output、conn", "{'candidates':n,'source_reconciled':n,'rejected_candidates':[]}", "结构+来源预检后逐条浅接地校验：未接地候选按条拒绝并计 n_ungrounded（可见），合法候选用已校验 Event 正文接力；已知槽位的明确用户声明补建来源候选并替代历史复述及其译文，防共目标重复 UPDATE；空批不建任务", "来源越窗整批拒绝；接地失败不再拖整批死信"),
     "hybrid_memory/dispatch/effects.py::apply_reviewer": (
         "规则与修复落地", "svc、row、output、conn", "{'rules':n,'repair_candidates':n}", "规则/停用/审计与接力同事务", "非法 bundle 整拒；上限满背压"),
     "hybrid_memory/dispatch/effects.py::apply_conflict": (
@@ -578,7 +578,7 @@ SYMBOL_OVERRIDES = {
     "hybrid_memory/service/lifecycle.py::stop_unit_recovery": ("有界停止并报告未停超时",),
     "hybrid_memory/service/observe.py::process_unit.collect": ("单元事务内收集 handoffs",),
     "hybrid_memory/service/observe.py::process_unit.mutate": ("推进游标/场景/信号并产生单元回执",),
-    "hybrid_memory/service/operate.py::validate_proposal": ("提议校验：来源/因果/脱敏/自指/浅接地",),
+    "hybrid_memory/service/operate.py::validate_proposal": ("提议校验：来源/因果/脱敏/自指/浅接地与来源声明身份规范化", "svc、候选与因果 before", "Event 与 supersedes ids", "同键同值先锚用户来源；无同键声明时，值及撤回类别只能对应唯一安全源槽位，正文/身份一起采用源声明；多槽同值不猜，模型译文不独立创造槽位；候选尾括注只在同键同值安全用户来源可核对时替换为源正文，不从模型修饰授权", "非法来源/未接地/歧义抛 ProposalRejected；未知复杂语句不自动授权"),
     "hybrid_memory/service/operate.py::durable_propose": ("任务上下文内的幂等提议与回执",),
     "hybrid_memory/service/operate.py::resolve.mutate": ("裁决与实体回填的实际效果",),
     "hybrid_memory/service/operate.py::diagnose": ("记录 miss_type、计数与审计",),
@@ -711,6 +711,30 @@ SYMBOL_OVERRIDES = {
         "None（就地迁 A/删除）或抛 Degraded(capacity_backpressure)",
         "apply_selector/apply_maintenance/decide_human_review 提交前统一收口；全 pin 整批拒收回滚",
         "容量不足且全 pin 抛 Degraded(capacity_backpressure)→503；不解除保护、不静默超限"),
+    "hybrid_memory/core/triggers.py::claim_key": (
+        "字面单值槽位规范化", "有限语法的 subject", "(entity,attribute)", "纯函数；去句法时间词与项目缺省前缀，不做语义实体推断", "未识别句法不产生授权"),
+    "hybrid_memory/core/triggers.py::claims_in": (
+        "提取可复核的字面声明", "text 与 authoritative 标志", "key/value/mode/text/old_value 列表", "有限中英文单值语法；授权视图拒假设/引用/问题；规则不独立授权", "不支持语法返回空，交模型或人审而非猜测"),
+    "hybrid_memory/agents/selector.py::authorized_change": (
+        "验证用户更新凭据", "svc/row/已校验 Event/旧 Memory", "proof unit id 或 None", "同键同值、用户通道、因果锚、前驱与人工水位；多义源不能授权", "缺证据返回 None；不写库"),
+    "hybrid_memory/agents/selector.py::normalize_claim": (
+        "来源约束下规范五路建议", "svc/row/Event/model decision", "实际 Decision 与 requested/proof/related/equivalent", "同槽去重、历史拒绝、明确授权更新/撤回、冻结优先；未知槽不凭 V 裁真", "跨槽目标拒绝；证据不足 CONFLICT"),
+    "hybrid_memory/dispatch/effects.py::protected_ids": (
+        "计算效果保护闭包", "服务锁内的 engine/registry/active tasks", "frozenset Memory ids", "未结反馈、ready 目标、shadow、引用链与可引用撤回标记；同容量/观测口径", "只读，不解除已有保护"),
+    "hybrid_memory/dispatch/effects.py::review_stamp": (
+        "事实版本邮戳", "Memory", "退役/撤回/身份/值/正文列表", "不把 pool/V/last_seen 的效用变化误认语义版本改变", "无 I/O"),
+    "hybrid_memory/dispatch/effects.py::enqueue_review": (
+        "有界持久争议去重与复核接力", "svc/同事务 conn/row/candidate/Event/target/reason/related", "review id", "目标版本+槽值去重、并来源、同事务 conflict_pending；人审否决的同源重放不复活", "512 上限背压，原证据不删除"),
+    "hybrid_memory/dispatch/effects.py::close_retired_relations": (
+        "退役引用收束", "svc/同事务 conn", "None", "相关审批 stale、释放 pending/tension，迟信用沿代表结清；不自动批准人审", "受外层效果回滚保护"),
+    "hybrid_memory/service/recall.py::attach_disputes": (
+        "加入可见争议对照", "svc/Retrieval/before", "就地附加 disputes", "只有实际选中目标及因果内提案，不伪造 C/Memory id；渲染有界且不信用提案", "不写主引擎或人审库"),
+    "eval/l2l3/run_audit_chain.py::convergence_summary": (
+        "内核收敛与完整分母汇总", "export/probes/expected count", "重复/身份覆盖/实提交/死信/端到端/三池/因果指标", "不把模型建议或未发/未就绪排除后冒称端到端成功；未知身份单列；逐探针时刻另记在途重复（同一现值多条可检索）与可检索旧值数，终态近乎平凡的计数不代替它", "旧记录诊断标 unmeasured"),
+    "eval/l2l3/gen_l2.py::kernel_convergence": (
+        "多槽多代与真争议语料", "seed、live", "21 轮/21 边界 probe 的单流 corpus；live=True 末尾追加 4 轮 4 探针的不撤回槽位（共 25）", "三实体三属性、同义复述、四代、撤回、人审与重复争议；live 使终态保有可核对的现役身份（否则三槽全撤回，终态重复计数近乎平凡）；不修改 TIDE", "seed 只改变唯一值；live 默认关，旧语料逐位不变"),
+    "eval/l2l3/gen_l2.py::kernel_convergence.turn": ("按当前单流追加连续逻辑轮",),
+    "eval/l2l3/gen_l2.py::kernel_convergence.probe": ("追加当前因果边界的判据；真争议测不确定输出而非强选赢家",),
     "hybrid_memory/service/review.py::conflict_ledger": (
         "冲突统一读模型",
         "svc 与可选 before",
@@ -746,6 +770,10 @@ CONSTANTS = {
     "hybrid_memory/core/triggers.py::QUANT_RE": ("保留", "数量/阈值正则"),
     "hybrid_memory/core/triggers.py::LONG_TURN_CHARS": ("保留", "长轮阈值"),
     "hybrid_memory/core/triggers.py::DISSATISFACTION_RE": ("保留", "不满正则；只调度不授权"),
+    "hybrid_memory/core/triggers.py::CLAIM_RE": ("保留", "N54 有限单值句法；配合用户来源/槽/时间与负例验证，不独立授权"),
+    "hybrid_memory/core/triggers.py::RETRACT_RE": ("保留", "N54 字面撤回句法；撤回与冷 A 正交"),
+    "hybrid_memory/core/triggers.py::UNSAFE_CLAIM_RE": ("保留", "N54 授权视图排除引用/假设/疑问；不修改原 L0"),
+    "hybrid_memory/dispatch/effects.py::MAX_PENDING_REVIEWS": ("保留", "N54 人审 512 上界；满时背压而非丢提案"),
     "hybrid_memory/dispatch/effects.py::EFFECTS": ("保留", "9 种 kind 的 applier 注册表；启动自检依据"),
     "hybrid_memory/dispatch/policy.py::_INVESTIGATION": ("保留", "调查类策略实例；N06 定案：模型 2/应用 3"),
     "hybrid_memory/dispatch/policy.py::_SEMANTIC": ("保留", "语义类策略实例；N06 定案：模型 5/应用 5/耗尽 dead/lease 360"),

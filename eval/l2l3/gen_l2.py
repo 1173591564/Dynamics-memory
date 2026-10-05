@@ -199,6 +199,49 @@ def retrieval_smoke() -> dict:
                    for i, (t, dim, query, gold, harmful, scenario) in enumerate(specs)]}]}
 
 
+def kernel_convergence(seed: int = 0, live: bool = False) -> dict:
+    stream = {"id": f"kernel-convergence-s{seed}", "turns": [], "probes": []}
+    def turn(text):
+        i = len(stream["turns"])
+        stream["turns"].append({"t": i, "user": text, "assistant": "收到。"})
+        return i + 1
+    def probe(query, gold, harmful=(), *, uncertain=False, scenario="kernel"):
+        i = len(stream["probes"])
+        stream["probes"].append({"id": f"kernel-s{seed}-p{i}", "t": len(stream["turns"]),
+                                 "dimension": "F" if not gold else "C" if uncertain else "V",
+                                 "knob": i, "query": query, "gold": list(gold), "harmful": list(harmful),
+                                 "scenario": scenario, "expect_uncertain": uncertain})
+    for entity, attr, prefix in (("网关模块", "端口", "gate"), ("部署模块", "保留天数", "keep"),
+                                 ("文档模块", "输出目录", "docs")):
+        values = [f"{prefix}-{7000 + seed * 100 + g}" for g in range(4)]
+        turn(f"{entity}的{attr}定为 {values[0]}。")
+        probe(f"{entity}的{attr}现在是什么？", [values[0]])
+        turn(f"{entity}的{attr}是 {values[0]}。")
+        probe(f"{entity}的{attr}现在是什么？", [values[0]], scenario="equivalent_replay")
+        for g in range(1, 4):
+            turn(f"{entity}的{attr}改为 {values[g]}。")
+            probe(f"{entity}的{attr}现在是什么？", [values[g]], values[:g], scenario="value_chain")
+        turn(f"{entity}的{attr}设定 {values[-1]} 作废。")
+        probe(f"{entity}的{attr}现在是什么？", [], values, scenario="retraction")
+    turn("审计模块的开关定为 flag-8000。")
+    probe("审计模块的开关现在是什么？", ["flag-8000"])
+    turn("审计模块的开关是 flag-8100。")
+    probe("审计模块的开关现在是什么？", ["flag-8000", "flag-8100"], uncertain=True, scenario="genuine_conflict")
+    turn("审计模块的开关是 flag-8100。")
+    probe("审计模块的开关现在是什么？", ["flag-8000", "flag-8100"], uncertain=True, scenario="conflict_dedup")
+    if live:
+        entity, attr = "缓存模块", "过期时间"
+        values = [f"ttl-{9000 + seed * 100 + g}" for g in range(3)]
+        turn(f"{entity}的{attr}定为 {values[0]}。")
+        probe(f"{entity}的{attr}现在是什么？", [values[0]])
+        for g in (1, 2):
+            turn(f"{entity}的{attr}改为 {values[g]}。")
+            probe(f"{entity}的{attr}现在是什么？", [values[g]], values[:g], scenario="value_chain")
+        turn(f"{entity}的{attr}是 {values[2]}。")
+        probe(f"{entity}的{attr}现在是什么？", [values[2]], values[:2], scenario="equivalent_replay")
+    return {"kind": "l2", "purpose": "kernel-convergence-not-TIDE-curves", "seed": seed, "streams": [stream]}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seeds", type=int, default=1)
@@ -211,11 +254,17 @@ def main() -> None:
                     help="逗号分隔维度过滤，如 R,V,C,F")
     ap.add_argument("--api-key", default=None)
     ap.add_argument("--retrieval-smoke", action="store_true")
+    ap.add_argument("--kernel-convergence", action="store_true")
+    ap.add_argument("--live", action="store_true",
+                    help="kernel-convergence 末尾追加一个不撤回的槽位，使终态有可核对的现役身份")
+    ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
-    if args.retrieval_smoke:
+    if args.retrieval_smoke or args.kernel_convergence:
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(retrieval_smoke(), ensure_ascii=False, indent=1), encoding="utf-8")
+        corpus = (kernel_convergence(args.seed, live=args.live) if args.kernel_convergence
+                  else retrieval_smoke())
+        out.write_text(json.dumps(corpus, ensure_ascii=False, indent=1), encoding="utf-8")
         return
     key = args.api_key or __import__("os").environ.get("ZAI_API_KEY")
     dims = tuple(args.dims.split(",")) if args.dims else None

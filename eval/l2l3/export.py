@@ -43,7 +43,11 @@ def _mem_row(m) -> dict:
             "superseded_by": m.superseded_by,
             "aggregated_into": m.aggregated_into,
             "evid": getattr(m, "evid", None),
-            "agg_members": list(getattr(m, "agg_members", ()) or ())}
+            "agg_members": list(getattr(m, "agg_members", ()) or ()),
+            "claim_key": list(m.claim_key), "claim_value": m.claim_value,
+            "claim_unit": m.claim_unit, "withdrawn_at": m.withdrawn_at,
+            "reviewed_after": m.reviewed_after,
+            "hits": m.hits, "conf_pos": m.conf_pos, "conf_neg": m.conf_neg}
 
 
 def _task_row(row) -> dict:
@@ -114,8 +118,11 @@ def read_snapshot(project: str) -> dict:
                 raise ValueError("processed tasks have no durable checkpoint")
             return {"revision": 0, "mems": [], "tasks": tasks}
         load_state(svc, checkpoint["state"])
-        return {"revision": checkpoint["revision"], "tasks": tasks,
-                "mems": [dict(_mem_row(m), visible=is_visible(m)) for m in svc.engine.mems.values()]}
+        reviews = [dict(row) for row in conn.execute("SELECT * FROM human_reviews WHERE status='pending'")]
+        return {"revision": checkpoint["revision"], "tasks": tasks, "reviews": reviews,
+                "mems": [dict(_mem_row(m), visible=is_visible(m),
+                              retrievable=m.superseded_by is None and m.aggregated_into is None and m.withdrawn_at is None)
+                         for m in svc.engine.mems.values()]}
 
 
 def export_run(repo: str, project: str, out_path: str) -> dict:

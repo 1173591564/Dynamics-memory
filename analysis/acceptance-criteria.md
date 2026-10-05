@@ -104,9 +104,9 @@
 | PENDING-07 | L0 未脱敏进 LLM（log_search snippet 含原文） | BASELINE #2 | 脱敏层设计（注意：修了会影响调查员能力，需评测） |
 | PENDING-08 | 真实会话 L3 与独立人工复核未闭合 | N48 CLI 首验；N51 inline + 85 条开发日志引述 + Agent 单评；原始 99.8% 不作人工验收 | 真实 provider + 真实会话证据 + 人工抽检 |
 | PENDING-09 | checkpoint 全量 pickle O(N)（500 条≈301 KB/次） | design-debts.md §2 实测；2MB 预算闸已接线（N49） | 分段 pickle ADR（I5 单点接入） |
-| PENDING-11 | 值链收敛触发盲区：纯观察流量张力不触发，旧代以"当前值"口吻驻留 | N51 实跑：V 链 43/57 过期代入池、21 条当前口吻；端口链 6 条并存；人审 50 条悬置 | 值变更后主动张力检查 或 检索期多代"当前值"消解（设计+回归） |
-| PENDING-12 | 值变更判罚口径不统一（同值变更 CREATE/CONFLICT 并存） | N51 实跑 + N52 修正：docs 鉴权链 CONFLICT×3 与 CREATE 并存（人审待决期间同义新记忆可检索） | 口径 ADR（与 PENDING-11 协同） |
-| PENDING-13 | Selector 同批多决定命中同一目标时与 N08 邮戳自碰撞：前序决定事务内改 `last_seen`/`superseded_by`，后序决定 prepare 邮戳失配→整批拒绝；封存载荷使重试确定性复现→死信 | N53 DS 小链 task 8/10 dead×5（`EXIST t0`+`CONFLICT/UPDATE t0` 同批）；GLM 同语料决定组合不共目标未触发——模型无关的内核盲区 | 事务内自碰撞豁免（同批已触目标跳过邮戳复核，或批首一次性复核）+ 同批双目标回归 |
+| PENDING-11 | 值链收敛触发盲区：纯观察流量张力不触发，旧代以"当前值"口吻驻留 | N51 实跑：V 链 43/57 过期代入池、21 条当前口吻；端口链 6 条并存；人审 50 条悬置。**N54 已落地缓解（待验收，未消项）**：槽位身份+来源授权的自动改值/撤回，纯观察流量下旧代随授权声明同事务退役；真实链：GLM/DS 各 9 轮冒烟 9/9；DS 21 轮 s2b/s1c 21/21、0 死信，GLM s2 按终版判据 20/21、仍有相关死信；最终内核 GLM/DS live3d 各 25/25、0 死信，含保留现役槽位，当前及在途重复/旧值可检索数为 0、各 1 条待审（2 个争议展示探针不强选赢家）；不据此保证所有语句收敛 | 人工验收 N54 口径；剩余：授权句法仅覆盖有限字面模式，复杂自然语言改值仍归模型建议+人审；无声明键的记忆（偏好/机制）不参与槽位收敛 |
+| PENDING-12 | 值变更判罚口径不统一（同值变更 CREATE/CONFLICT 并存） | N51 实跑 + N52 修正：docs 鉴权链 CONFLICT×3 与 CREATE 并存。**N54 已落地口径（待验收）**：判罚由服务端按槽位+来源证据规范（模型 CREATE/CONFLICT/UPDATE 对授权变更收敛到同一结果；真矛盾持久去重进人审并双方带标注端出）；GLM live3c 的模型尾括注曾造成 2 条审批，来源规范化与已知槽位无身份 UPDATE 守卫补强后，冻结输出回放及两 provider live3d 均只留 1 条审批 | 人工验收 N54 口径 ADR（target-architecture §9.2 N54 D1–D13） |
+| PENDING-13 | Selector 同批多决定命中同一目标时与 N08 邮戳自碰撞：前序决定事务内改 `last_seen`/`superseded_by`，后序决定 prepare 邮戳失配→整批拒绝；封存载荷使重试确定性复现→死信 | N53 DS 小链 task 8/10 dead×5。**N54 已修（待验收）**：邮戳在批入口一次性复核并按 candidate_index 对齐；同批双目标回归（EXIST+CONFLICT/UPDATE 共目标、乱序决定、外部漂移仍拒收） | 人工验收；Hauler effect 的逐条浅接地拒绝另防止单条坏候选拖整批死信 |
 
 > 消项记录：PENDING-10（pin 占用指标+告警）已于 N49 兑现——/health 暴露
 > pin_roots/pinned_context/pin_occupancy/alerts，≥0.7 外显告警；回归

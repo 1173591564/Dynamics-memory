@@ -41,6 +41,52 @@ QUANT_RE = re.compile(
 
 LONG_TURN_CHARS = 2500
 
+CLAIM_RE = re.compile(
+    r"^(?P<head>[\w\u3400-\u9fff ./:'-]{1,100}?)"
+    r"(?:(?:由|从)\s*(?P<old>[A-Za-z0-9_.:/+-]+)\s*(?:改为|改成|调整为|变更为)|"
+    r"(?P<set>定为|设为|设置为|调整为|改为|改成|变更为| is set to | set to )|"
+    r"(?P<assert>现在是|目前是|当前是|应该是|应为|是|为| is | = |:=))\s*"
+    r"(?P<value>[^\s，,。；;！？?!（）()]{1,120})$", re.IGNORECASE)
+RETRACT_RE = re.compile(
+    r"^(?:之前的|先前的|原来的|此前的)?(?P<head>[\w\u3400-\u9fff ./:'-]{1,100}?)"
+    r"(?:设定|设置)?(?:\s+[（(]?(?P<value>[A-Za-z0-9_][A-Za-z0-9_.:/+-]{0,119})[）)]?)?"
+    r"\s*(?:已经|已)?(?:被)?(?:作废|撤回|废弃|弃用|停用|取消|withdrawn|retracted)$", re.IGNORECASE)
+UNSAFE_CLAIM_RE = re.compile(
+    r"[?？\"“”‘’`]|如果|假设|可能|建议|考虑|例如|据说|引用|"
+    r"\b(?:if|maybe|could|should|suggest|example|quote)\b", re.IGNORECASE)
+
+
+def claim_key(head: str) -> tuple[str, str]:
+    head = re.sub(r"(?:最初|最早|原先|原本|目前|当前|现在|最新|已|那个|这个)$", "", head.strip())
+    parts = head.rsplit("的", 1) if "的" in head else ["", head]
+    if not parts[0] and parts[1].startswith("项目"):
+        parts[1] = parts[1][2:]
+    return tuple(re.sub(r"\s+", "", part) for part in parts)
+
+
+def claims_in(text: str, *, authoritative: bool = False) -> list[dict]:
+    if not isinstance(text, str) or (authoritative and UNSAFE_CLAIM_RE.search(text)):
+        return []
+    claims = []
+    for clause in re.split(r"[，,。；;！!\n]+", text):
+        clause = re.sub(r"\s*了$", "", clause.strip().rstrip("."))
+        clause = re.sub(r"[（(](?:原值|旧值|原为|原)?\s*([A-Za-z0-9_.:/+-]+)[）)]", r" \1", clause)
+        withdrawn = RETRACT_RE.fullmatch(clause)
+        match = withdrawn or CLAIM_RE.fullmatch(clause)
+        if not match:
+            continue
+        key = claim_key(match["head"])
+        if not key[1] or any(word in key[1] for word in ("不", "可能", "建议")):
+            continue
+        value = (match["value"] or "").rstrip(".")
+        mode = ("retract" if withdrawn else "change" if match["old"] else
+                "set" if match["set"] else "assert")
+        if authoritative and mode == "assert" and is_correction(text):
+            mode = "correction"
+        claims.append({"key": key, "value": value, "mode": mode,
+                       "text": clause, "old_value": "" if withdrawn else match["old"] or ""})
+    return claims
+
 # Reviewer routing is broader than the strict correction test used to authorize
 # UPDATE. This only schedules an agent; it does not decide a fact.
 DISSATISFACTION_RE = re.compile(

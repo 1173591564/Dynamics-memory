@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import pickle
 
+from ..core import triggers
 from ..core.types import Memory, Pool, Retrieval, Tension
 
 _COUNTERS = ("n_promote", "n_demote", "n_evict", "n_archive", "n_revive",
@@ -26,7 +27,8 @@ STATE_KEYS = {"mems", "tensions", "next_id", "consolidation_pending",
 # Memory 后加字段：旧 state.pkl 反序列化出来的对象没有这些属性，
 # 加载时按默认值补齐（dataclass 的 __dict__ 直接落盘，不会走 __init__）
 MEMORY_FIELD_DEFAULTS = {"origin": "passive", "entity": "",
-                         "archived_at": None}
+                         "archived_at": None, "claim_key": (), "claim_value": "",
+                         "claim_unit": None, "withdrawn_at": None, "reviewed_after": None}
 
 # state.pkl 受限反序列化白名单：state 只含内置容器/标量 + Memory/Tension/
 # Pool + numpy 数组重建函数，其余 global 一律拒绝（pickle RCE 防线）
@@ -176,7 +178,21 @@ def load_state(svc, checkpoint: bytes | None = None) -> None:
         for k, v in MEMORY_FIELD_DEFAULTS.items():
             if k not in m.__dict__:
                 setattr(m, k, v)
-
+        if not m.claim_key and m.kind == "fact":
+            claims = triggers.claims_in(m.text)
+            if len(claims) == 1 and claims[0]["mode"] != "retract":
+                m.claim_key, m.claim_value = claims[0]["key"], claims[0]["value"]
+        if (not isinstance(m.claim_key, tuple) or (m.claim_key and
+                (len(m.claim_key) != 2 or any(not isinstance(v, str) for v in m.claim_key)))
+                or not isinstance(m.claim_value, str)
+                or (m.claim_unit is not None and not nonnegative_int(m.claim_unit))
+                or (m.withdrawn_at is not None and not nonnegative_int(m.withdrawn_at))
+                or (m.reviewed_after is not None and (not isinstance(m.reviewed_after, tuple)
+                    or len(m.reviewed_after) != 2 or any(type(i) is not int for i in m.reviewed_after)))):
+            raise ValueError("state.pkl 的 claim/withdrawal 字段异常")
+    for retrieval in state["retrievals"].values():
+        if "disputes" not in retrieval.__dict__:
+            retrieval.disputes = []
     eng = svc.engine
     eng.mems = state["mems"]
     eng.tensions = state["tensions"]

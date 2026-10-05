@@ -23,6 +23,26 @@ from hybrid_memory.store.evidence import LogStore
 from hybrid_memory.store.tasks import TaskStore
 
 
+def test_review_v1_migration_preserves_rows_and_adds_version_keys(tmp_path):
+    db = tmp_path / "tasks.sqlite"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE schema_version(kind TEXT PRIMARY KEY, version INTEGER NOT NULL)")
+        conn.execute("INSERT INTO schema_version VALUES('tasks', 1)")
+        conn.execute("CREATE TABLE human_reviews(id INTEGER PRIMARY KEY, source_task INTEGER NOT NULL, "
+                     "target_id INTEGER NOT NULL, candidate TEXT NOT NULL, reason TEXT NOT NULL, "
+                     "status TEXT NOT NULL DEFAULT 'pending', decision TEXT, created_at REAL NOT NULL, "
+                     "UNIQUE(source_task,target_id,candidate))")
+        conn.execute("INSERT INTO human_reviews VALUES(1,2,3,'{}','legacy','pending',NULL,1)")
+    store = TaskStore(db)
+    try:
+        row = dict(store._conn.execute("SELECT * FROM human_reviews WHERE id=1").fetchone())
+        assert row["reason"] == "legacy" and row["status"] == "pending"
+        assert row["review_key"] == row["target_stamp"] == ""
+        assert schema.SCHEMA_VERSION >= 2
+    finally:
+        store.close()
+
+
 def test_three_db_identities_are_separate(tmp_path):
     ts = TaskStore(tmp_path / "tasks.sqlite")
     try:

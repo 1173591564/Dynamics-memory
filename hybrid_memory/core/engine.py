@@ -31,6 +31,7 @@ class MemoryEngine:
         self._consolidation_pending: set[int] = set()
         self._consolidation_deferred: dict[str, frozenset[int]] = {}
         self._shadow_pending: list[tuple] = []   # (pair_key, m_id, t_ret, rel)
+        self._external_pins: frozenset[int] = frozenset()
         self.n_shadow_dropped = 0
         self.signals = SignalQueue(cfg.signal_queue_cap)
         self._next_id = 0
@@ -100,7 +101,8 @@ class MemoryEngine:
     def _current_representative(self, m: Memory) -> Memory | None:
         """迟到信用记到当前代表。链断裂时不返回尸体，避免复活已退役条目。"""
         target = maintenance.follow_chain(self, m)
-        if target.superseded_by is not None or target.aggregated_into is not None:
+        if (target.superseded_by is not None or target.aggregated_into is not None
+                or target.withdrawn_at is not None):
             return None
         return target
 

@@ -41,7 +41,7 @@ def _probe_record(stream, probe, barrier, snapshot, seen, relevant_units, code, 
 
     ctx = _served_text(response) if code == 200 else ""
     gold, harmful = probe["gold"], probe["harmful"]
-    visible = [m for m in snapshot["mems"] if m["visible"]]
+    visible = [m for m in snapshot["mems"] if m.get("retrievable", m["visible"])]
     present = {v: [m["id"] for m in visible if has_token(m["text"], v)] for v in gold + harmful}
     missing = [v for v in gold if not present[v]]
     failed = [t for t in snapshot["tasks"] if t["state"] == "dead" and t.get("unit_id") in relevant_units]
@@ -53,8 +53,16 @@ def _probe_record(stream, probe, barrier, snapshot, seen, relevant_units, code, 
         pipeline = "unexercised_retraction"
     else:
         pipeline = "ready"
+    pending = [review for review in snapshot.get("reviews", [])
+               if any(review["target_id"] in ids for ids in present.values())]
+    if pipeline in ("ready", "not_distilled") and pending:
+        pipeline = "needs_human"
     eligible = pipeline == "ready" and code == 200
     score = score_context(ctx, gold, harmful) if code == 200 else {}
+    end_to_end_pass = (code == 200 and barrier.get("drained") and not failed and
+                      (all(has_token(ctx, value) for value in gold) and "待人审" in ctx
+                       if probe.get("expect_uncertain") else
+                       eligible and score.get("S") == 1 and score.get("H") == 0))
     retrieval = ("http_error" if code is not None and code != 200 else "not_testable")
     if eligible:
         retrieval = ("harmful" if score["H"] else "clean" if not gold
@@ -68,7 +76,41 @@ def _probe_record(stream, probe, barrier, snapshot, seen, relevant_units, code, 
             "missing_gold": missing, "failed_tasks": failed,
             "harmful_previously_visible": sorted(set(harmful) & seen),
             "pipeline_status": pipeline, "retrieval_status": retrieval,
-            "eligible": eligible, **score}
+            "eligible": eligible, "end_to_end_pass": bool(end_to_end_pass), **score}
+
+
+def convergence_summary(export: dict, probes: list, expected_probes: int) -> dict:
+    from collections import Counter
+    active = [m for m in export["mems"] if m.get("superseded_by") is None
+              and m.get("aggregated_into") is None and m.get("withdrawn_at") is None]
+    resolved = [m for m in active if not m.get("pending_review")]
+    identities = Counter(tuple(m["claim_key"]) for m in resolved if m.get("claim_key"))
+    decisions = Counter(o["action"] for task in export["tasks"] if task["state"] == "done"
+                        for o in (task.get("committed_effect") or {}).get("outcomes", []))
+    units = {u["unit_id"]: u["t"] for u in export["units"]}
+    future = [{"probe": p["probe"], "source": uid} for p in probes
+              if type(p.get("t")) is int
+              for selected in p.get("response", {}).get("selected", []) for uid in selected.get("src", [])
+              if units.get(uid, p["t"]) >= p["t"]]
+    passed = sum(bool(p.get("end_to_end_pass")) for p in probes)
+    measured = [p for p in probes if isinstance(p.get("memory_matches"), dict)]
+    return {"expected_probes": expected_probes, "issued_probes": sum(p.get("http") is not None for p in probes),
+            "inflight_duplicates": sum(max(0, len(p["memory_matches"].get(v, [])) - 1)
+                                       for p in measured for v in p.get("gold", [])),
+            "inflight_stale_retrievable": sum(len(p["memory_matches"].get(v, []))
+                                              for p in measured for v in p.get("harmful", [])),
+            "inflight_unmeasured": len(probes) - len(measured),
+            "end_to_end_passed": passed, "end_to_end_rate": passed / expected_probes if expected_probes else None,
+            "pipeline_counts": dict(Counter(p.get("pipeline_status", "unmeasured") for p in probes)),
+            "retrieval_counts": dict(Counter(p.get("retrieval_status", "unmeasured") for p in probes)),
+            "committed_actions": dict(decisions), "duplicate_current_claims": sum(n - 1 for n in identities.values()),
+            "identity_covered_current": sum(identities.values()), "unknown_identity_current": sum(not m.get("claim_key") for m in resolved),
+            "active_versions": len(active), "resolved_current": len(resolved),
+            "withdrawn_versions": sum(m.get("withdrawn_at") is not None for m in export["mems"]),
+            "pending_reviews": len(export.get("human_reviews", [])), "tensions": len(export.get("tensions", [])),
+            "dead_tasks": [t["id"] for t in export["tasks"] if t["state"] == "dead"],
+            "future_sources": future, "l0_units": len(export["units"]), "pools": export.get("pool_sizes", {}),
+            "passive_unchanged": all(p.get("passive_unchanged", True) for p in probes)}
 
 
 def run_chain(corpus: dict, project: str, out_dir: str, *,
@@ -138,7 +180,11 @@ def run_chain(corpus: dict, project: str, out_dir: str, *,
                     for p in by_t.get(boundary, []):
                         relevant = {uid for uid, text in fed if any(has_token(text, v) for v in p["gold"] + p["harmful"])}
                         code, resp = sc.search(p["query"], budget_tokens=budget, passive=True) if barrier["drained"] else (None, {})
-                        probe_records.append(_probe_record(st["id"], p, barrier, snapshot, seen, relevant, code, resp))
+                        record = _probe_record(st["id"], p, barrier, snapshot, seen, relevant, code, resp)
+                        if code == 200:
+                            after = read_snapshot(str(project_p))
+                            record["passive_unchanged"] = after == snapshot
+                        probe_records.append(record)
                     seen.update(v for v in values if any(m["visible"] and has_token(m["text"], v) for m in snapshot["mems"]))
                     (out / "run.json").write_text(json.dumps({
                         "corpus_kind": corpus["kind"], "fed_turns": n_fed,
@@ -198,6 +244,8 @@ def run_chain(corpus: dict, project: str, out_dir: str, *,
            "selector_done": sum(1 for t in export["tasks"]
                                 if t["kind"] == "selector_due"
                                 and t["state"] == "done")}
+    expected = sum(len(st["probes"]) for st in corpus.get("streams", [])) if with_probes else 0
+    run["convergence"] = convergence_summary(export, probe_records, expected)
     (out / "run.json").write_text(json.dumps(run, ensure_ascii=False, indent=1),
                                   encoding="utf-8")
     return run

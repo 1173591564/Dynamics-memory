@@ -126,3 +126,14 @@ python -m eval.l2l3.model_ab --cases .opencode/tmp/probe-ab-next/cases --out-dir
 A/B 通过后以新的空项目/输出/捕获目录运行同一小链 `--agent-provider deepseek`。这仍是 inline 实验；OpenCode provider/effort 转发另需真实 CLI 验证。盲评与真实 V/C/F 小链未确认前不切生产默认，不将 PENDING-11/12 视为已解决。
 
 首轮实测（2026-10-05）结果与三层归因见 `eval/l2l3/REPORT.md` §11：探针时序成立；DS-high 提速 3.2-3.9× 但 reviewer 盲评单项失分未达门槛；三条链共同暴露 PENDING-11/12，DS 链额外暴露 PENDING-13（同批邮戳自碰撞死信）。
+
+## 内核收敛评测（N54）
+
+`run.json` 新增 `convergence` 汇总与逐探针 `end_to_end_pass`（写失败/未就绪不计通过；真矛盾探针按“双方带待人审标注端出”判定）。`pipeline_status` 增 `needs_human`（有实际选中目标的人审冻结），`retrieval_status` 的 `clean` 只在曾证明有害值可见后成立。导出新增 `retrievable`（未退役未撤回，A 池未退役仍可检索）与 `reviews`，`future_sources` 为空是因果硬检查，`passive_unchanged` 证明探针不改状态。`inflight_duplicates` / `inflight_stale_retrievable` 取自各探针时刻的 `memory_matches`（同一现值多条可检索 / 已被替代或撤回的值仍可检索），缺该字段的旧记录计入 `inflight_unmeasured`，不当作 0。终态的 `duplicate_current_claims` 在本语料里近乎平凡（三个槽位末尾都被撤回），不能单独作收敛证据。旧 `run.json` 里的 `end_to_end_pass` 是当时判据的存档值；判据收紧后（死信命中相关单元即不通过）按终版重算，两者都保留。
+
+```bash
+python -m eval.l2l3.gen_l2 --kernel-convergence --seed 0 --out .opencode/tmp/kernel-n54/corpus-long-s0.json
+python -m eval.l2l3.run_audit_chain --corpus .opencode/tmp/kernel-n54/corpus-long-s0.json --project .opencode/tmp/kernel-n54/project-deepseek-long0 --out-dir .opencode/tmp/kernel-n54/run-deepseek-long0 --agent-provider deepseek --capture-dir .opencode/tmp/kernel-n54/cases-deepseek-long0
+```
+
+21 轮语料含三实体三属性、四代改值、撤回、同义复述、真矛盾与重复提案；加 `--live` 在末尾追加一个不撤回的“缓存模块的过期时间”槽位（4 轮 4 探针，共 25），使终态保有可核对的现役身份（`identity_covered_current ≥ 1`、`duplicate_current_claims == 0`）。真实结果与剩余局限见 `eval/l2l3/REPORT.md` §12。评测自动判分不代表人工质量验收。

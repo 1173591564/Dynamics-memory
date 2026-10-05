@@ -200,7 +200,7 @@ eligible：run-glm2 6/9（hit 4 / harmful 2）；run-deepseek 5/9（hit 2 / harm
 
 1. **模型无关的内核行为（三链一致）**：p1/p7 新值不落库——Selector 判 UPDATE 但服务端因用户文本无纠正标记降级 CONFLICT、待人审；p2 旧值与新候选并排端出；p6 已作废值继续服务。PENDING-11/12 再获实锤，与模型无关。
 2. **内核死信（仅 DS 触发）**：DS 链 task 8/10 同批两条决定共用目标（`EXIST t0`+`CONFLICT/UPDATE t0`），前序决定事务内改 `last_seen`，后序决定 prepare 邮戳失配→整批拒绝；封存载荷使重试确定性复现→5 次耗尽死信→p3/p4 write_failed。已登记 **PENDING-13**。GLM 未触发仅因决定组合不共目标——是运气不是差异。
-3. **真实模型差异（n=1）**：纠正轮（t=9，"不对，你记错了"）DS Selector 正确主张 UPDATE+verified_correction，服务端在源单元用户文本中确认纠正标记→UPDATE 生效、旧值迁 ARCHIVE、新值入库——设计的 UPDATE 路径首次端到端跑通。GLM 同轮自判 CONFLICT；其 reviewer 产出的 2 条修复候选再过 Selector 仍 CONFLICT（修复文本本身不含纠正措辞）→ 新值永不落库。该样本偏向 DS，但 n=1 不足以下结论。
+3. **真实模型差异（n=1）**：纠正轮（t=9，"不对，你记错了"）DS Selector 正确主张 UPDATE+verified_correction，服务端在源单元用户文本中确认纠正标记→UPDATE 生效、旧值迁 ARCHIVE、新值入库——该链的 UPDATE 路径端到端生效，不能称全项目首次（N51 已有成功 UPDATE）。GLM 同轮自判 CONFLICT；其 reviewer 产出的 2 条修复候选再过 Selector 仍 CONFLICT（修复文本本身不含纠正措辞）→ 新值永不落库。该样本偏向 DS，但 n=1 不足以下结论。
 
 ### A/B 遥测与盲评（冻结载荷 7 case × 2 provider）
 
@@ -214,9 +214,9 @@ eligible：run-glm2 6/9（hit 4 / harmful 2）；run-deepseek 5/9（hit 2 / harm
 
 ### 机制供电状态（本轮顺带核实）
 
-- **通电但被削平**：`lam` 衰减与 `eta`/`eta_shadow` 增益电路在跑，但无人喂 feedback、全员 v=0.5；`theta_p=1.50` 使 C→M 晋升成为死区——三池实跑实为两池：现役全挂 CANDIDATE，UPDATE 迁 ARCHIVE，M 池空（两链 mems 全部 CANDIDATE 为证）。
-- **休眠**（PENDING-03）：`confidence_on`/`salience_on`/`novelty_on`/`consolidation_on` 全 OFF；recognizer 默认关。
-- **推论**：旧值驻留不可能靠 V 衰减/置信门自愈，只能靠显式机制（PENDING-11/12/13）。
+- **V 基础回路启用但信用未行使**：生产 `defer_credit=True`；passive 探针不记 useful-hit，本轮未喂 feedback。DS 导出 V 为 0.4261/0.4435/0.4709/0.5，证明衰减实际发生；M 空只能说明本轮未验证晋升，不能称永久死区。DS 末态为 C=6/M=0/A=2，A 两条是已被替代旧版，不是全部 C。
+- **可选机制休眠**（PENDING-03）：`confidence_on`/`salience_on`/`novelty_on`/`consolidation_on` 全 OFF；回答归因 recognizer 并未整体关闭，关闭的是 NONE 自动触发 recall_miss。
+- **裁决与效用正交**：V 衰减不决定事实真假，移入冷 A 也不等于撤回。人审已有 accept_new/keep_old 处理器，本轮未调用；需要验证自动更新覆盖、实际人审闭环和作用域检索，不能归结为所有失分均在上游。
 
 ### 结论与局限
 
@@ -227,4 +227,70 @@ eligible：run-glm2 6/9（hit 4 / harmful 2）；run-deepseek 5/9（hit 2 / harm
 
 ---
 
-*评分明细见 worksheet.filled.jsonl（100 行含逐条 verdicts 与 note）；N53 原始证据在 `.opencode/tmp/probe-ab-n53-real/`（run-glm / run-glm2 / run-deepseek / cases / ab）。本报告待验收。*
+## 12. N54 内核语义闭环：授权更新、撤回、争议复核与三池动力学（2026-10-05）
+
+用户在 N53 结果上批准“受控自动”边界并授权完整开发；设计决策 D1–D13 登记在
+`analysis/target-architecture.md` §9.2 N54。本轮只改内核与评测装具；生产
+provider、embedding、并发与 vendored `agent/` 未动。
+
+### 实现（逐项对应 PENDING）
+
+- **PENDING-13 修复**：N08 邮戳改为批入口一次性复核、按 `candidate_index` 对齐
+  （原实现按列表位置取计划，模型乱序时会把邮戳错绑到别的候选）；外部漂移、
+  目标退役仍整批拒绝。
+- **PENDING-12 口径（受控自动）**：有限中英文单值句法抽取 `(实体,属性)=值`；
+  仅当同键、同值、用户通道、因果锚在旧版本之后、且旧版本未冻结时，UPDATE/
+  撤回可自动生效；模型自报的 `verified_correction` 不再足够。明确改值/撤回
+  在 Hauler effect 由来源文本补建候选（防漏抽）；旧值复述、引用、假设、疑问
+  与助手推测都不授权。
+- **PENDING-11 消解闭环**：CONFLICT 改为按“目标版本戳+槽值”持久去重，同源
+  重复提案合并来源；`conflict_pending` 新载荷（review_ids）由语义消费者产出
+  needs_human/stale/resolved 结果并落任务产物；检索把待审提案作为“待人审提案，
+  非当前事实”有界端出；人审 accept_new/keep_old 与关联版本同戳校验、留
+  `reviewed_after` 水位，旧日志不能事后自动推翻人审。
+- **撤回语义**：`withdrawn_at` 持久失效标记，与冷 A 正交（移入 A 不等于撤回）；
+  已撤回版本不可复活、不结信用、不再服务，但 L0 与来源保留。
+- **动力学修正**：维护先降级腾位、再按 (V,id) 晋升（原实现受字典顺序影响且
+  不先腾位）；C 池闲置归档与 A 池回收跳过受保护条目；保护集含未结反馈的
+  DB 快照（rid 已挤出仍可结）、ready 目标、shadow、代表/聚合闭包与可引用
+  撤回标记；CREATE 新对象在本事务暂保护，回执不会指向已删除 id。
+- **schema v2**：`human_reviews` 增 `review_key/target_stamp` 与 pending 唯一
+  索引；旧库增量补列，数据不清洗。
+
+### 确定性证据
+
+终版全量 pytest：**600 passed / 1 skipped**；架构登记：**172 模块 / 1730 符号 / 0 failures**；`acceptance_check.py --full`：**25 PASS / 0 FAIL**（12 项 PENDING 白名单单独打印且保留，不是已消项）。Bun 桥接回归 26 pass；离线 `selftest --retrieval-smoke` ALL OK（9 个因果探针，mock 自动 S=8/9、H=0，说明装具可跑，不是模型质量验收）。
+
+此前一次 Windows HTTP 守卫测试出现 WinError 10053；本轮原测试独立重复 150 次未复现，终版全量与完整门禁通过。未凭无复现结果断言根因，也未通过忽略异常或放宽 HTTP 守卫刷绿。
+
+确定性回归覆盖：同批双目标不再自碰撞、乱序
+决定邮戳对齐、模型误选 CREATE/CONFLICT 时授权更新仍收敛、假设/引用/疑问/
+助手推测均不授权、撤回后 passive 与主动检索都不再端出且不复活、同源滑窗不
+重复增 evid/置信、争议去重与 needs_human 终态、人审后旧值退出、反馈驱动的
+真实 C→M→C→A 与复活、全 pin 背压、M 晋升顺序、未结反馈目标不被 FIFO 删除。
+翻译首条事实的来源身份、持续翻译下的 EXIST/UPDATE/撤回、多槽同值拒猜均先复现失败后修复；Hauler 接力使用已校验的规范正文，避免译文与来源补建候选重复 UPDATE 同一目标。
+
+### 真实模型链（`.opencode/tmp/kernel-n54/`，因果屏障）
+
+- DS 9 轮首跑（`run-deepseek-smoke`）：7/9，两个死信；“最新定为…”的属性解析假阳性已补回归。修复后 `run-deepseek-smoke2` 为 **9/9**（8 hit、1 clean、0 死信）。GLM `run-glm-smoke` 同为 **9/9**（8 hit、1 clean、0 死信）。
+- GLM 21 轮 `run-glm-long0/1/2`：存档判分为 **12/17/21**；按最终判据重算为 **12/16/20**（分母均为 21）。s1/s2 的重复争议轮虽已端出双方警告，但相关单元有死信，不能算端到端通过。s2 有 19 ready、1 needs_human、1 write_failed；16 hit、3 clean、2 not_testable，仍有 task 43 dead。不能称“全绿”。
+- DS 21 轮 `run-deepseek-long0/1/2` 为 **14/17/20**；修复后 `run-deepseek-long2b` 及另种子 `run-deepseek-long1c` 均为 **21/21**、0 死信，19 ready、2 needs_human；16 hit、3 clean、2 not_testable。末态提交动作均为 CREATE 4、EXIST 3、UPDATE 12、CONFLICT 2；3 个撤回版本、1 条待人审，C=1/M=0/A=12。
+- 上述 DS 修复链与 GLM s2 的逐探针 `memory_matches`：本语料现值的额外可检索副本为 0，harmful 旧值可检索数为 0。终态 `duplicate_current_claims=0` 不能单独作收敛证据：三个改值槽位均已撤回，剩下审计争议被冻结，`identity_covered_current=0`。
+- `run-deepseek-long1b` 只喂了 6 轮、状态仍是 running，是中断证据，不计完整链。`run-glm-live3` 保存了 5 个已测边界后停止（错误英文槽位导致后续跨槽拒绝）；live3b 的 DS/GLM 分别保存 12/6 个已测边界后停止，用 live3c 验证完整 D13（含 Hauler 规范正文去重）。这些运行的 running 是中断存档状态，不是仍有进程运行；均不计完整链。所有旧 `run.json`、死信和模型产物保留；上面的重算只读存档，不回写旧记录。
+- D13 首轮 DS `run-deepseek-live3c`（尾括注与无身份 UPDATE 守卫补强前）：**25/25**、25 个屏障均排空、0 死信；23 ready、2 needs_human，20 hit、3 clean、2 not_testable。在途重复、在途可检索旧值、未知测量和终态重复均为 0，终态有 1 条已解决槽位（缓存 ttl-9302）、1 条待审争议；3 个撤回版本、1 条待审记录、0 张力，C=2/M=0/A=14。提交 CREATE 5、EXIST 4、UPDATE 14、CONFLICT 6；6 次冲突分流只留下 1 条去重后的待审记录。首轮 `run-deepseek-live3` 同为 25/25，但它在 D13 前启动，不能替代 D13 证据。
+- 同版 GLM `run-glm-live3c`：**25/25**、0 死信；同为 23 ready、2 needs_human、20 hit、3 clean、2 not_testable，在途重复/可检索旧值/未知测量及终态重复均为 0，1 条已解决现役槽位，C=2/M=0/A=14。提交 CREATE 5、EXIST 3、UPDATE 14、CONFLICT 6。但它实际留下 **2 条待审记录**，第二条带模型自写的“最新授权值，覆盖早前值”尾括注，令槽位解析失败、去重键改变；因此 25/25 探针不能单独证明争议去重。坏 JSON 一次被拒绝并成功重试，不抹去该调用失败。
+- 最后两项修正：有同键同值安全用户来源时，模型尾括注候选采用源正文；已知槽位的无身份候选 UPDATE 必须转 CONFLICT，不能借泛纠正标记绕过证明。对应两条先红后绿回归。**最新内核的冻结输出回放**将 live3c 各自的 25 轮已持久 Hauler/Selector 成功输出完整重放到新状态（测试 embedder、0 新模型调用），两种输出均形成 1 条待审、1 条已解决现役槽位、3 个撤回版本、0 死信；原 GLM 的 2 条审批未被事后删除。记录见 `frozen-replay-final.json`。这验证针对已捕获输出的内核修正，不是重新请求 provider 的 25 轮链，也不重新验证真实 embedding 检索排名；最后两项补强后的 provider 长链单独用 live3d 复测，不混用这份回放分数。
+- **最终内核真实 provider 复测**：DS `run-deepseek-live3d` 与 GLM `run-glm-live3d` 均为 **25/25**，各 25 个因果屏障排空、0 死信；各 23 ready、2 needs_human、20 hit、3 clean、2 not_testable。当前事实重复、在途重复、在途可检索旧值、未知测量、未知现役身份均为 0；各保留 1 条已解决现役槽位、3 个撤回版本和 **1 条去重后的待审记录**，C=2/M=0/A=14。两链提交均为 CREATE 5、EXIST 4、UPDATE 14（含 3 次撤回）、CONFLICT 6；future_sources 为空、passive_unchanged=true。25/25 是覆盖场景的端到端判据，其中 2 项验证争议双方带警告展示，不是 25 次确定事实命中；调用为 inline 真实 provider，仍不代替生产 OpenCode 会话或独立人工复核。
+
+这些结果证明有限单值句法下已有成功的更新、撤回、去重和争议展示路径，不证明所有自然语言或所有模型输出都收敛。候选翻译、事实身份未识别、模型拒绝/错误指向等仍可能造成漏写或不一致，不能把所有剩余波动排除为“不是内核问题”。新增 `--live` 25 轮语料在原 21 轮后保留一个现役槽位，并报告 `inflight_duplicates`、`inflight_stale_retrievable` 与 `inflight_unmeasured`；终态与在途证据分开。
+
+### 未闭合（不冒充完成）
+
+- 未接地候选按条拒绝（记入 `rejected_candidates` 与 `n_ungrounded`），合法兄弟继续；来源越窗等结构非法仍整批拒绝（H16/H8 语义保留）。不承诺所有翻译都被接地闸挡住：GLM live 首条英文候选只凭值片段通过，曾生成错误槽位，D13 已增加来源正文/身份规范化；多义来源仍拒绝，不做通用翻译。历史运行和错误槽位数据库未被事后改写。
+- 三池证据来自服务级 search→feedback→后续逻辑轮：每步验证 V 递推、4 次有效反馈晋升、70 轮不用后降级/归档、再使用复活及重启恢复；不是直接赋 V，也不是实际用户生产会话。25 轮 provider 链是 passive 测量，因此 M=0 不否定该回路。非平稳负载的长期稳态、生产使用和真实回答归因仍未验证；PENDING-08（真实会话 + 人工抽检）与 PENDING-03（机制消融）不变。
+- 授权句法只覆盖有限字面模式；“文档模块”等实体词与引用语料的歧义用负例
+  回归固定，不宣称通用自然语言理解。
+
+---
+
+*评分明细见 worksheet.filled.jsonl（100 行含逐条 verdicts 与 note）；N53 原始证据在 `.opencode/tmp/probe-ab-n53-real/`（run-glm / run-glm2 / run-deepseek / cases / ab）；N54 证据在 `.opencode/tmp/kernel-n54/`。本报告待验收。*

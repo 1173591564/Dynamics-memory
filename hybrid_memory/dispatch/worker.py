@@ -27,6 +27,19 @@ def semantic_model(svc, row):
     with svc._lock:
         svc._ensure_healthy()
         if kind == "conflict_pending":
+            if isinstance(payload, dict):
+                ids = payload.get("review_ids")
+                if (set(payload) != {"review_ids"} or not isinstance(ids, list)
+                        or not ids or len(ids) > effects.MAX_PENDING_REVIEWS
+                        or any(type(i) is not int or i < 1 for i in ids)):
+                    raise ValueError("invalid review reconciliation payload")
+                reviews = []
+                with svc.tasks._lock:
+                    for rid in ids:
+                        record = svc.tasks._conn.execute("SELECT * FROM human_reviews WHERE id=?", (rid,)).fetchone()
+                        reviews.append({"id": rid, "outcome": "needs_human" if record is not None
+                                        and record["status"] == "pending" else "stale"})
+                return {"reviews": reviews}
             jobs = []
             for left, right in payload:
                 a, b = svc.engine.mems.get(left), svc.engine.mems.get(right)
@@ -151,7 +164,7 @@ def run_semantic_tasks(svc, limit: int = 8) -> dict:
                                              seal_revision))
                     result = svc._semantic_model(row)
                     if row["kind"] == "conflict_pending":
-                        stats["judged"] += len(result["verdicts"])
+                        stats["judged"] += len(result.get("verdicts", []))
                     svc.tasks.store_result(row["id"], row["token"], result)
                     with svc._lock:
                         svc._ensure_healthy()

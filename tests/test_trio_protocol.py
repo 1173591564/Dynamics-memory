@@ -14,6 +14,331 @@ def drain(worker, n=6):
             break
 
 
+def _claim_agent(name, payload, action="CREATE"):
+    if name == "reviewer":
+        return {"diagnosis": "来源已交服务校验", "rules": [], "repair_candidates": [], "rule_reviews": []}
+    if name == "hauler":
+        unit = payload["window"][-1]
+        return {"candidates": [{"text": unit["user_text"], "source_unit_ids": [unit["unit_id"]]}]}
+    target = payload["memories"][0]["id"] if payload["memories"] else None
+    return {"decisions": [{"candidate_index": i,
+                          "action": action if target is not None else "CREATE",
+                          **({"target_id": target, "verified_correction": True} if target is not None else {})}
+                         for i in range(len(payload["candidates"]))]}
+
+
+@pytest.mark.parametrize("action", ["CREATE", "CONFLICT", "UPDATE"])
+def test_authorized_user_change_converges_independent_of_model_disposition(tmp_path, action):
+    svc = _svc(tmp_path)
+    svc.trio_mode = True
+    worker = DispatchWorker(svc, lambda name, p: _claim_agent(name, p, action))
+    try:
+        svc.observe("网关模块的端口定为 gate-4100。", "好的")
+        drain(worker)
+        svc.observe("网关模块的端口由 gate-4100 改为 gate-4200。", "好的")
+        drain(worker)
+        old = svc.engine.mems[0]
+        assert old.superseded_by is not None
+        current = svc.engine.mems[old.superseded_by]
+        assert current.claim_key == ("网关模块", "端口")
+        assert current.claim_value == "gate-4200"
+        assert "gate-4100" not in current.text
+        assert not svc.human_reviews()
+        assert "gate-4100" not in svc.recall("网关模块的端口现在是多少？", passive=True)["context"]
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
+@pytest.mark.parametrize("user,assistant", [
+    ("如果网关模块的端口改为 gate-4200，会怎样？", "可以考虑"),
+    ("建议网关模块的端口改为 gate-4200。", "还没决定"),
+    ("网关模块的端口不改为 gate-4200。", "好的"),
+    ("不对，我引用文档：‘网关模块的端口是 gate-4200’。", "仅引用"),
+    ("你觉得呢？", "网关模块的端口改为 gate-4200。")])
+def test_model_proof_cannot_authorize_speculation_or_quoted_evidence(tmp_path, user, assistant):
+    svc = _svc(tmp_path)
+    svc.trio_mode = True
+    def runner(name, payload):
+        if name == "hauler" and payload["unit_id"] == 1:
+            return {"candidates": [{"text": "网关模块的端口是 gate-4200。", "source_unit_ids": [1]}]}
+        return _claim_agent(name, payload, "UPDATE")
+    worker = DispatchWorker(svc, runner)
+    try:
+        svc.observe("网关模块的端口定为 gate-4100。", "好的")
+        drain(worker)
+        svc.observe(user, assistant)
+        drain(worker)
+        assert svc.engine.mems[0].superseded_by is None
+        assert len(svc.engine.mems) == 1
+        assert len(svc.human_reviews()) == 1
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
+def test_fresh_user_reinstatement_after_retraction_creates_new_version(tmp_path):
+    svc = _svc(tmp_path)
+    svc.trio_mode = True
+    worker = DispatchWorker(svc, _claim_agent)
+    try:
+        svc.observe("日志级别定为 trace-6100。", "好的")
+        drain(worker)
+        svc.observe("日志级别设定 trace-6100 作废，先别用它。", "好的")
+        drain(worker)
+        assert svc.engine.mems[0].withdrawn_at is not None
+        svc.observe("日志级别定为 trace-6100。", "好的")
+        drain(worker)
+        current = [m for m in svc.engine.mems.values()
+                   if m.withdrawn_at is None and m.superseded_by is None and m.claim_value == "trace-6100"]
+        assert len(current) == 1 and current[0].id != 0
+        assert svc.engine.mems[0].withdrawn_at is not None
+        assert "trace-6100" in svc.recall("日志级别现在是什么？", passive=True)["context"]
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
+def test_scope_filter_keeps_unscoped_memories_for_mixed_queries(tmp_path):
+    svc = _svc(tmp_path)
+    svc.trio_mode = True
+    def runner(name, payload):
+        if name == "selector":
+            return {"decisions": [{"candidate_index": i, "action": "CREATE"}
+                                  for i in range(len(payload["candidates"]))]}
+        return _claim_agent(name, payload)
+    worker = DispatchWorker(svc, runner)
+    try:
+        for text in ("网关模块的端口定为 gate-4100。", "部署模块的端口定为 deploy-5100。",
+                     "写 PR 描述请保持简洁，先写动机。"):
+            svc.observe(text, "好的")
+            drain(worker)
+        gateway = svc.recall("网关模块的端口现在是什么？", passive=True)["context"]
+        assert "gate-4100" in gateway and "deploy-5100" not in gateway
+        preference = svc.recall("写 PR 描述请保持简洁，先写动机。", passive=True)["context"]
+        assert "动机" in preference
+        mixed = svc.recall("网关模块的端口是什么？另外 PR 描述有什么偏好？", passive=True)["context"]
+        assert "gate-4100" in mixed and "deploy-5100" not in mixed
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
+def test_rollback_restores_external_pins(tmp_path):
+    svc = _svc(tmp_path)
+    try:
+        svc.engine._external_pins = frozenset({7})
+        try:
+            with svc._rollback_effect():
+                svc.engine._external_pins = frozenset({7, 8, 9})
+                raise RuntimeError("forced")
+        except RuntimeError:
+            pass
+        assert svc.engine._external_pins == frozenset({7})
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
+def test_authorized_retraction_is_not_cold_archive_and_cannot_revive(tmp_path):
+    from hybrid_memory.core.types import Pool
+    svc = _svc(tmp_path)
+    svc.trio_mode = True
+    worker = DispatchWorker(svc, _claim_agent)
+    try:
+        svc.observe("日志级别定为 trace-6100。", "好的")
+        drain(worker)
+        svc.observe("之前的日志级别设定 trace-6100 作废，先别用它。", "好的")
+        drain(worker)
+        old = svc.engine.mems[0]
+        assert old.withdrawn_at is not None
+        assert old.pool is Pool.ARCHIVE
+        assert 1 in old.src
+        result = svc.recall("日志级别现在是多少？", passive=True)
+        assert "trace-6100" not in result["context"]
+        assert not svc.engine.credit_shown([0], [True], svc._t)
+        assert old.pool is Pool.ARCHIVE
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
+def test_known_user_setting_is_reconciled_even_when_hauler_omits_it(tmp_path):
+    svc = _svc(tmp_path)
+    svc.trio_mode = True
+    def runner(name, payload):
+        if name == "hauler" and payload["unit_id"]:
+            return {"candidates": []}
+        return _claim_agent(name, payload)
+    worker = DispatchWorker(svc, runner)
+    try:
+        svc.observe("网关模块的端口定为 gate-4100。", "好的")
+        drain(worker)
+        svc.observe("网关模块的端口改成 gate-4200 了。", "好的")
+        drain(worker)
+        assert svc.engine.mems[0].superseded_by is not None
+        assert "gate-4200" in svc.recall("网关模块的端口现在是什么？", passive=True)["context"]
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
+def test_single_value_scope_filter_and_pending_freeze(tmp_path):
+    svc = _svc(tmp_path)
+    svc.trio_mode = True
+    def runner(name, payload):
+        if name == "selector":
+            return {"decisions": [{"candidate_index": i, "action": "CREATE"} for i in range(len(payload["candidates"]))]}
+        return _claim_agent(name, payload)
+    worker = DispatchWorker(svc, runner)
+    try:
+        for text in ("网关模块的端口定为 gate-4100。", "部署模块的端口定为 deploy-5100。"):
+            svc.observe(text, "好的")
+            drain(worker)
+        view = svc.recall("部署模块的端口现在是什么？", passive=True)
+        assert "deploy-5100" in view["context"] and "gate-4100" not in view["context"]
+        svc.observe("网关模块的端口是 gate-4200。", "只是另一份记录")
+        drain(worker)
+        assert svc.engine.mems[0].pending_review
+        svc.observe("网关模块的端口改成 gate-4200 了。", "好的")
+        drain(worker)
+        assert svc.engine.mems[0].superseded_by is None
+        assert len(svc.human_reviews()) == 1
+        assert all(m.claim_value != "gate-4200" for m in svc.engine.mems.values())
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
+def test_ungrounded_candidate_is_rejected_per_item_and_valid_sibling_survives(tmp_path):
+    svc = _svc(tmp_path)
+    svc.trio_mode = True
+    def runner(name, payload):
+        if name == "hauler" and payload["unit_id"] == 1:
+            return {"candidates": [
+                {"text": "The log level setting was voided by the user.",
+                 "source_unit_ids": [1]},
+                {"text": "日志级别设定 trace-6100 作废，先不使用。",
+                 "source_unit_ids": [1]}]}
+        return _claim_agent(name, payload)
+    worker = DispatchWorker(svc, runner)
+    try:
+        svc.observe("日志级别定为 trace-6100。", "好的")
+        drain(worker)
+        before = svc.n_ungrounded
+        svc.observe("日志级别设定 trace-6100 作废，先不使用。", "好的")
+        drain(worker)
+        assert svc.n_ungrounded == before + 1
+        rows = svc.tasks.list_tasks(kinds={"selector_due"})
+        assert rows and all(row["state"] == "done" for row in rows)
+        effect = next(row for row in svc.tasks.list_tasks(kinds={"hauler_due"})
+                      if row["id"] == rows[-1]["payload"]["parent_task"])["result"]
+        assert effect is not None
+        assert svc.engine.mems[0].withdrawn_at is not None
+        assert not svc.human_reviews()
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
+@pytest.mark.parametrize("translated_updates", [False, True])
+def test_translated_initial_claim_keeps_source_identity_through_update_and_withdrawal(tmp_path, translated_updates):
+    svc = _svc(tmp_path)
+    svc.trio_mode = True
+    def runner(name, payload):
+        uid = payload["unit_id"]
+        if name == "hauler" and (uid == 0 or translated_updates and uid in (1, 2)):
+            value = "gate-7301" if uid == 2 else "gate-7300"
+            return {"candidates": [{"text": f"The gateway module's port is set to {value}.",
+                                     "source_unit_ids": [uid]}]}
+        return _claim_agent(name, payload, "EXIST")
+    worker = DispatchWorker(svc, runner)
+    try:
+        svc.observe("网关模块的端口定为 gate-7300。", "好的")
+        drain(worker)
+        old = svc.engine.mems[0]
+        assert old.claim_key == ("网关模块", "端口") and old.claim_unit == 0
+        assert old.text == "网关模块的端口定为 gate-7300"
+        svc.observe("网关模块的端口是 gate-7300。", "好的")
+        drain(worker)
+        assert len(svc.engine.mems) == 1 and old.evid == 2
+        svc.observe("网关模块的端口改为 gate-7301。", "好的")
+        drain(worker)
+        assert old.superseded_by is not None
+        current = svc.engine.mems[old.superseded_by]
+        assert current.claim_key == old.claim_key and current.claim_value == "gate-7301"
+        svc.observe("网关模块的端口设定 gate-7301 作废。", "好的")
+        drain(worker)
+        assert current.withdrawn_at is not None
+        assert not svc.recall("网关模块的端口现在是什么？", passive=True)["context"]
+        assert all(t["state"] == "done" for t in svc.tasks.list_tasks(kinds={"selector_due"}))
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
+def test_model_authority_annotation_does_not_split_review_or_authorize_update(tmp_path):
+    svc = _svc(tmp_path)
+    svc.trio_mode = True
+    def runner(name, payload):
+        if name == "hauler" and payload["unit_id"] == 2:
+            return {"candidates": [{"text": "审计模块的开关定为 flag-8100（最新授权值，覆盖早前的 flag-8000）。",
+                                     "source_unit_ids": [1, 2]}]}
+        return _claim_agent(name, payload, "UPDATE")
+    worker = DispatchWorker(svc, runner)
+    try:
+        for text in ("审计模块的开关定为 flag-8000。", "审计模块的开关是 flag-8100。",
+                     "审计模块的开关是 flag-8100。"):
+            svc.observe(text, "好的")
+            drain(worker)
+        reviews = svc.human_reviews()
+        assert len(reviews) == 1
+        candidate = json.loads(reviews[0]["candidate"])
+        assert set(candidate["source_unit_ids"]) == {1, 2}
+        assert "最新授权" not in candidate["text"]
+        assert svc.engine.mems[0].superseded_by is None and len(svc.engine.mems) == 1
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
+def test_candidate_parenthesis_cannot_strip_source_condition_to_authorize_update(tmp_path):
+    svc = _svc(tmp_path)
+    svc.trio_mode = True
+    def runner(name, payload):
+        if name == "hauler" and payload["unit_id"] == 1:
+            return {"candidates": [{"text": "审计模块的开关定为 flag-8100（最新授权值）。",
+                                     "source_unit_ids": [1]}]}
+        return _claim_agent(name, payload, "UPDATE")
+    worker = DispatchWorker(svc, runner)
+    try:
+        svc.observe("审计模块的开关定为 flag-8000。", "好的")
+        drain(worker)
+        svc.observe("不对，审计模块的开关定为 flag-8100（暂不执行）。", "待确定")
+        drain(worker)
+        assert svc.engine.mems[0].superseded_by is None
+        assert len(svc.engine.mems) == 1 and len(svc.human_reviews()) == 1
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
+def test_translated_claim_with_multiple_source_slots_does_not_guess_identity(tmp_path):
+    from hybrid_memory.errors import ProposalRejected
+    svc = _svc(tmp_path)
+    try:
+        svc.observe("网关模块的端口定为 gate-7300。部署模块的端口定为 gate-7300。", "好的")
+        with pytest.raises(ProposalRejected, match="ambiguous_claim_source"):
+            svc._validate_proposal({"text": "The module's port is set to gate-7300.",
+                                    "source_unit_ids": [0]}, None)
+        event, _ = svc._validate_proposal({"text": "网关模块的端口是 gate-7300。",
+                                          "source_unit_ids": [0]}, None)
+        assert event.claim_key == ("网关模块", "端口")
+    finally:
+        svc.tasks.close()
+        svc.log.close()
+
+
 def test_hauler_selector_create_exist_and_overlapping_window(tmp_path):
     svc = _svc(tmp_path)
     svc.trio_mode = True
@@ -22,8 +347,10 @@ def test_hauler_selector_create_exist_and_overlapping_window(tmp_path):
     def fake(name, payload):
         calls.append((name, payload))
         if name == "hauler":
-            assert payload["window"][-1]["unit_id"] == payload["unit_id"]
-            return {"candidates": [{"text": "项目统一使用 bun 工具", "source_unit_ids": [payload["unit_id"]]}]}
+            unit = payload["window"][-1]
+            assert unit["unit_id"] == payload["unit_id"]
+            return {"candidates": [{"text": unit["user_text"],
+                                    "source_unit_ids": [payload["unit_id"]]}]}
         assert name == "selector"
         assert payload["candidates"][0]["source_unit_ids"] == [payload["unit_id"]]
         if payload["memories"]:

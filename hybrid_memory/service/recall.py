@@ -7,6 +7,7 @@ H29 contested 上界：在 context_lines 修掉——每条入选记忆至多带
 from __future__ import annotations
 
 import copy
+import json
 import re
 
 from ..core.engine import MemoryEngine
@@ -78,7 +79,28 @@ def context_lines(ret: Retrieval) -> tuple[list[tuple[str, object]], bool]:
             lines.append((f"- ⚠️未决冲突：[t={rival.birth}] "
                           f"{_safe_mem_text(rival.text)}"
                           f"（与 t={m.birth} 条目冲突）", None))
-    return lines, emitted != len(ret.contested)
+    review_targets = set()
+    review_count = 0
+    for dispute in ret.disputes:
+        if dispute["target_id"] in shown or dispute["target_id"] in review_targets or emitted + review_count >= CONTESTED_K:
+            continue
+        review_targets.add(dispute["target_id"])
+        review_count += 1
+        lines.append((f"- [待人审提案，非当前事实] {_safe_mem_text(dispute['text'])}", None))
+    return lines, emitted != len(ret.contested) or review_count != len(ret.disputes)
+
+
+def attach_disputes(svc, ret, before=None) -> None:
+    selected = {m.id for m in ret.selected}
+    ret.disputes = []
+    for review in svc.tasks.pending_reviews():
+        if review["target_id"] not in selected:
+            continue
+        candidate = json.loads(review["candidate"])
+        sources = candidate.get("source_unit_ids", [])
+        if set(sources) <= set(svc.log.exists(sources, before=before)):
+            ret.disputes.append({"review_id": review["id"], "target_id": review["target_id"],
+                                 "text": candidate["text"], "src": sources})
 
 
 def causal_memory_ids(svc, before: int | None) -> set[int]:
@@ -133,6 +155,7 @@ def recall(svc, q: str, k: int | None = None, *,
         # 沿用原排序/压制算法，但在筛选后的副本中运行；不改原记忆、
         # 不复活/记信用、不发主引擎信号，也不登记可被 feedback 的 rid。
         ret = view.retrieve(qv, Query(-1, q), svc._t if ctx.before is None else min(svc._t, ctx.before - 1))
+        attach_disputes(svc, ret, ctx.before)
         return recall_result(ret, None, budget_tokens)
 
 
@@ -162,6 +185,7 @@ def recall_main(svc, q: str, k: int | None = None,
                     break
                 svc._retrievals.pop(min(evictable))
             # /search 发生在回答前；/feedback 再关联上一轮。
+            attach_disputes(svc, ret)
             return recall_result(ret, rid, budget_tokens)
 
         out = svc._commit_sidecar_effect(mutate)

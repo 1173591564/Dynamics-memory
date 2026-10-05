@@ -5,6 +5,9 @@ import json
 import os
 import secrets
 
+from ..core.types import Pool
+from ..dispatch.effects import close_retired_relations, enforce_capacity, protected_ids, review_stamp
+
 
 def review_token(svc) -> str:
     """Separate capability: ordinary plugin and agent bearer cannot approve conflicts."""
@@ -47,17 +50,52 @@ def decide_human_review(svc, review_id: int, decision: str, capability: str) -> 
                     raise ValueError("conflicting review decision")
                 return {"review_id": review_id, "decision": decision, "replayed": True}
             old = svc.engine.mems.get(row["target_id"])
-            if old is None or old.superseded_by is not None:
+            if (old is None or old.superseded_by is not None or old.aggregated_into is not None
+                    or old.withdrawn_at is not None or (row["target_stamp"]
+                        and json.loads(row["target_stamp"]) != review_stamp(old))):
                 raise ValueError("review target changed; submit a fresh review")
-            ids = []
-            if decision == "accept_new":
-                ev, _ = svc._validate_proposal(json.loads(row["candidate"]), None)
+            proposal = json.loads(row["candidate"])
+            peers = [old]
+            for reference in proposal.get("_related_targets", []) if row["review_key"] else []:
+                member = svc.engine.mems.get(reference["id"])
+                if (member is None or review_stamp(member) != reference["stamp"]
+                        or (old.claim_key and member.claim_key != old.claim_key)):
+                    raise ValueError("related review target changed; submit a fresh review")
+                peers.append(member)
+            ids, selected = [], old
+            if decision == "accept_new" or old.agg_members:
+                if decision == "keep_old":
+                    member = min((svc.engine.mems[i] for i in old.agg_members), key=lambda m: (m.birth, m.id))
+                    proposal = {"text": member.text, "source_unit_ids": sorted(member.src)}
+                ev, _ = svc._validate_proposal(proposal, None)
+                if old.claim_key and ev.claim_key and old.claim_key != ev.claim_key:
+                    raise ValueError("review candidate belongs to a different claim scope")
                 ev.origin = "user_confirmed"
-                ids = svc.engine.propose([ev], svc._t)
-                if not ids:
-                    raise ValueError("accepted candidate did not create a distinct version")
-                svc.engine.add_tension(ids[-1], old.id, svc._t)
-                svc.engine.submit_verdicts([(ids[-1], old.id, "update")], svc._t)
+                selected = next((m for m in peers if m.text == ev.text or
+                                 (ev.claim_key and m.claim_key == ev.claim_key and m.claim_value == ev.claim_value)), None)
+                if ev.claim_mode == "retract":
+                    selected = None
+                    for member in peers:
+                        member.withdrawn_at = member.archived_at = svc._t
+                        member.pool = Pool.ARCHIVE
+                        member.src |= frozenset(ev.src)
+                elif selected is None:
+                    ids = svc.engine.propose([ev], svc._t)
+                    if not ids:
+                        raise ValueError("accepted candidate did not create a distinct version")
+                    selected = svc.engine.mems[ids[-1]]
+                if selected is not None:
+                    added = set(ev.src) - set(selected.src)
+                    selected.src |= frozenset(ev.src)
+                    selected.evid += len(added)
+            if selected is not None:
+                selected.reviewed_after = (svc._t, svc._unit_id - 1)
+                for member in peers:
+                    if member.id != selected.id:
+                        member.superseded_by = selected.id
+                        member.archived_at = svc._t
+                        member.pool = Pool.ARCHIVE
+                        svc.engine.n_merge += 1
             if decision == "accept_new":
                 # Other proposals against this now-retired version must be
                 # reconsidered against the new version, never left actionable.
@@ -70,11 +108,17 @@ def decide_human_review(svc, review_id: int, decision: str, capability: str) -> 
                          (decision, review_id))
             # 人审新增（accept_new）与其他新增一样在 commit 前收口（N17）；
             # 全 pin 时拒绝并回滚，不静默超限。
-            from ..dispatch.effects import enforce_capacity
-            enforce_capacity(svc)
+            close_retired_relations(svc, conn)
+            if selected is not None:
+                selected.pending_review = bool(conn.execute("SELECT 1 FROM human_reviews WHERE target_id=? "
+                                                           "AND status='pending' LIMIT 1", (selected.id,)).fetchone())
+                if decision == "accept_new" and selected.pool is Pool.ARCHIVE:
+                    selected.pool = Pool.CANDIDATE
+            enforce_capacity(svc, fresh=ids)
             revision = svc.tasks._write_checkpoint(conn, svc._dump_state(), svc._checkpoint_revision)
         svc._checkpoint_revision = revision
-        return {"review_id": review_id, "decision": decision, "new_ids": ids}
+        return {"review_id": review_id, "decision": decision, "new_ids": ids,
+                "selected_id": selected.id if selected is not None else None}
 
 
 _MAX_LEDGER_CONFLICTS = 200    # 冲突行输出上界（超出标 truncated，不静默截断）
@@ -91,7 +135,6 @@ def conflict_ledger(svc, before: int | None = None) -> dict:
     - 各列表有界，超界置 truncated=True（不静默截断、不隐藏 stale）；
     - 正文片段 ≤200 字符，不泄超界正文。
     """
-    from ..core.dynamics import pinned_ids
     with svc._lock:
         tensions = [
             (left, right) for left, right in svc.engine.tensions
@@ -124,7 +167,8 @@ def conflict_ledger(svc, before: int | None = None) -> dict:
                 "target_id": r["target_id"],
                 "candidate": r["candidate"],
                 "reason": r["reason"],
-                "stale": old is None or old.superseded_by is not None,
+                "stale": old is None or old.superseded_by is not None or old.aggregated_into is not None
+                         or old.withdrawn_at is not None,
             })
             if len(review_rows) >= _MAX_LEDGER_REVIEWS:
                 truncated = True
@@ -141,7 +185,7 @@ def conflict_ledger(svc, before: int | None = None) -> dict:
             aggregates = aggregates[:_MAX_LEDGER_AGGREGATES]
             truncated = True
 
-        pin_roots = sorted(pinned_ids(svc.engine))
+        pin_roots = sorted(protected_ids(svc))
         return {
             "conflicts": conflicts,
             "tensions": tensions,

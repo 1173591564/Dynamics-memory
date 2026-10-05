@@ -37,6 +37,25 @@ def test_scan_unit_reasons():
     assert scan_unit("不对，改成 8 并发", "好") == ["correction", "decision", "quant"]
 
 
+@pytest.mark.parametrize("text,mode", [
+    ("网关模块的端口最新定为 gate-4200。", "set"),
+    ("网关模块的端口目前是 gate-4200。", "assert"),
+    ("日志级别设定（原值 trace-6100）已作废，暂不使用。", "retract")])
+def test_real_model_temporal_and_parenthetical_claim_forms(text, mode):
+    from hybrid_memory.core.triggers import claims_in
+    claims = claims_in(text)
+    assert len(claims) == 1
+    assert claims[0]["key"][1] == ("日志级别" if mode == "retract" else "端口")
+    assert claims[0]["mode"] == mode
+
+
+def test_document_entity_is_not_mistaken_for_quoted_document_evidence():
+    from hybrid_memory.core.triggers import claims_in
+    declaration = claims_in("文档模块的输出目录改为 docs-7101。", authoritative=True)
+    assert declaration and declaration[0]["key"] == ("文档模块", "输出目录")
+    assert not claims_in("我引用文档：‘文档模块的输出目录改为 docs-7101’。", authoritative=True)
+
+
 def test_scan_unit_chitchat_is_empty():
     assert scan_unit("在吗", "在的，有什么可以帮你") == []
     assert scan_unit("谢谢", "不客气") == []

@@ -53,21 +53,24 @@ def run_maintenance(eng, t: int) -> None:
         m.d_hit = m.d_shadow = 0.0
 
     if cfg.two_pool:
-        in_m_count = sum(1 for m in eng.mems.values() if m.pool is Pool.MEMORY)
         for m in eng.mems.values():
-            if m.pool is Pool.CANDIDATE and m.v > cfg.theta_p:
-                if cfg.capacity_on and in_m_count >= cfg.cap_m:
-                    # H12：M 满时拒绝新晋升，条目留在 C；不挤掉已有 M。
-                    eng.n_promote_rejected += 1
-                    _warn_promote_reject_once()
-                    continue
-                m.pool = Pool.MEMORY
-                in_m_count += 1
-                eng.n_promote += 1
-            elif m.pool is Pool.MEMORY and m.v < cfg.theta_d:
+            if m.pool is Pool.MEMORY and m.v < cfg.theta_d:
                 m.pool = Pool.CANDIDATE
-                in_m_count -= 1
                 eng.n_demote += 1
+        in_m_count = sum(1 for m in eng.mems.values() if m.pool is Pool.MEMORY)
+        candidates = sorted((m for m in eng.mems.values()
+                             if m.pool is Pool.CANDIDATE and m.v > cfg.theta_p
+                             and m.superseded_by is None and m.aggregated_into is None
+                             and m.withdrawn_at is None), key=lambda m: (-m.v, m.id))
+        for m in candidates:
+            if cfg.capacity_on and in_m_count >= cfg.cap_m:
+                # H12：M 满时拒绝新晋升，条目留在 C；不挤掉已有 M。
+                eng.n_promote_rejected += 1
+                _warn_promote_reject_once()
+                continue
+            m.pool = Pool.MEMORY
+            in_m_count += 1
+            eng.n_promote += 1
 
     if cfg.capacity_on:
         in_m = [m for m in eng.mems.values() if m.pool is Pool.MEMORY]
@@ -87,10 +90,11 @@ def run_maintenance(eng, t: int) -> None:
             m.archived_at = t
             eng.n_pool_truncated += 1
 
+    protected = pinned_ids(eng)
     for m in eng.mems.values():
         idle_since = m.last_hit if m.last_hit is not None else m.birth
         horizon = cfg.idle_p * _retention_scale(m, cfg)
-        if m.pool is Pool.CANDIDATE and t - idle_since > horizon:
+        if m.pool is Pool.CANDIDATE and m.id not in protected and t - idle_since > horizon:
             m.pool = Pool.ARCHIVE
             m.archived_at = t
             eng.n_archive += 1
@@ -155,7 +159,7 @@ def apply_resolution(eng, a: Memory, b: Memory, verdict: str, t: int) -> None:
     if verdict == "synonym":
         keep, drop = (a, b) if a.v >= b.v else (b, a)
         keep.v = cfg.eta_c * (a.v + b.v)
-        keep.evid += drop.evid
+        keep.evid += len(set(drop.src) - set(keep.src)) if drop.src and keep.src else drop.evid
         keep.hits += drop.hits
         keep.src = keep.src | drop.src
         keep.last_seen = max(keep.last_seen, drop.last_seen)

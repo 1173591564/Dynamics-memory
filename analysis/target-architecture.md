@@ -174,11 +174,11 @@ _rollback_effect保护对象身份保留；提交后确认丢失设fault不续�
 
 - CREATE：服务仍执行精确规范重复兜底/ingest，默认新C，不直接M，无origin价值加成；等价精确项改EXIST并记录实际target。
 - EXIST：同义同scope未退役目标，A合法；src集合只按新unit增evid，更新last_seen，A→C。confidence开启时仅新证据增conf_pos；不能重复窗口刷置信。
-- UPDATE：必须`verified_correction is True`，引用明确用户纠正，目标不晚于纠正锚且不在人审冻结中。entity/scope明确一致；未知归属或跨实体转CONFLICT。新版本C，旧版指向新代表并A+archived_at；最新不等于正确。当前bool('false')漏洞待修。
-- CONFLICT：保存candidate/target版本/原因/source task到人审，冻结旧target、召回警告；candidate尚无Memory id，不是假C，不pin虚构id。unknown/retired target要stale/重判，不是合法审批对象。
+- UPDATE：有限单值槽位由服务端按用户源声明复判，要求同键同值、来源严格晚于旧声明锚及人工水位、目标未冻结；模型 verified 标记不能授权，CREATE/CONFLICT/UPDATE 建议均可被规范。新版本C、旧版指向新代表并A+archived_at；撤回则给旧版持久 withdrawn_at，不新建当前事实。未知自由文本仍须明确用户纠正及 `verified_correction is True`，不接受字符串 bool；跨已知槽位拒绝；已有声明键的目标不允许无声明键候选通过旧的泛纠正门 UPDATE，缺身份或证据不足转CONFLICT。最新不等于正确。
+- CONFLICT：按目标版本/槽值去重并保存candidate/来源/原因/source task到人审，冻结target、召回旧值及提案均带警告；candidate尚无Memory id，不是假C，不pin虚构id。conflict_pending 消费者持久给 needs_human/resolved/stale，Task done 不等于人审已解决。unknown/retired target要stale/重判，不是合法审批对象。
 - REJECT：不入Memory，但L0与Task输出、原因、回执保留。
 
-validate出规范Decision计划（校验Event/实际action/target stamp），applier只动态复核/修改，不重复整套静态校验。batch全有或全无。
+validate出规范Decision（来源Event/实际action/证明及关联目标）；prepare_effect 对齐 candidate_index 缓存Event/向量/目标邮戳。applier 在批入口重验决定与prepare邮戳，批内再动态检查退役目标并修改；batch全有或全无，不能把本事务前序写入当外部漂移。
 
 快照≤500完整或失败，不截断猜CREATE；设cap_context=500保证准入与完整上下文一致，不静默把A藏起来。总JSON UTF-8载荷≤1MiB，超限显式失败而非删证据。分页索引延期，不设计半可见分类。旧库超限先degraded只读，不启动即清洗。
 
@@ -213,8 +213,8 @@ N44 已实现短位置指令 + 私有 UTF-8 JSON `--file` 附件，用后删除�
 
 - C是已入engine的候选Memory，不是临时candidate JSON；可被检索但受质量、置信与冲突门，高V才升M。
 - M是常用价值层，不保证为真；confidence/pending_review/retirement与pool正交。
-- A是冷归档，未退役者可低先验召回或EXIST复活；superseded/aggregated版本永不作为当前事实服务。
-- 物理删除只回收无保护A，L0/Task审计不随删。is_visible表示未归档未退役；archive_retrieval另允许未退役A。
+- A是冷归档，未退役未撤回者可低先验召回或EXIST复活；superseded/aggregated/withdrawn版本永不作为当前事实服务。
+- 物理删除只回收无保护A，L0/Task审计不随删。is_visible表示未归档未退役未撤回；archive_retrieval另允许未退役未撤回A。
 
 Cfg默认M40/C200/A2000，生产M8/C200/A2000；数学阈值不调。新增非退役版本总cap_context500（含A，不计临时candidate或retired）；不是暗改cap_a=292。历史总磁盘不承诺有界。
 
@@ -240,7 +240,7 @@ stateDiagram-v2
 - pin不足以收口则整新效果拒收/回滚；合法产物留ready退避，应用5次后dead等待释放/重发。L0 accepted仍真，不把未入Memory说成已记住。
 - 升级/降cap造成旧库超限先degraded/read-only人工治理，不启动自动删历史；生产禁capacity_on=False/two_pool=False，裸实验明确标记并保留。
 
-pin roots：未决tension、人审target、存活聚合及members、未结清feedback/shadow、未完成效果目标。candidate是JSON无Memory id。service汇外部roots，core沿代表链/聚合求闭包；有保留对象指向不能删，除非同事务等价链压缩。断链/环可见计数，不复活尸体。保护删除与容量迁出，不冻结V/信用，也不把待审变可信。全pin选背压，不破容量或解除保护。当前A删除不滤pin、idle保护未统一是错误，不是例外。
+pin roots：未决tension、人审target、存活聚合及members、未结清feedback/shadow、未完成效果目标。candidate是JSON无Memory id。service汇外部roots，core沿代表链/聚合求闭包；有保留对象指向不能删，除非同事务等价链压缩。断链/环可见计数，不复活尸体。保护删除与容量迁出，不冻结V/信用，也不把待审变可信。全pin选背压，不破容量或解除保护。N54 已统一 A 回收和闲置归档的保护口径，并将临时外部 pin 纳入效果回滚。
 
 ### 4.3 时间、价值、证据与信用（N19）
 
@@ -300,7 +300,7 @@ registry硬512：优先淘汰已结清/未反馈对象；已持久feedback已有
 
 ### 5.2 核心类型与全部领域函数
 
-**core/types.py**：Pool(C/M/A)按值序列化，__reduce_ex__出(Pool,(value,))；Memory的全部字段（id/指纹/正文/emb、pool/V、hits/evid/times、归档/压制/退役/聚合、src/d_hit/d_shadow、置信、salience/novelty/kind/derived/scene/origin/entity）输入出可变状态，不能删pickle字段。Event输入事实元数据出未分Memory id的事件；Query(target,text)、Tension(pair,times,obs)、Retrieval(selected/presented/suppressed/contested/provisional/信用标志)为领域载体，全部构造字段附录。
+**core/types.py**：Pool(C/M/A)按值序列化，__reduce_ex__出(Pool,(value,))；Memory的全部字段（id/指纹/正文/emb、pool/V、hits/evid/times、归档/压制/退役/聚合、src/d_hit/d_shadow、置信、salience/novelty/kind/derived/scene/origin/entity、claim_key/claim_value/claim_unit/withdrawn_at/reviewed_after）输入出可变状态，不能删pickle字段。Event输入事实及claim_key/claim_value/claim_unit/claim_mode，出未分Memory id的事件；Query(target,text)、Tension(pair,times,obs)、Retrieval(selected/presented/suppressed/contested/disputes/provisional/信用标志)为领域载体，全部构造字段附录。
 
 is_visible(m)->未归档未退役bool，不代表A禁止读取；cosine(a,b)->float，零范数0，维度/有限值embed验证；Embedder.embed(texts,keys)->ndarray。MemorySemantics.judge是worker外部关系协议，relevant/valid/embedding_key/scope是本地谓词/键，valid保裸兼容而非真实真值；FeedbackSemantics.relevant_set->bool列表|失败None；ConsolidationSemantics.consolidate->Event|None，合法NONE与错误靠provider区别。core/interaction的InteractionUnit输入一轮id/时界/u/a/turns，Window输入编号/时界/units，不是池项。
 
@@ -316,7 +316,7 @@ is_visible(m)->未归档未退役bool，不代表A禁止读取；cosine(a,b)->fl
 
 **core/ingest.py**：run_ingest(eng,events,t,vectors?)->None，批向量→可见近邻、精确指纹+值合证据，否则新C/highsim张力；目标供预计算值、同src不刷evid，不把每次生成当真值确认。
 
-**core/dynamics.py**：pinned_ids(engine,external_roots?)出N18闭包，当前无外roots；evictable(pool,mems,cfg,pin)->有序id，M空、A也滤pin；overflow_policy出archive/delete分组计划，不是扁list；目标新增plan_capacity(mems,cfg,pinned)->{archive,delete,remaining,accepted,reason}，模拟迁A再算A/context、不能I/O/衰减。
+**core/dynamics.py**：pinned_ids(engine,external?)出N18闭包，缺参读取临时 _external_pins，含 shadow 及代表/聚合引用；evictable(pool,mems,cfg,pin)->有序id，M空、A也滤pin；overflow_policy出archive/delete分组计划，不是扁list；plan_capacity(mems,cfg,pinned)->{archive,delete,remaining,accepted,reason}，模拟迁A再算A/context、不能I/O/衰减。
 
 **core/maintenance.py**：_retention_scale出clamped salience尺度off=1；run_maintenance一新逻辑unit一次折损/衰减/消费信用、滞回/idle/容量/信号，不重step；_warn_promote_reject_once当前stderr，目标telemetry迁完删；_emit_pending_conflicts剪死/塌缩对、龄≥20发pair不judge；follow_chain出代表，断/环计数停、id0有效；apply_resolution执行四关系/src/V/指针/归档戳；_make_aggregate新聚合C及members，容量保护、文本超限留待审不静默剪版本。不造TensionBook/重复decay/credit/promote公共API。
 
@@ -864,6 +864,21 @@ bootstrap.build_default_service当前project/model/embed_log/cap→MemoryService
 
 - **N53 因果检索测量与固定模型对照**：仅改 `eval/l2l3/` 和测试。保留 TIDE `probe.t` 的喂入前语义：喂 t−1 → 持久任务/L0 排空 → 发 t 探针 → 喂 t；终点也发，超时停喂且保存进度，不补放未来时点。运行中只读 checkpoint 区分未就绪、相关死信、未蒸馏、已存在但漏召回与有害旧值；F 需曾可见的正例，原分数保留、无效样本不进有效均值。小链包含 V/C/F、偏好、机制和 Reviewer 纠正。
   `model_ab.py` 从实际调用冻结 payload/prompt/window/revision/hash，用生产角色预检和接地闸比较 **GLM-5.3-Flash max / DeepSeek V4.1 Flash high**；API 名分别为 `glm-5.3-flash` / `deepseek-flash`。环境或仓库 `.env` 供 key，任何模型调用前核对双凭据；同输入、交替先后、逐尝试落耗时/usage/缓存与单价依据；缺 TTFT/usage/价格不猜。盲评、实际 OpenCode provider 兼容与真实小链未验证前不切默认；Zhipu embedding/Python 语义链不换，PENDING-08/11/12 不因此关闭。接口坞和并发不在本轮范围。
+
+- **N54 内核语义闭环（2026-10-05，用户授权完整开发；实施与证据分开登记）**：
+  - D1：受控自动更新只认可核验的用户授权、同一单值槽位及因果来源；V、Beta 计数、最新文本与模型的 verified 标记都不能独立授权。明确修改/撤回与不可判定矛盾分开；已冻结人审目标不能自动抢改。
+  - D2：事实身份、版本有效性和 C/M/A 效用层正交。撤回必须持久标失效，冷 A 仍可复活；旧版本保留来源但不能作为当前事实服务。未知身份不猜槽位、不凭向量相似覆盖。
+  - D3：N08 邮戳在批入口复核，对齐 candidate_index；批内目标退役的动态检查仍保留。拒绝简单取消守卫或所有共享目标一律放行。
+  - D4：确定性来源证据可以规范模型建议的实际分流，回执保留 requested/actual/reason；同源滑窗不能刷 evid/confidence。结构化授权的支持边界由负例测试固定，不能宣称任意自然语言已被理解。
+  - D5：CONFLICT 候选仍是持久提案 JSON，不伪造 Memory id。争议按目标版本/事实身份去重并持久复核；消费者给出已解决/需人审/过期/失败的可见结果，不通过强选赢家清空人审。
+  - D6：优先复用现有 conflict_pending/feedback_pending 和任务机，纯观察产生的存量张力必须有消费者；每次有效性变更同事务处理关系、审批与保护引用。新信号必须同批接线，不将业务信号称为 OS Semaphore。
+  - D7：passive 测量与真实 search→answer→feedback 使用链分开；用实际信用驱动池流动，不直接赋 V 制造晋升。固定有界负载下测效用稳定与无使用衰减，不承诺非平稳事实流永远固定。
+  - D8：先确定性回归，再真实小链/扩展长链；写失败保留在端到端分母，自动判分不等于人工质量验收。可选机制逐项消融，生产 provider、embedding、并发与 vendored agent 不改；其他 PENDING 独立保留。
+  - D9：首版授权支持字面单值句法，不宣称任意自然语言语义已验证。candidate 的时间修饰/旧值括注归一化不扩大用户授权；未知复杂描述仍归模型/人审。已知槽位的明确当前用户声明可在 Hauler effect 补建来源候选，并替代该槽的历史复述，防漏抽与批内重复撤回。§3.3 的浅正文接地校验在 Hauler effect 按条执行：未接地候选（翻译、复述、自指）单独拒绝并计 `n_ungrounded`、记入 `rejected_candidates`，合法兄弟候选（含授权撤回）继续；来源越窗等结构非法仍整批拒绝。闭合/撤回槽位的旧描述不得成为新事实；L0 原文仍保留。
+  - D10：新建对象本事务暂保护，防 CREATE 回执指向已被容量删除的 id；后续维护仍按效用淘汰。保护含未结反馈的 DB 快照（即使 rid 已挤出）、ready 目标、shadow 和代表/聚合闭包；人审/撤回关系收束后释放过期 pin。先降级腾位，再按 V/id 晋升，数学阈值不调。
+  - D11：争议复核可明确 needs_human，不把 Task done 说成人审已解决；同源被 keep_old 否决的重复提案不重新冻结。人工决策留下逻辑时间/源单元水位，旧日志不能事后自动推翻人审；关联版本同 stamp 验证，不允许提案夹带权限。schema v2 只增 review_key/target_stamp 和 pending 唯一索引，旧记录不清洗、不删除。
+  - D12：评价分别报告身份覆盖、未知身份、真实提交动作、端到端分母、未发/死信、撤回、争议与三池水位。archive 的未退役条目仍可检索，不能误记成未蒸馏；历史 resume 的缺诊断字段标 unmeasured。九轮冒烟通过只说明覆盖场景，不能代替多代/多属性和真实矛盾长链。
+  - D13：live GLM 首条翻译暴露了槽位身份随模型语言漂移。浅接地通过后，候选若没有同键同值的用户源声明、但值及撤回类别对应唯一安全来源槽位，服务端使用该源声明的正文和身份，而不是猜译文实体；多槽同值时拒绝 ambiguous_claim_source。不能只改 key 而留错误正文，也不能解除跨槽守卫。Hauler 接力使用已校验 Event 的规范正文，再执行已知槽位补建与覆盖去重，防原译文和补建声明对同一目标重复 UPDATE。原始模型输出仍留任务产物供审计。模型附加的尾括注若令候选槽位解析失败，只在去括注后的同键同值能核对安全用户来源时采用来源正文；不把“最新授权值”等模型修饰当证明，不剥离用户源文本的条件后授权。已有声明键的目标若候选缺可核验的声明身份，UPDATE 必须降为 CONFLICT，不能绕回泛纠正标记通道。该来源规范化不替代 Hauler 的相关性选择、不合并无法识别的自由文本；引用/假设/助手文本不能提供回填授权，变更仍经过时间/冻结等完整验证。
 
 ### 9.1 旧目标条目的最终去向
 

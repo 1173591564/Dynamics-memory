@@ -17,7 +17,7 @@ from pathlib import Path
 
 from ..errors import Fatal
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _DDL_TASKS = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -67,8 +67,11 @@ CREATE TABLE IF NOT EXISTS agent_rule_feedback (
 CREATE TABLE IF NOT EXISTS human_reviews (
  id INTEGER PRIMARY KEY AUTOINCREMENT, source_task INTEGER NOT NULL, target_id INTEGER NOT NULL,
  candidate TEXT NOT NULL, reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
- decision TEXT, created_at REAL NOT NULL, UNIQUE(source_task,target_id,candidate)
+ decision TEXT, created_at REAL NOT NULL, review_key TEXT NOT NULL DEFAULT '',
+ target_stamp TEXT NOT NULL DEFAULT '', UNIQUE(source_task,target_id,candidate)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS reviews_pending_key ON human_reviews(review_key)
+ WHERE status='pending' AND review_key<>'';
 CREATE TABLE IF NOT EXISTS capture_receipts (
  request_id TEXT PRIMARY KEY, kind TEXT NOT NULL, fingerprint TEXT NOT NULL,
  response TEXT NOT NULL, created_at REAL NOT NULL
@@ -193,6 +196,12 @@ def migrate(conn: sqlite3.Connection, kind: str = "tasks") -> None:
 
 def ensure_schema(conn: sqlite3.Connection, kind: str = "tasks") -> None:
     """幂等建表（记录版本）+ legacy 增量补列（不清数据）。"""
+    if kind == "tasks":
+        review_columns = {r[1] for r in conn.execute("PRAGMA table_info(human_reviews)")}
+        if review_columns:
+            for name in ("review_key", "target_stamp"):
+                if name not in review_columns:
+                    conn.execute(f"ALTER TABLE human_reviews ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
     conn.executescript(_DDL[kind])
     # ---- legacy 增量迁移：老库缺列就地补（有数据的库不清不重建） ----
     if kind == "tasks":
