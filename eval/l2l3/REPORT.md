@@ -212,6 +212,12 @@ eligible：run-glm2 6/9（hit 4 / harmful 2）；run-deepseek 5/9（hit 2 / harm
 
 盲评（单评分者）：hauler grounded GLM 2/3（一候选把邻单元值并入、src 归错）vs DS 3/3；selector disposition GLM 1/3 vs DS 2/3（两边失分同类：主张 UPDATE 被判 fail 多因服务端 CONFLICT 降级——PENDING-12 类判罚差异而非编造）；reviewer 两家 diagnosis 均 fail（都把服务端 CONFLICT 降级误诊为持久化/Selector 故障），repair_quality GLM 过 vs DS 失分（DS 的 rule 建议矛盾未决时让 Selector CREATE 当前值，越出契约）→ `settle=ab_thresholds_not_met`。
 
+### 机制供电状态（本轮顺带核实）
+
+- **通电但被削平**：`lam` 衰减与 `eta`/`eta_shadow` 增益电路在跑，但无人喂 feedback、全员 v=0.5；`theta_p=1.50` 使 C→M 晋升成为死区——三池实跑实为两池：现役全挂 CANDIDATE，UPDATE 迁 ARCHIVE，M 池空（两链 mems 全部 CANDIDATE 为证）。
+- **休眠**（PENDING-03）：`confidence_on`/`salience_on`/`novelty_on`/`consolidation_on` 全 OFF；recognizer 默认关。
+- **推论**：旧值驻留不可能靠 V 衰减/置信门自愈，只能靠显式机制（PENDING-11/12/13）。
+
 ### 结论与局限
 
 - 提问侧评测流程成立：探针全部在因果屏障后发出，无 L0 污染、无反馈副作用，写入失败/未蒸馏/检索漏分层可归因。
